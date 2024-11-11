@@ -1,5 +1,7 @@
 feedparser==6.0.10
-googletrans==3.1.0a0
+googletrans==4.0.0-rc1
 python-dotenv==1.0.0
 requests==2.31.0
+boto3==1.28.44
 schedule==1.2.1
+beautifulsoup4==4.12.2

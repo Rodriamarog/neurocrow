@@ -1,15 +1,15 @@
 # NeuroCrow 🤖
 
-NeuroCrow is an automated AI news curator and social media content generator focused on artificial intelligence and technology news for Spanish-speaking audiences. It transforms English AI news into engaging Spanish social media content.
+NeuroCrow is an automated content curator focused on AI and technology news. It fetches content from various tech news sources, translates it to Spanish, and generates clean, formatted posts ready for social media distribution.
 
 ## Features
 
-- 🔄 Automated news scraping from top tech sources
+- 🔄 Automated news fetching from multiple tech sources
 - 🌐 English to Spanish translation
-- 📱 Social media-friendly post generation
-- #️⃣ Smart hashtag integration
-- 📊 Various post templates for engagement
-- ⏱ Scheduling capabilities
+- 🧹 HTML and metadata cleaning
+- 📊 Duplicate content detection
+- 📜 7-day post history tracking
+- #️⃣ Automated hashtag addition
 
 ## Installation
 
@@ -35,18 +35,75 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Dependencies
+
+- `feedparser`: RSS feed parsing
+- `googletrans`: Text translation (English to Spanish)
+- `python-dotenv`: Environment variable management
+- `requests`: HTTP requests
+- `boto3`: AWS SDK (for future AWS Lambda deployment)
+- `schedule`: Task scheduling
+- `beautifulsoup4`: HTML content cleaning
+
+## Current News Sources
+
+```python
+feeds = [
+    'https://techcrunch.com/tag/artificial-intelligence/feed/',
+    'https://venturebeat.com/category/ai/feed/',
+    'https://www.artificialintelligence-news.com/feed/',
+    'https://www.zdnet.com/topic/artificial-intelligence/rss.xml',
+    'https://www.theverge.com/ai-artificial-intelligence/rss/index.xml',
+    'https://www.marktechpost.com/feed/',
+    'https://www.unite.ai/feed/',
+    'https://www.xataka.com/tag/inteligencia-artificial/feed',
+    'https://wwwhatsnew.com/category/inteligencia-artificial/feed/',
+    'https://hipertextual.com/tag/inteligencia-artificial/feed'
+]
+```
+
 ## Usage
 
-Basic usage example:
-```python
-from src.content_curator import AIContentCurator
+### Local Development
 
-curator = AIContentCurator()
-posts = curator.generate_posts(num_posts=3)
-
-for post in posts:
-    print(post['post_content'])
+Run the curator script:
+```bash
+python src/curator.py
 ```
+
+The script will:
+1. Fetch latest articles from all sources
+2. Clean and translate content
+3. Generate 2 unique posts
+4. Save post history to prevent duplicates
+
+Example output:
+```
+La IA generativa revoluciona el desarrollo de software
+
+Los desarrolladores están adoptando herramientas de IA para automatizar tareas 
+repetitivas y mejorar la productividad en el desarrollo de software.
+
+Más información: https://example.com/article
+
+#IA #Tech #Innovación
+```
+
+## Post History Management
+
+- Posts are stored in `post_history.json`
+- Automatically maintains a 7-day rolling history
+- Used for duplicate detection
+- Cleaned up automatically during each run
+
+## Future Plans
+
+- [ ] AWS Lambda deployment
+- [ ] EventBridge scheduling
+- [ ] Social media API integration
+- [ ] Enhanced content filtering
+- [ ] Custom hashtag strategies
+- [ ] Error notification system
 
 ## Project Structure
 
@@ -55,25 +112,12 @@ neurocrow/
 │
 ├── src/
 │   ├── __init__.py
-│   ├── content_curator.py
-│   └── utils.py
-├── config/
-│   └── settings.py
-├── tests/
-│   └── __init__.py
+│   └── curator.py
 ├── venv/
 ├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
-
-## Dependencies
-
-- feedparser==6.0.10
-- googletrans==3.1.0a0
-- python-dotenv==1.0.0
-- requests==2.31.0
-- schedule==1.2.1
 
 ## Contributing
 
@@ -89,16 +133,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- Built with Python 3.x
-- Uses Google Translate API for translations
-- RSS feeds from major tech news sources
-
-## Contact
-
-Rodrigo Amaro - rodriamarog@gmail.com
-
-Project Link: [https://github.com/Rodriamarog/neurocrow](https://github.com/Rodriamarog/neurocrow)
+- Uses multiple RSS feeds from leading tech publications
+- Translation powered by Google Translate
+- Content cleaning powered by BeautifulSoup4
 
 ---
 
-Made with ❤️ by Rodrigo Amaro
+Made by [Rodrigo Amaro]
