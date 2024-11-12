@@ -1,5 +1,7 @@
 import json
 import feedparser
+from dotenv import load_dotenv
+import deepl
 from googletrans import Translator
 from datetime import datetime, timedelta
 import random
@@ -10,10 +12,21 @@ from bs4 import BeautifulSoup
 import html
 import time
 import argparse
+from langdetect import detect, LangDetectException
 
 class AIContentCurator:
     def __init__(self):
-        self.translator = Translator()
+        # Load environment variables
+        load_dotenv()
+        
+        # Initialize DeepL translator
+        auth_key = os.getenv('DEEPL_API_KEY')
+        if not auth_key:
+            raise ValueError("DEEPL_API_KEY not found in environment variables")
+            
+        self.translator = deepl.Translator(auth_key)
+
+        # List of feeds
         self.feeds = [
             'https://techcrunch.com/tag/artificial-intelligence/feed/',
             'https://venturebeat.com/category/ai/feed/',
@@ -27,9 +40,72 @@ class AIContentCurator:
             'https://hipertextual.com/tag/inteligencia-artificial/feed'
         ]
         
+        # Initialize promotional content filters
+        self.initialize_content_filters()
+        
         # Load post history from local file
         self.history_file = 'post_history.json'
         self.load_post_history()
+
+    def initialize_content_filters(self):
+        """Initialize filters for promotional content"""
+        # Strong indicators of promotional content
+        self.promotional_patterns = [
+            r'black friday',
+            r'cyber monday',
+            r'(?:best|top)\s+\d+',  # "best 10", "top 5", etc.
+            r'(?:sale|deals?)(?:\s|$)',
+            r'review(?:ing)?(?:\s|$)',
+            r'buying guide',
+            r'shop now',
+            r'limited time',
+            r'discount',
+            r'offer(?:s)?(?:\s|$)',
+            r'price(?:s)?(?:\s|$)',
+            r'\$\d+',
+            r'(?:save|saving)\s+\d+%',
+            r'promo(?:tion)?(?:s)?(?:\s|$)',
+            r'coupon(?:s)?(?:\s|$)',
+            # Spanish equivalents
+            r'oferta(?:s)?(?:\s|$)',
+            r'descuento(?:s)?(?:\s|$)',
+            r'promoción(?:es)?(?:\s|$)',
+            r'mejor(?:es)?\s+\d+',
+        ]
+        
+        # Context words that suggest promotional content when combined
+        self.context_keywords = {
+            'primary': [
+                'buy', 'purchase', 'deal', 'save', 'offer', 'price',
+                'comprar', 'precio', 'oferta', 'descuento'
+            ],
+            'secondary': [
+                'now', 'today', 'limited', 'exclusive', 'special',
+                'ahora', 'hoy', 'limitado', 'especial'
+            ]
+        }
+
+    def is_promotional_content(self, title, summary):
+        """
+        Check if content is promotional using a moderate filter
+        Returns: (bool, str) - (is_promotional, reason)
+        """
+        text = f"{title} {summary}".lower()
+        
+        # Check for strong promotional patterns
+        for pattern in self.promotional_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True, f"Matched promotional pattern: {pattern}"
+        
+        # Check for primary keywords
+        primary_matches = sum(1 for word in self.context_keywords['primary'] if word in text)
+        secondary_matches = sum(1 for word in self.context_keywords['secondary'] if word in text)
+        
+        # If we find multiple primary keywords or a combination with secondary keywords
+        if primary_matches >= 2 or (primary_matches >= 1 and secondary_matches >= 2):
+            return True, "Multiple promotional keywords detected"
+        
+        return False, ""
 
     def load_post_history(self):
         """Load post history from local file"""
@@ -46,10 +122,11 @@ class AIContentCurator:
     def save_post_history(self):
         """Save post history to local file"""
         try:
-            seven_days_ago = datetime.now() - timedelta(days=7)
+            # Keep only last 24 hours
+            one_day_ago = datetime.now() - timedelta(days=1)
             self.post_history = [
                 post for post in self.post_history 
-                if datetime.fromisoformat(post['created_at']) > seven_days_ago
+                if datetime.fromisoformat(post['created_at']) > one_day_ago
             ]
             
             with open(self.history_file, 'w', encoding='utf-8') as f:
@@ -78,65 +155,114 @@ class AIContentCurator:
             # Remove URLs
             text = re.sub(r'http[s]?://\S+', '', text)
             
-            # Remove image credits and captions
-            text = re.sub(r'(?i)imagen:.*?(?=\n|$)', '', text)  # Remove "Imagen: ..."
-            text = re.sub(r'(?i)image:.*?(?=\n|$)', '', text)   # Remove "Image: ..."
-            text = re.sub(r'(?i)\|.*?imagen.*?(?=\n|$)', '', text)  # Remove "| Imagen ..."
-            text = re.sub(r'\|[^|]*?\|', '', text)  # Remove anything between pipes
+            # Remove image descriptions and metadata patterns
+            patterns_to_remove = [
+                r'(?i)imagen:.*?(?=\n|$)',              # Spanish image captions
+                r'(?i)image:.*?(?=\n|$)',               # English image captions
+                r'(?i)\|.*?\|',                         # Content between pipes
+                r'(?i)photo:.*?(?=\n|$)',              # Photo credits
+                r'(?i)foto:.*?(?=\n|$)',               # Spanish photo credits
+                r'(?i)crédito:.*?(?=\n|$)',            # Spanish credits
+                r'(?i)credit:.*?(?=\n|$)',             # English credits
+                r'(?i)source:.*?(?=\n|$)',             # Source attributions
+                r'(?i)fuente:.*?(?=\n|$)',             # Spanish source attributions
+                r'(?i)picture:.*?(?=\n|$)',            # Picture descriptions
+                r'(?i)\[.*?\]',                        # Content in square brackets
+                r'(?i)\(.*?\)',                        # Content in parentheses
+                r'(?i)website\.',                      # Website references
+                r'(?i)sitio web',                      # Spanish website references
+                r'\|.*$',                              # Everything after a pipe
+                r'Image:.*$',                          # Image descriptions
+                r'^\s*\w+\'s\s+\w+\s+(?:website|site).*$',  # Website attributions
+                r'^\s*\|.*$',                          # Lines starting with pipe
+            ]
+            
+            # Apply all cleaning patterns
+            for pattern in patterns_to_remove:
+                text = re.sub(pattern, '', text)
             
             # Remove multiple newlines and spaces
-            text = re.sub(r'\n+', '\n', text)
-            text = re.sub(r' +', ' ', text)
+            text = re.sub(r'\n+', ' ', text)
+            text = re.sub(r'\s+', ' ', text)
             
-            # Remove lines that are just credits or metadata
-            lines = [line.strip() for line in text.split('\n')]
-            lines = [line for line in lines if line and not any(x in line.lower() for x in ['imagen:', 'image:', 'photo:', 'foto:', 'crédito:', 'credit:'])]
+            # Split into lines and filter out metadata-like lines
+            lines = [line.strip() for line in text.split('.') if line.strip()]
+            filtered_lines = []
             
-            return ' '.join(lines).strip()
+            for line in lines:
+                # Skip lines that look like metadata
+                if any([
+                    re.match(r'^[^a-zA-Z]*$', line),           # Lines without letters
+                    len(line.split()) <= 2,                    # Very short phrases
+                    re.match(r'^\s*\d+\s*$', line),           # Just numbers
+                    '|' in line,                              # Contains pipe
+                    ':' in line,                              # Contains colon
+                    line.strip().endswith('.com'),            # URLs
+                    line.lower().startswith(('image', 'photo', 'credit', 'source', 'website')),
+                ]):
+                    continue
+                filtered_lines.append(line)
+            
+            # Join the clean lines
+            text = '. '.join(filtered_lines)
+            
+            # Final cleanup
+            text = text.strip()
+            text = re.sub(r'\s+', ' ', text)  # Normalize spaces
+            text = re.sub(r'\.+', '.', text)  # Normalize periods
+            text = re.sub(r'\s+\.', '.', text)  # Fix spaces before periods
+            
+            return text.strip()
 
-    def extract_key_point(self, summary):
-        """Extract key point from summary"""
-        # Clean the summary first
-        summary = self.clean_text(summary)
-        
-        # Split into sentences and get first meaningful ones
-        sentences = [s.strip() for s in summary.split('.') if s.strip()]
-        key_sentences = [s for s in sentences[:2] if len(s.split()) > 3]
-        
-        if not key_sentences:
-            return summary[:100] + "..."
-            
-        return '. '.join(key_sentences) + '.'
+    def detect_language(self, text):
+        """Detect language using langdetect library"""
+        try:
+            if not text or len(text.strip()) < 10:
+                return False
+            language = detect(text)
+            print(f"Detected language: {language}")
+            return language == 'es'
+        except LangDetectException as e:
+            print(f"Language detection failed: {str(e)}, assuming English")
+            return False
 
-    def translate_with_retry(self, text, src='en', dest='es', max_retries=3):
-            """Attempt translation with retries and proper error handling"""
-            if not text:
-                print("Empty text provided for translation")
-                return None
-                
-            print(f"Attempting to translate: {text[:100]}...")  # Print first 100 chars
+    def translate_with_retry(self, text, src='EN', dest='ES', max_retries=3):
+        """Attempt translation with retries and proper error handling"""
+        if not text:
+            print("Empty text provided for translation")
+            return None
             
-            for attempt in range(max_retries):
-                try:
-                    print(f"Translation attempt {attempt + 1}/{max_retries}")
-                    translation = self.translator.translate(text, src=src, dest=dest)
-                    
-                    if translation and hasattr(translation, 'text') and translation.text:
-                        print(f"Translation successful: {translation.text[:100]}...")
-                        return translation.text
-                        
-                    print(f"Translation attempt {attempt + 1} failed: No valid translation returned")
-                    
-                except Exception as e:
-                    print(f"Translation attempt {attempt + 1} failed with error: {str(e)}")
-                    # Recreate translator object on error
-                    self.translator = Translator()
+        print(f"Translating text: {text[:100]}...")
+        
+        for attempt in range(max_retries):
+            try:
+                result = self.translator.translate_text(
+                    text,
+                    source_lang=src,
+                    target_lang=dest
+                )
                 
+                if result:
+                    translated_text = str(result)
+                    print(f"Translation successful: {translated_text[:100]}...")
+                    return translated_text
+                    
+                print(f"Translation attempt {attempt + 1} failed: No translation returned")
+                
+            except Exception as e:
+                print(f"Translation attempt {attempt + 1} failed with error: {str(e)}")
                 if attempt < max_retries - 1:
                     print("Waiting before retry...")
                     time.sleep(2)
-            
-            return None
+        
+        return None
+
+    def extract_key_point(self, summary):
+        """Extract key point from summary"""
+        summary = self.clean_text(summary)
+        sentences = [s.strip() for s in summary.split('.') if s.strip()]
+        key_sentences = [s for s in sentences[:2] if len(s.split()) > 3]
+        return '. '.join(key_sentences) + '.' if key_sentences else summary[:100] + "..."
 
     def create_post(self, entry):
         """Create a social media post"""
@@ -144,35 +270,37 @@ class AIContentCurator:
             if self.is_duplicate(entry.title):
                 print("Duplicate post found, skipping...")
                 return None
-                
-            # Simple language detection
-            is_spanish = any(word in entry.title.lower() for word in ['la', 'el', 'los', 'las', 'en', 'con', 'para'])
             
             # Clean texts first
             clean_title = self.clean_text(entry.title)
             clean_summary = self.extract_key_point(entry.summary)
 
-            print(f"\nProcessing article: {clean_title[:100]}...")
-            print(f"Language detected: {'Spanish' if is_spanish else 'English'}")
+            # Check if content is promotional
+            is_promo, reason = self.is_promotional_content(clean_title, clean_summary)
+            if is_promo:
+                print(f"Skipping promotional content: {reason}")
+                return None
 
+            print(f"\nProcessing article: {clean_title[:100]}...")
+            
+            # Detect language
+            is_spanish = self.detect_language(f"{clean_title}. {clean_summary}")
+            
             if is_spanish:
                 headline = clean_title
                 key_point = clean_summary
                 print("Spanish content, no translation needed")
             else:
-                print("\nTranslating title...")
+                print("English content detected, translating...")
                 headline = self.translate_with_retry(clean_title)
                 if not headline:
-                    print("Title translation failed, skipping post")
                     return None
 
-                print("\nTranslating summary...")
                 key_point = self.translate_with_retry(clean_summary)
                 if not key_point:
-                    print("Summary translation failed, skipping post")
                     return None
 
-            # Create simple post format
+            # Create post
             post = f"{headline}\n\n{key_point}\n\nMás información: {entry.link}\n\n#IA #Tech #Innovación"
             print("\nPost created successfully!")
             
@@ -219,8 +347,8 @@ class AIContentCurator:
             if len(posts) >= num_posts:
                 break
             
-            if entries_tried >= 10:  # Limit how many entries we try
-                print("Tried too many entries without success, stopping")
+            if entries_tried >= 15:  # Increased limit since we're filtering more
+                print("Tried maximum number of entries, stopping")
                 break
                 
             entries_tried += 1
@@ -236,7 +364,6 @@ class AIContentCurator:
         
         return posts
 
-# Add this at the bottom of the file, replace the current main
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='AI Content Curator')
     parser.add_argument('--ignore-history', action='store_true', 
@@ -252,7 +379,6 @@ if __name__ == "__main__":
         curator.post_history = []
         curator.save_post_history()
     
-    # Modify the is_duplicate method to respect the ignore-history flag
     if args.ignore_history:
         print("Running with history check disabled...")
         curator.is_duplicate = lambda x, y=0: False
