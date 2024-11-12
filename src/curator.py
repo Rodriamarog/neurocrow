@@ -13,6 +13,7 @@ import html
 import time
 import argparse
 from langdetect import detect, LangDetectException
+from content_manager import ContentManager
 
 class AIContentCurator:
     def __init__(self):
@@ -46,6 +47,9 @@ class AIContentCurator:
         # Load post history from local file
         self.history_file = 'post_history.json'
         self.load_post_history()
+
+        # Load content manager
+        self.content_manager = ContentManager()
 
     def initialize_content_filters(self):
         """Initialize filters for promotional content"""
@@ -364,12 +368,72 @@ class AIContentCurator:
         
         return posts
 
+    def get_cycle_day(self):
+            """Determine if it's Day A (2 articles) or Day B (1 article + 1 image)"""
+            try:
+                cycle_file = 'cycle_tracker.json'
+                
+                if os.path.exists(cycle_file):
+                    with open(cycle_file, 'r') as f:
+                        data = json.load(f)
+                        last_date = datetime.fromisoformat(data['last_date'])
+                        last_is_day_a = data['is_day_a']
+                        
+                        # If it's a new day, switch the cycle
+                        if datetime.now().date() > last_date.date():
+                            is_day_a = not last_is_day_a
+                        else:
+                            is_day_a = last_is_day_a
+                else:
+                    # First run, start with Day A
+                    is_day_a = True
+                
+                # Save current state
+                with open(cycle_file, 'w') as f:
+                    json.dump({
+                        'last_date': datetime.now().isoformat(),
+                        'is_day_a': is_day_a
+                    }, f)
+                
+                return is_day_a
+                
+            except Exception as e:
+                print(f"Error getting cycle day: {str(e)}, defaulting to Day A")
+                return True
+
+    def get_daily_content(self, is_morning=True):
+        """
+        Get content based on time of day and cycle
+        Returns either news article or image post
+        """
+        try:
+            is_day_a = self.get_cycle_day()
+            
+            if is_day_a:
+                # Day A: Always return article
+                print("Day A: Generating article post...")
+                return self.generate_posts(num_posts=1)[0]
+            else:
+                # Day B: Article in morning, Image in evening
+                if is_morning:
+                    print("Day B morning: Generating article post...")
+                    return self.generate_posts(num_posts=1)[0]
+                else:
+                    print("Day B evening: Generating image post...")
+                    return self.content_manager.generate_image_post()
+                    
+        except Exception as e:
+            print(f"Error getting daily content: {str(e)}")
+            return None
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='AI Content Curator')
     parser.add_argument('--ignore-history', action='store_true', 
                       help='Ignore post history (for testing)')
     parser.add_argument('--clear-history', action='store_true',
                       help='Clear post history before running')
+    parser.add_argument('--test-scenario', choices=['morning-a', 'evening-a', 'morning-b', 'evening-b'],
+                      help='Test specific posting scenario')
     args = parser.parse_args()
 
     curator = AIContentCurator()
@@ -382,12 +446,29 @@ if __name__ == "__main__":
     if args.ignore_history:
         print("Running with history check disabled...")
         curator.is_duplicate = lambda x, y=0: False
-    
-    posts = curator.generate_posts(num_posts=2)
-    
-    print(f"\nGenerated {len(posts)} posts:")
-    for i, post in enumerate(posts, 1):
-        print(f"\nPost {i}:")
+
+    if args.test_scenario:
+        # Override cycle day for testing
+        if args.test_scenario in ['morning-a', 'evening-a']:
+            curator.get_cycle_day = lambda: True  # Force Day A
+        else:
+            curator.get_cycle_day = lambda: False  # Force Day B
+
+        # Generate content based on scenario
+        is_morning = args.test_scenario.startswith('morning')
+        post = curator.get_daily_content(is_morning=is_morning)
+        
+        print("\nGenerated post for scenario:", args.test_scenario)
         print("-" * 50)
         print(post['post_content'])
         print("-" * 50)
+    else:
+        # Normal operation - generate two articles
+        posts = curator.generate_posts(num_posts=2)
+        
+        print(f"\nGenerated {len(posts)} posts:")
+        for i, post in enumerate(posts, 1):
+            print(f"\nPost {i}:")
+            print("-" * 50)
+            print(post['post_content'])
+            print("-" * 50)

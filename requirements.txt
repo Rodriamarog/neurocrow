@@ -5,3 +5,5 @@ requests==2.31.0
 boto3==1.28.44
 schedule==1.2.1
 beautifulsoup4==4.12.2
+langdetect==1.0.9
+deepl==1.15.0

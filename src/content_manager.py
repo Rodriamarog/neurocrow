@@ -2,7 +2,7 @@ import random
 from datetime import datetime
 import logging
 from typing import Dict, Optional
-from .templates import image_content_templates
+from templates import image_content_templates
 
 class ContentManager:
     def __init__(self):
