@@ -38,3 +38,10 @@ wheels/
 articles.json
 posts.json
 logs/
+terraform/
+variables.tf
+terraform.tfvars
+lambda_deployment/
+aws/
+awscliv2.zip
+src/lambda_deployment.zip

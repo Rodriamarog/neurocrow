@@ -334,7 +334,7 @@ class NewsPostGenerator:
             formatted_summary += sentences[-1]
         
         # Format complete post with emojis
-        post = f"{start_emoji} {title} {end_emoji}\n\n{formatted_summary.strip()}\n\n#IA #Tech #Innovación"
+        post = f"{start_emoji} {title} {end_emoji}\n\n{formatted_summary.strip()}\n\n#IA #Tech #Innovación #NeuroCrow #Tijuana"
         
         return {
             'content': post,
