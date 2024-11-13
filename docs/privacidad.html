@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Política de Privacidad - NeuroCrow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'cyber-purple': '#9D4EDD',
+                        'cyber-dark': '#0F1117',
+                        'cyber-gray': '#1A1B26',
+                        'cyber-light': '#B4B4DB',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-cyber-dark text-white">
+    <!-- Navbar móvil -->
+    <nav class="fixed top-0 w-full bg-cyber-gray shadow-md shadow-cyber-purple/20 z-50">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <a href="index.html" class="text-2xl font-bold text-cyber-purple flex items-center gap-2">
+                <i class="fas fa-crow"></i>
+                NeuroCrow
+            </a>
+            <button class="p-2 hover:bg-gray-100 rounded-lg" onclick="toggleMenu()">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+        </div>
+        <div id="mobileMenu" class="hidden bg-cyber-gray w-full border-t border-cyber-purple/20">
+            <div class="container mx-auto px-4 py-2">
+                <a href="index.html" class="block py-3 hover:bg-cyber-purple/10">Inicio</a>
+                <a href="#" class="block py-3 hover:bg-cyber-purple/10">Servicios</a>
+                <a href="#" class="block py-3 hover:bg-cyber-purple/10">Contacto</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 pt-20 pb-24">
+        <h1 class="text-3xl font-bold mb-6 text-cyber-purple">Política de Privacidad</h1>
+
+        <div class="space-y-4">
+            <!-- Información que Recopilamos -->
+            <div class="border border-cyber-purple/20 rounded-lg bg-cyber-gray">
+                <button class="w-full px-4 py-4 text-left font-semibold flex justify-between items-center hover:bg-cyber-purple/10 transition-all duration-300" 
+                        onclick="toggleSection('recopilacion')">
+                    Información que Recopilamos
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="recopilacion" class="hidden px-4 py-4 border-t border-cyber-purple/20">
+                    <ul class="list-disc pl-5 space-y-2 text-gray-300">
+                        <li>Información de contacto empresarial (nombre, correo electrónico, teléfono)</li>
+                        <li>Datos de la página de Facebook del negocio</li>
+                        <li>Conversaciones del chatbot con clientes</li>
+                        <li>Datos de uso y análisis del servicio</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Uso de la Información -->
+            <div class="border border-cyber-purple/20 rounded-lg bg-cyber-gray">
+                <button class="w-full px-4 py-4 text-left font-semibold flex justify-between items-center hover:bg-cyber-purple/10 transition-all duration-300"
+                        onclick="toggleSection('uso')">
+                    Uso de la Información
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="uso" class="hidden px-4 py-4 border-t border-cyber-purple/20">
+                    <ul class="list-disc pl-5 space-y-2 text-gray-300">
+                        <li>Proporcionar y mantener nuestro servicio de chatbots</li>
+                        <li>Mejorar la atención al cliente</li>
+                        <li>Analizar y optimizar el rendimiento</li>
+                        <li>Cumplir con requisitos legales y regulatorios</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Protección de Datos -->
+            <div class="border border-cyber-purple/20 rounded-lg bg-cyber-gray">
+                <button class="w-full px-4 py-4 text-left font-semibold flex justify-between items-center hover:bg-cyber-purple/10 transition-all duration-300"
+                        onclick="toggleSection('proteccion')">
+                    Protección de Datos
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="proteccion" class="hidden px-4 py-4 border-t border-cyber-purple/20">
+                    <ul class="list-disc pl-5 space-y-2 text-gray-300">
+                        <li>Encriptación de datos en tránsito y en reposo</li>
+                        <li>Evaluaciones regulares de seguridad</li>
+                        <li>Acceso limitado a información personal</li>
+                        <li>Almacenamiento seguro de datos</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Compartir Información -->
+            <div class="border border-cyber-purple/20 rounded-lg bg-cyber-gray">
+                <button class="w-full px-4 py-4 text-left font-semibold flex justify-between items-center hover:bg-cyber-purple/10 transition-all duration-300"
+                        onclick="toggleSection('compartir')">
+                    Compartir Información
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="compartir" class="hidden px-4 py-4 border-t border-cyber-purple/20">
+                    <ul class="list-disc pl-5 space-y-2 text-gray-300">
+                        <li>Proveedores de servicios (hosting, análisis)</li>
+                        <li>Socios comerciales con su consentimiento</li>
+                        <li>Autoridades cuando sea requerido por ley</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Sus Derechos -->
+            <div class="border border-cyber-purple/20 rounded-lg bg-cyber-gray">
+                <button class="w-full px-4 py-4 text-left font-semibold flex justify-between items-center hover:bg-cyber-purple/10 transition-all duration-300"
+                        onclick="toggleSection('derechos')">
+                    Sus Derechos
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="derechos" class="hidden px-4 py-4 border-t border-cyber-purple/20">
+                    <ul class="list-disc pl-5 space-y-2 text-gray-300">
+                        <li>Acceder a su información personal</li>
+                        <li>Corregir datos inexactos</li>
+                        <li>Solicitar la eliminación de sus datos</li>
+                        <li>Oponerse al procesamiento de sus datos</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Contacto -->
+            <div class="border border-cyber-purple/20 rounded-lg bg-cyber-gray">
+                <button class="w-full px-4 py-4 text-left font-semibold flex justify-between items-center hover:bg-cyber-purple/10 transition-all duration-300"
+                        onclick="toggleSection('contacto')">
+                    Contacto
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="contacto" class="hidden px-4 py-4 border-t border-cyber-purple/20">
+                    <ul class="list-none space-y-2 text-gray-300">
+                        <li><strong>Correo:</strong> privacy@neurocrow.com</li>
+                        <li><strong>Teléfono:</strong> +1 (619) 761 2314</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-gray-400 mt-8 text-sm">Última actualización: 13 de Noviembre, 2024</p>
+    </main>
+
+    <!-- Footer móvil -->
+    <footer class="fixed bottom-0 w-full bg-cyber-gray border-t border-cyber-purple/20">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex justify-between items-center text-sm text-gray-600">
+                <a href="privacidad.html" class="hover:text-blue-600">Privacidad</a>
+                <span>|</span>
+                <a href="terminos.html" class="hover:text-blue-600">Términos</a>
+                <span>|</span>
+                <span>&copy; 2024 NeuroCrow</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function toggleMenu() {
+            const menu = document.getElementById('mobileMenu');
+            menu.classList.toggle('hidden');
+        }
+
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            const allSections = document.querySelectorAll('[id^="recopilacion"], [id^="uso"], [id^="proteccion"], [id^="compartir"], [id^="derechos"], [id^="contacto"]');
+            
+            allSections.forEach(s => {
+                if (s.id !== sectionId) {
+                    s.classList.add('hidden');
+                }
+            });
+            
+            section.classList.toggle('hidden');
+        }
+    </script>
+</body>
+</html>
