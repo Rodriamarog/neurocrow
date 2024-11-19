@@ -1,31 +1,39 @@
 .home {
   width: 100%;
+  overflow-x: hidden;
+  background: #1A1520;
+  color: #FFFFFF;
 }
 
 .hero {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
-  color: white;
+  background: linear-gradient(135deg, #1A1520 0%, #2D1B3B 100%);
+  color: #FFFFFF;
   padding: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
+  width: 100%;
 }
 
 .hero-content {
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  padding: 0 20px;
 }
 
 .hero h1 {
   font-size: 2.5rem;
   margin-bottom: 1rem;
+  color: #FFFFFF;
 }
 
 .hero p {
   font-size: 1.2rem;
   margin-bottom: 2rem;
+  color: #FFFFFF;
 }
 
 .video-placeholder {
@@ -36,7 +44,7 @@
 
 .video-container {
   position: relative;
-  padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+  padding-bottom: 56.25%;
   height: 0;
   overflow: hidden;
 }
@@ -47,64 +55,75 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: #333;
+  background: #2D1B3B;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: #FFFFFF;
   font-size: 1.5rem;
 }
 
 .features {
-  padding: 4rem 20px;
-  background: #fff;
+  padding: 4rem 0;
+  background: #2D1B3B;
+  width: 100%;
 }
 
 .features h2 {
   text-align: center;
   margin-bottom: 3rem;
   font-size: 2rem;
+  color: #FFFFFF;
 }
 
 .features-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 2rem;
   max-width: 1200px;
   margin: 0 auto;
+  padding: 0 20px;
 }
 
 .feature-card {
   text-align: center;
   padding: 2rem;
   border-radius: 10px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  background: #1A1520;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
 }
 
 .feature-card i {
   font-size: 3rem;
   margin-bottom: 1rem;
-  color: #00f7ff;
+  color: #00E5FF;
 }
 
 .feature-card h3 {
   margin-bottom: 1rem;
+  color: #FFFFFF;
+}
+
+.feature-card p {
+  color: #FFFFFF;
 }
 
 .cta {
-  background: #1a1a1a;
-  color: white;
+  background: #1A1520;
+  color: #E2D9F3;
   text-align: center;
-  padding: 4rem 20px;
+  padding: 4rem 0;
+  width: 100%;
 }
 
 .cta h2 {
   margin-bottom: 2rem;
+  color: #FFFFFF;
 }
 
 .cta-button {
-  background: #00f7ff;
-  color: #1a1a1a;
+  background: #00E5FF;
+  color: #1A1520;
   border: none;
   padding: 1rem 2rem;
   font-size: 1.2rem;
@@ -114,20 +133,33 @@
 }
 
 .cta-button:hover {
-  background: #00d8df;
+  background: #00b3cc;
   transform: translateY(-2px);
 }
 
+.cta > div {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
 @media screen and (max-width: 768px) {
+  .hero-content {
+    padding: 0 15px;
+  }
+
+  .features-grid {
+    padding: 0 15px;
+    grid-template-columns: 1fr;
+  }
+
   .hero h1 {
-    font-size: 2rem;
+    font-size: 1.8rem;
+    line-height: 1.3;
   }
 
   .hero p {
     font-size: 1rem;
-  }
-
-  .features-grid {
-    grid-template-columns: 1fr;
+    line-height: 1.5;
   }
 } 

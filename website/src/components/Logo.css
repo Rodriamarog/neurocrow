@@ -1,0 +1,32 @@
+:root {
+  --logo-light: #FFFFFF;
+  --logo-dark: #00E5FF;
+}
+
+.logo-link {
+  text-decoration: none;
+}
+
+.logo {
+  font-family: 'Quicksand', sans-serif;
+  font-weight: 700;
+  font-size: 1.8rem;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.logo-neuro {
+  color: var(--logo-light);
+}
+
+.logo-crow {
+  color: var(--logo-dark);
+}
+
+@media screen and (max-width: 768px) {
+  .logo {
+    font-size: 1.5rem;
+  }
+} 

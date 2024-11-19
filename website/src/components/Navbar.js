@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import Logo from './Logo';
 import './Navbar.css';
 
 function Navbar() {
@@ -8,9 +9,7 @@ function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-container">
-        <Link to="/" className="navbar-logo">
-          Neurocrow
-        </Link>
+        <Logo />
         
         <div className="menu-icon" onClick={() => setIsOpen(!isOpen)}>
           <i className={isOpen ? 'fas fa-times' : 'fas fa-bars'} />

@@ -1,29 +1,35 @@
 .legal-page {
+  width: 100%;
   max-width: 800px;
   margin: 0 auto;
   padding: 2rem 20px;
-  min-height: calc(100vh - 160px); /* Account for header and footer */
+  min-height: calc(100vh - 160px);
+  overflow-x: hidden;
+  background: #1A1520;
 }
 
 .legal-page h1 {
   text-align: center;
   margin-bottom: 2rem;
-  color: #1a1a1a;
+  color: #FFFFFF;
 }
 
 .legal-content section {
   margin-bottom: 2.5rem;
+  background: #2D1B3B;
+  padding: 2rem;
+  border-radius: 10px;
 }
 
 .legal-content h2 {
-  color: #333;
+  color: #FFFFFF;
   margin-bottom: 1rem;
   font-size: 1.5rem;
 }
 
 .legal-content p {
   line-height: 1.6;
-  color: #666;
+  color: #FFFFFF;
   margin-bottom: 1rem;
 }
 
@@ -34,21 +40,21 @@
 }
 
 .legal-content li {
-  color: #666;
+  color: #FFFFFF;
   line-height: 1.6;
   margin-bottom: 0.5rem;
 }
 
 .last-update {
   font-style: italic;
-  color: #888;
+  color: #FFFFFF;
   text-align: center;
   margin-top: 3rem;
 }
 
 @media screen and (max-width: 768px) {
   .legal-page {
-    padding: 1rem 20px;
+    padding: 1rem 15px;
   }
   
   .legal-page h1 {
@@ -57,5 +63,9 @@
   
   .legal-content h2 {
     font-size: 1.3rem;
+  }
+
+  .legal-content ul {
+    padding-left: 1.5rem;
   }
 } 

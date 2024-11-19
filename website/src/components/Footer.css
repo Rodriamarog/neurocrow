@@ -1,6 +1,6 @@
 .footer {
-  background: #1a1a1a;
-  color: white;
+  background: #1A1520;
+  color: #FFFFFF;
   padding: 3rem 20px 1rem;
 }
 
@@ -13,6 +13,7 @@
 }
 
 .footer-section h3 {
+  color: #FFFFFF;
   margin-bottom: 1rem;
 }
 
@@ -26,12 +27,13 @@
 }
 
 .footer-section a {
-  color: white;
+  color: #FFFFFF;
   text-decoration: none;
+  transition: color 0.3s ease;
 }
 
 .footer-section a:hover {
-  color: #00f7ff;
+  color: #00E5FF;
 }
 
 .social-links {
@@ -41,13 +43,20 @@
 .social-links a {
   margin-right: 1rem;
   font-size: 1.5rem;
+  color: #FFFFFF;
+  transition: color 0.3s ease;
+}
+
+.social-links a:hover {
+  color: #00E5FF;
 }
 
 .footer-bottom {
   margin-top: 2rem;
   text-align: center;
   padding-top: 1rem;
-  border-top: 1px solid #333;
+  border-top: 1px solid #2D1B3B;
+  color: #FFFFFF;
 }
 
 @media screen and (max-width: 768px) {

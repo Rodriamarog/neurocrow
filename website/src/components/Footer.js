@@ -20,7 +20,9 @@ function Footer() {
           <h3>Contacto</h3>
           <p>Email: info@neurocrow.com</p>
           <div className="social-links">
-            <a href="#"><i className="fab fa-facebook"></i></a>
+            <a href="https://www.facebook.com/profile.php?id=61568595868220" target="_blank" rel="noopener noreferrer">
+              <i className="fab fa-facebook"></i>
+            </a>
             <a href="#"><i className="fab fa-instagram"></i></a>
             <a href="#"><i className="fab fa-linkedin"></i></a>
           </div>
