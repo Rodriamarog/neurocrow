@@ -38,8 +38,10 @@ function Home() {
       </section>
 
       <section className="cta">
-        <h2>¿Listo para revolucionar tu atención al cliente?</h2>
-        <button className="cta-button">Contáctanos</button>
+        <div className="cta-content">
+          <h2>¿Listo para revolucionar tu atención al cliente?</h2>
+          <button className="cta-button">Contáctanos</button>
+        </div>
       </section>
     </div>
   );

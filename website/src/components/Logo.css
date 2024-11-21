@@ -1,6 +1,6 @@
 :root {
-  --logo-light: #FFFFFF;
-  --logo-dark: #00E5FF;
+  --logo-primary: #2D3748;
+  --logo-accent: #0070F3;
 }
 
 .logo-link {
@@ -18,11 +18,11 @@
 }
 
 .logo-neuro {
-  color: var(--logo-light);
+  color: var(--logo-primary);
 }
 
 .logo-crow {
-  color: var(--logo-dark);
+  color: var(--logo-accent);
 }
 
 @media screen and (max-width: 768px) {
