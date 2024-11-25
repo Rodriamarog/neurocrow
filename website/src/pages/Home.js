@@ -1,4 +1,5 @@
 import './Home.css';
+import demoGif from '../assets/demo.gif';
 
 function Home() {
   return (
@@ -8,9 +9,12 @@ function Home() {
           <h1>Transformamos la Comunicación con Chatbots Inteligentes</h1>
           <p>Integración perfecta con Facebook Messenger, Instagram y WhatsApp</p>
           <div className="video-placeholder">
-            {/* Placeholder para el video demo */}
             <div className="video-container">
-              <div className="video-mock">Video Demo</div>
+              <img 
+                src={demoGif} 
+                alt="Demo del chatbot"
+                className="video-mock"
+              />
             </div>
           </div>
         </div>

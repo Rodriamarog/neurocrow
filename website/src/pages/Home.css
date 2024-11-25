@@ -49,24 +49,19 @@
 
 .video-container {
   position: relative;
-  padding-bottom: 56.25%;
+  padding-bottom: 100%;
   height: 0;
   overflow: hidden;
 }
 
-.video-mock {
+.video-container img {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: #F7FAFC;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-light);
-  font-size: 1.5rem;
-  border: 1px solid var(--color-border);
+  object-fit: contain; /* or 'cover' if you want it to fill the container */
+  background-color: white; /* optional: adds a background if the gif has transparency */
 }
 
 .features {
