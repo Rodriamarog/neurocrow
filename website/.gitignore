@@ -7,7 +7,6 @@
 /coverage
 
 # Production
-/build
 /dist
 
 # Environment variables
