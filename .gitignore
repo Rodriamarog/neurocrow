@@ -55,7 +55,6 @@ src/lambda_deployment.zip
 /coverage
 
 # Production
-/build
 /dist
 
 # Environment variables
@@ -117,7 +116,6 @@ dist
 
 # Gatsby files
 .cache/
-public
 
 # vuepress build output
 .vuepress/dist

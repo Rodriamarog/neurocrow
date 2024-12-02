@@ -7,3 +7,5 @@ schedule==1.2.1
 beautifulsoup4==4.12.2
 langdetect==1.0.9
 deepl==1.15.0
+
+

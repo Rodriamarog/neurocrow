@@ -5,7 +5,7 @@ import './Navbar.css';
 
 function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
-
+  
   return (
     <nav className="navbar">
       <div className="navbar-container">
@@ -14,7 +14,6 @@ function Navbar() {
         <div className="menu-icon" onClick={() => setIsOpen(!isOpen)}>
           <i className={isOpen ? 'fas fa-times' : 'fas fa-bars'} />
         </div>
-
         <ul className={isOpen ? 'nav-menu active' : 'nav-menu'}>
           <li className="nav-item">
             <Link to="/" className="nav-link" onClick={() => setIsOpen(false)}>
@@ -31,10 +30,19 @@ function Navbar() {
               Política de Privacidad
             </Link>
           </li>
+          <li className="nav-item">
+            <Link 
+              to="/login" 
+              className="nav-link login-button" 
+              onClick={() => setIsOpen(false)}
+            >
+              <i className="fab fa-facebook"></i> Conectar Facebook
+            </Link>
+          </li>
         </ul>
       </div>
     </nav>
   );
 }
 
-export default Navbar; 
+export default Navbar;
