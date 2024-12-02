@@ -22,7 +22,6 @@ function Login() {
         // Instagram
         'instagram_basic',
         'instagram_manage_messages',
-        'instagram_business_manage_messages',
         
         // WhatsApp
         'whatsapp_business_management',
