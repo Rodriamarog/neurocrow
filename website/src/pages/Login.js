@@ -15,16 +15,12 @@ function Login() {
         // Facebook Pages
         'pages_show_list',
         'pages_messaging',
-        'pages_read_engagement',
-        'pages_manage_metadata',
-        'business_management',
         
         // Instagram
         'instagram_basic',
         'instagram_manage_messages',
         
         // WhatsApp
-        'whatsapp_business_management',
         'whatsapp_business_messaging'
       ].join(',')
     });
