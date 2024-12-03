@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Home from './pages/Home';
 import Login from './pages/Login'; 
+import Success from './pages/Success'; 
 import TerminosServicio from './pages/TerminosServicio';
 import PoliticaPrivacidad from './pages/PoliticaPrivacidad';
 import './index.css';
@@ -113,6 +114,7 @@ function App() {
          <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} /> {/* Add this line */}
+              <Route path="/success" element={<Success />} />
             <Route path="/terminos-de-servicio" element={<TerminosServicio />} />
             <Route path="/politica-de-privacidad" element={<PoliticaPrivacidad />} />
          </Routes>
