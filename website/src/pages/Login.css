@@ -46,3 +46,34 @@
 .facebook-login-btn:hover {
   background: #166FE5;
 }
+
+/* New verification styles that match your design system */
+.verification-message {
+  text-align: center;
+}
+
+.verification-message h2 {
+  color: var(--color-primary);
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.verification-message p {
+  color: var(--color-text-light);
+  margin-bottom: 2rem;
+}
+
+.loading-spinner {
+  color: #1877F2;
+  font-size: 2rem;
+  margin-top: 1.5rem;
+}
+
+.loading-spinner i {
+  animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
