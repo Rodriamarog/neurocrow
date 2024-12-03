@@ -15,7 +15,7 @@ function TerminosServicio() {
           <p>NeuroCrow proporciona:</p>
           <ul>
             <li>Chatbots personalizados para atención al cliente</li>
-            <li>Integración con Facebook Messenger y WhatsApp Business</li>
+            <li>Integración con Facebook Messenger, Instagram y WhatsApp Business</li>
             <li>Automatización de respuestas según sus necesidades</li>
             <li>Panel de control para gestión de conversaciones</li>
             <li>Análisis y reportes de interacciones</li>
