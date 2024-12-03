@@ -9,39 +9,78 @@
       name="description"
       content="Neurocrow - Desarrollo de chatbots inteligentes para empresas"
     />
-    <!-- Add this CSP meta tag -->
     <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src * 'unsafe-inline'; img-src * data: blob: 'unsafe-inline'; frame-src *; style-src * 'unsafe-inline';">
     
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <link
-      rel="stylesheet"
+
+    <!-- Optimized Font Awesome loading -->
+    <link 
+      rel="preload"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
-    <link
+    <noscript>
+      <link 
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      />
+    </noscript>
+
+    <!-- Preload Google Fonts -->
+    <link 
+      rel="preload"
       href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap"
-      rel="stylesheet"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
     
-    <!-- FB SDK initialization -->
+    <!-- Optimized Facebook SDK loading -->
     <script>
       window.fbAsyncInit = function() {
         FB.init({
-          appId: '1195277397801905',
-          autoLogAppEvents: true,
-          xfbml: true,
+          appId: '1195277397801905', // Replace with your app ID
+          cookie: true,
+          xfbml: false,
           version: 'v18.0'
         });
       };
+
+      // Load Facebook SDK with delay and error handling
+      setTimeout(function() {
+        var loadFacebookSDK = function() {
+          return new Promise(function(resolve, reject) {
+            var js = document.createElement('script');
+            js.src = "https://connect.facebook.net/es_LA/sdk.js";
+            js.async = true;
+            js.defer = true;
+            js.crossOrigin = "anonymous";
+            js.id = 'facebook-jssdk';
+            
+            js.onload = resolve;
+            js.onerror = function() {
+              console.log('Failed to load Facebook SDK, retrying...');
+              document.getElementById('facebook-jssdk')?.remove();
+              setTimeout(loadFacebookSDK, 2000); // Retry after 2 seconds
+            };
+
+            var fjs = document.getElementsByTagName('script')[0];
+            fjs.parentNode.insertBefore(js, fjs);
+          });
+        };
+
+        loadFacebookSDK().catch(function(error) {
+          console.error('Error loading Facebook SDK:', error);
+        });
+      }, 1000);
     </script>
-    
-    <!-- Modified FB SDK script load -->
-    <script 
-      async 
-      defer 
-      crossorigin="anonymous" 
-      src="https://connect.facebook.net/es_LA/sdk.js"
-    ></script>
     
     <title>Neurocrow - Chatbots Inteligentes</title>
   </head>
