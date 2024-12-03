@@ -1,32 +1,18 @@
-:root {
-  --logo-primary: #2D3748;
-  --logo-accent: #0070F3;
-}
-
-.logo-link {
-  text-decoration: none;
-}
-
 .logo {
-  font-family: 'Quicksand', sans-serif;
-  font-weight: 700;
-  font-size: 1.8rem;
-  letter-spacing: 1px;
   display: flex;
   align-items: center;
-  gap: 2px;
+  text-decoration: none;
+  padding: 0px 0;
 }
 
-.logo-neuro {
-  color: var(--logo-primary);
-}
-
-.logo-crow {
-  color: var(--logo-accent);
+.logo-image {
+  height: 80px;
+  width: auto;
+  object-fit: contain;
 }
 
 @media screen and (max-width: 768px) {
-  .logo {
-    font-size: 1.5rem;
+  .logo-image {
+    height: 30px; /* smaller on mobile if needed */
   }
-} 
+}
