@@ -34,7 +34,7 @@ function Login() {
     <div className="login-container">
       <div className="login-box">
         <h1>Conecta tus cuentas</h1>
-        <p>Para comenzar, necesitamos acceso a tus cuentas de redes sociales</p>
+        <p>Para comenzar, conecta tus cuentas de redes sociales a nuestra app</p>
         <button onClick={handleFacebookLogin} className="facebook-login-btn">
           <i className="fab fa-facebook"></i> Continuar con Facebook
         </button>
