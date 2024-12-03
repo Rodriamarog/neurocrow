@@ -1,12 +1,16 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Login.css';
 
 function Login() {
+  const navigate = useNavigate();
+
   const handleFacebookLogin = () => {
     window.FB.login(function(response) {
       if (response.authResponse) {
         console.log('Successfully logged in:', response);
-        // Handle successful login
+        // Navigate to success page after successful login
+        navigate('/success');
       } else {
         console.log('User cancelled login or did not fully authorize.');
       }
