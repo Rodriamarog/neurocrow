@@ -6,7 +6,7 @@ function Logo() {
   return (
     <Link to="/" className="logo">
       <img 
-        src="/neurocrow_logo.png" 
+        src="/neurocrow-logo.png" 
         alt="Neurocrow" 
         className="logo-image"
       />
