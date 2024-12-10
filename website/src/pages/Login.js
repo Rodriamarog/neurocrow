@@ -61,15 +61,13 @@ function Login() {
       scope: [
         // Facebook Pages
         'pages_show_list',
+        'pages_manage_metadata', // Required dependency for pages_messaging
         'pages_messaging',
-        
         // Instagram
         'instagram_basic',
         'instagram_manage_messages',
-        
-        // WhatsApp
-        'whatsapp_business_messaging'
       ].join(','),
+      
       auth_type: 'rerequest' // This forces Facebook to show the permissions dialog
     });
   };
