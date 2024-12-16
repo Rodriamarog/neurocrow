@@ -1,0 +1,28 @@
+{{define "message-list"}}
+<div class="divide-y">
+    {{range .Messages}}
+    <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
+         hx-get="/chat?thread_id={{.ThreadID}}"
+         hx-target="#chat-view"
+         hx-trigger="click"
+         _="on htmx:afterOnLoad remove .hidden from #chat-view then remove .translate-x-full from #chat-view">
+        <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center">
+                <div class="w-2 h-2 {{if eq .Platform "facebook"}}bg-blue-500{{else}}bg-pink-500{{end}} rounded-full mr-2"></div>
+                <span class="text-sm font-medium {{if eq .Platform "facebook"}}text-blue-600{{else}}text-pink-600{{end}}">
+                    {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
+                </span>
+            </div>
+            <span class="text-xs text-gray-500">{{.Timestamp.Format "15:04"}}</span>
+        </div>
+        <div class="flex items-center">
+            <div class="h-12 w-12 rounded-full bg-gray-200"></div>
+            <div class="ml-3 flex-1">
+                <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>
+                <div class="text-sm text-gray-500 truncate">{{.Content}}</div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}

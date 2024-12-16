@@ -141,3 +141,53 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Ignore stuff inside auto-poster
+
+auto-poster/node_modules/
+auto-poster/venv/
+auto-poster/*.venv/
+auto-poster/env/
+auto-poster/ENV/
+
+# Compiled files and cache
+auto-poster/__pycache__/
+auto-poster/*.pyc
+auto-poster/*.pyo
+auto-poster/*.pyd
+auto-poster/*.db
+auto-poster/*.sqlite3
+
+# AWS CLI zipped file
+auto-poster/awscliv2.zip
+
+# Terraform state and logs
+auto-poster/*.tfstate
+auto-poster/*.tfstate.*
+auto-poster/.terraform/
+auto-poster/.terraform.lock.hcl
+
+# Dependency logs and lock files
+auto-poster/package-lock.json
+auto-poster/requirements.txt.lock
+
+# Log files
+auto-poster/npm-debug.log*
+auto-poster/yarn-debug.log*
+auto-poster/yarn-error.log*
+auto-poster/*.log
+
+# OS generated files
+auto-poster/.DS_Store
+auto-poster/Thumbs.db
+
+# IDE/Editor files
+auto-poster/.vscode/
+auto-poster/.idea/
+auto-poster/*.iml
+auto-poster/*.sw?
+auto-poster/*.sublime-project
+auto-poster/*.sublime-workspace
+
+# Documentation artifacts
+auto-poster/docs/_build/
