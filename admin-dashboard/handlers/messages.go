@@ -170,9 +170,21 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Instead of calling GetChat directly, set the thread_id in the URL query
-    r.URL.RawQuery = "thread_id=" + threadID
-    GetChat(w, r)
+    // Render only the new message
+    tmpl := template.Must(template.New("message").Parse(`
+        <div class="flex items-start max-w-[85%] justify-end ml-auto">
+            <div class="bg-indigo-600 text-white rounded-lg px-4 py-2">
+                <p class="text-sm">{{.}}</p>
+            </div>
+        </div>
+    `))
+
+    err = tmpl.Execute(w, content)
+    if err != nil {
+        log.Printf("Error executing template: %v", err)
+        http.Error(w, "Error rendering message", http.StatusInternalServerError)
+        return
+    }
 }
 
 func GetMessageList(w http.ResponseWriter, r *http.Request) {

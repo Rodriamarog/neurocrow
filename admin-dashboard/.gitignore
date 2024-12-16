@@ -1,1 +1,36 @@
+# Go binaries and build files
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Environment files
 .env
+*.env
+.env.*
+
+# Go workspace file
+go.work
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Temporary files
+tmp/
+temp/
+
+# Log files
+*.log
+
+# Binary output directory
+bin/
