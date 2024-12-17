@@ -4,6 +4,7 @@ import (
     "log"
     "net/http"
     "html/template"
+    "strings"
     "admin-dashboard/db"
     "admin-dashboard/models"
 )
@@ -43,28 +44,16 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
         messages = append(messages, msg)
     }
 
-    // Parse templates
-    tmpl := template.New("")
-    
-    // Parse component templates first
-    _, err = tmpl.ParseFiles(
+    // Create a new template with all required files
+    tmpl, err := template.ParseFiles(
+        "templates/layout.html",
+        "templates/messages.html",
         "templates/components/message-list.html",
         "templates/components/chat-view.html",
     )
     if err != nil {
-        log.Printf("Error parsing components: %v", err)
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
-
-    // Then parse main templates
-    _, err = tmpl.ParseFiles(
-        "templates/layout.html",
-        "templates/messages.html",
-    )
-    if err != nil {
-        log.Printf("Error parsing main templates: %v", err)
-        http.Error(w, err.Error(), http.StatusInternalServerError)
+        log.Printf("Error parsing templates: %v", err)
+        http.Error(w, "Error loading templates", http.StatusInternalServerError)
         return
     }
 
@@ -73,11 +62,11 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
         "Messages": messages,
     }
 
-    // Execute template with data
-    err = tmpl.ExecuteTemplate(w, "layout.html", data)
-    if err != nil {
-        log.Printf("Error executing template: %v", err)
-        http.Error(w, err.Error(), http.StatusInternalServerError)
+    // Execute template with data, ignore broken pipe errors
+    if err := tmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
+        if !strings.Contains(err.Error(), "write: broken pipe") {
+            log.Printf("Error executing template: %v", err)
+        }
         return
     }
 }
@@ -139,7 +128,13 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
     }
 
     threadID := r.FormValue("thread_id")
-    content := r.FormValue("message")
+    content := strings.TrimSpace(r.FormValue("message"))
+
+    // Prevent empty messages
+    if content == "" {
+        http.Error(w, "Empty message", http.StatusBadRequest)
+        return
+    }
 
     // Insert the new message
     _, err = db.DB.Exec(`
