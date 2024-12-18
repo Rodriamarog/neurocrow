@@ -12,14 +12,28 @@ import (
 func GetMessages(w http.ResponseWriter, r *http.Request) {
     // Fetch messages from database
     rows, err := db.DB.Query(`
-        WITH latest_messages AS (
-            SELECT DISTINCT ON (thread_id) 
-                id, client_id, page_id, platform, from_user,
-                content, timestamp, thread_id, read
+        WITH thread_owner AS (
+            -- Get first message of each thread
+            SELECT DISTINCT ON (thread_id)
+                thread_id, 
+                from_user as original_sender
             FROM messages
+            ORDER BY thread_id, timestamp ASC
+        ),
+        latest_messages AS (
+            -- Get latest message of each thread
+            SELECT DISTINCT ON (thread_id)
+                m.*, 
+                t.original_sender as thread_owner
+            FROM messages m
+            JOIN thread_owner t ON m.thread_id = t.thread_id
             ORDER BY thread_id, timestamp DESC
         )
-        SELECT * FROM latest_messages
+        SELECT 
+            id, client_id, page_id, platform,
+            thread_owner as from_user,  
+            content, timestamp, thread_id, read
+        FROM latest_messages
         ORDER BY timestamp DESC
     `)
     if err != nil {
