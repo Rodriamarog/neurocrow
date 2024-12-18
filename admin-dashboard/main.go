@@ -21,6 +21,7 @@ func main() {
     http.HandleFunc("/messages", limiter.ViewLimit.RateLimit(handlers.GetMessageList))
     http.HandleFunc("/chat", limiter.ViewLimit.RateLimit(handlers.GetChat))
     http.HandleFunc("/send-message", limiter.MessageLimit.RateLimit(handlers.SendMessage))
+    http.HandleFunc("/thread-preview", limiter.ViewLimit.RateLimit(handlers.GetThreadPreview))
 
     port := os.Getenv("PORT")
     if port == "" {

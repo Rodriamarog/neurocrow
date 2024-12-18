@@ -93,8 +93,7 @@
                     <!-- Message List Wrapper with polling -->
                     <div id="message-list-wrapper"
                          hx-get="/messages"
-                         hx-target="#message-list-wrapper"
-                         hx-trigger="every 10s">
+                         hx-target="#message-list-wrapper">
                         {{template "message-list" .}}
                     </div>
                 </div>

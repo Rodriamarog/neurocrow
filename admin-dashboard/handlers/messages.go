@@ -174,16 +174,26 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Simplify the template to just show the message
-    tmpl := template.Must(template.New("message").Parse(`
-        <div class="flex items-start max-w-[85%] justify-end ml-auto">
+    // After successfully sending the message, return both the message and trigger preview update
+    tmpl := template.Must(template.New("message-response").Parse(`
+        <div class="flex items-start max-w-[85%] justify-end ml-auto"
+             hx-get="/thread-preview?thread_id={{.ThreadID}}"
+             hx-target="#thread-preview-{{.ThreadID}}"
+             hx-trigger="load"
+             hx-swap="outerHTML">
             <div class="bg-indigo-600 text-white rounded-lg px-4 py-2">
-                <p class="text-sm">{{.}}</p>
+                <p class="text-sm">{{.Content}}</p>
             </div>
         </div>
     `))
 
-    err = tmpl.Execute(w, content)
+    err = tmpl.Execute(w, struct {
+        ThreadID string
+        Content  string
+    }{
+        ThreadID: threadID,
+        Content:  content,
+    })
     if err != nil {
         log.Printf("Error executing template: %v", err)
         http.Error(w, "Error rendering message", http.StatusInternalServerError)
@@ -253,4 +263,69 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
     tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
         "Messages": messages,
     })
+}
+
+func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
+    threadID := r.URL.Query().Get("thread_id")
+    
+    // Query for just this thread's latest message
+    row := db.DB.QueryRow(`
+        WITH thread_owner AS (
+            SELECT DISTINCT ON (thread_id)
+                thread_id, 
+                from_user as original_sender
+            FROM messages
+            WHERE thread_id = $1
+            ORDER BY thread_id, timestamp ASC
+        )
+        SELECT 
+            m.id, m.client_id, m.page_id, m.platform,
+            t.original_sender as from_user,
+            m.content, m.timestamp, m.thread_id, m.read
+        FROM messages m
+        JOIN thread_owner t ON m.thread_id = t.thread_id
+        WHERE m.thread_id = $1
+        ORDER BY m.timestamp DESC
+        LIMIT 1
+    `, threadID)
+
+    var msg models.Message
+    err := row.Scan(
+        &msg.ID, &msg.ClientID, &msg.PageID, &msg.Platform,
+        &msg.FromUser, &msg.Content, &msg.Timestamp,
+        &msg.ThreadID, &msg.Read,
+    )
+    if err != nil {
+        log.Printf("Error scanning message: %v", err)
+        http.Error(w, "Error fetching thread preview", http.StatusInternalServerError)
+        return
+    }
+
+    tmpl := template.Must(template.New("thread-preview").Parse(`
+    <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
+         id="thread-preview-{{.ThreadID}}"
+         hx-get="/chat?thread_id={{.ThreadID}}"
+         hx-target="#chat-view"
+         hx-trigger="click"
+         _="on htmx:afterOnLoad remove .hidden from #chat-view then remove .translate-x-full from #chat-view">
+        <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center">
+                <div class="w-2 h-2 {{if eq .Platform "facebook"}}bg-blue-500{{else}}bg-pink-500{{end}} rounded-full mr-2"></div>
+                <span class="text-sm font-medium {{if eq .Platform "facebook"}}text-blue-600{{else}}text-pink-600{{end}}">
+                    {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
+                </span>
+            </div>
+            <span class="text-xs text-gray-500">{{.Timestamp.Format "15:04"}}</span>
+        </div>
+        <div class="flex items-center">
+            <div class="h-12 w-12 rounded-full bg-gray-200"></div>
+            <div class="ml-3 flex-1">
+                <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>
+                <div class="text-sm text-gray-500 truncate">{{.Content}}</div>
+            </div>
+        </div>
+    </div>
+    `))
+
+    tmpl.Execute(w, msg)
 }

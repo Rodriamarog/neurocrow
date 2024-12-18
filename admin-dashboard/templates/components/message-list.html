@@ -2,6 +2,7 @@
 <div class="divide-y">
     {{range .Messages}}
     <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
+         id="thread-preview-{{.ThreadID}}"
          hx-get="/chat?thread_id={{.ThreadID}}"
          hx-target="#chat-view"
          hx-trigger="click"
