@@ -13,11 +13,14 @@ func main() {
     db.Init()
     defer db.DB.Close()
 
-    // Routes
-    http.HandleFunc("/", handlers.GetMessages)
-    http.HandleFunc("/messages", handlers.GetMessageList)  // Add this line
-    http.HandleFunc("/chat", handlers.GetChat)
-    http.HandleFunc("/send-message", handlers.SendMessage)
+    // Create rate limiters with different thresholds
+    limiter := handlers.NewRateLimiter()
+
+    // Routes with appropriate rate limiting
+    http.HandleFunc("/", limiter.ViewLimit.RateLimit(handlers.GetMessages))
+    http.HandleFunc("/messages", limiter.ViewLimit.RateLimit(handlers.GetMessageList))
+    http.HandleFunc("/chat", limiter.ViewLimit.RateLimit(handlers.GetChat))
+    http.HandleFunc("/send-message", limiter.MessageLimit.RateLimit(handlers.SendMessage))
 
     port := os.Getenv("PORT")
     if port == "" {
