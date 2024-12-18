@@ -77,7 +77,7 @@
                 </header>
 
                 <!-- Message List -->
-                <div class="flex-1 overflow-y-auto" id="message-list">
+                <div class="flex-1 overflow-y-auto">
                     <!-- Search -->
                     <div class="p-4 sticky top-0 bg-white border-b">
                         <div class="relative">
@@ -90,14 +90,23 @@
                         </div>
                     </div>
 
-                    {{template "message-list" .}}
+                    <!-- Message List Wrapper with polling -->
+                    <div id="message-list-wrapper"
+                         hx-get="/messages"
+                         hx-target="#message-list-wrapper"
+                         hx-trigger="every 10s">
+                        {{template "message-list" .}}
+                    </div>
                 </div>
             </div>
 
             <!-- Chat View Container -->
-            <div class="hidden fixed inset-0 z-20 bg-white transform transition-transform duration-300 translate-x-full lg:relative lg:inset-auto lg:transform-none lg:flex-1 lg:flex lg:flex-col min-h-0" 
+            <div class="hidden fixed inset-0 z-20 bg-white transform transition-transform duration-300 translate-x-full lg:translate-x-0 lg:relative lg:inset-auto lg:flex-1 lg:flex lg:flex-col lg:min-h-0 lg:w-full" 
                  id="chat-view"
-                 _="on click of .back-button add .translate-x-full wait 300ms add .hidden">
+                 _="on click from .back-button 
+                    add .translate-x-full 
+                    wait 300ms 
+                    add .hidden">
             </div>
         </div>
     </div>

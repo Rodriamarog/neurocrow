@@ -28,20 +28,9 @@
     <div id="messages-container" 
          class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
          hx-swap="beforeend"
-         _="on load
-              init
-                set my.scrollTop to my.scrollHeight
-              end
-            on htmx:beforeRequest
-              set @shouldScroll to true
-            on htmx:afterRequest
-              if @shouldScroll
-                wait 10ms
-                set my.scrollTop to my.scrollHeight
-              end
-            on htmx:afterSwap
-              wait 10ms
-              set my.scrollTop to my.scrollHeight">
+         _="on htmx:afterSwap 
+            wait 10ms 
+            set my.scrollTop to my.scrollHeight">
         {{range .Messages}}
         <div class="flex items-start max-w-[85%] {{if eq .FromUser "admin"}}justify-end ml-auto{{end}}">
             {{if ne .FromUser "admin"}}
@@ -56,46 +45,43 @@
 
 
     <!-- Fixed Input Area -->
-    <div class="flex-none p-4 border-t bg-white">
-        <form id="message-form" 
-              class="flex items-center space-x-2" 
-              hx-post="/send-message" 
-              hx-target="#messages-container"
-              hx-swap="beforeend"
-              _="on submit
-                   if #message-input.value.trim() === '' 
-                     halt the event
-                   end
-                 on htmx:beforeRequest
-                   if #message-input.value.trim() === ''
-                     halt the event
-                   end
-                 on htmx:afterRequest
-                   if event.detail.successful
-                     set #message-input.value to ''
-                     focus() on #message-input">
-            <input type="hidden" name="thread_id" value="{{with index .Messages 0}}{{.ThreadID}}{{end}}">
-            <button type="button" class="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
-                </svg>
-            </button>
-            <input type="text" 
-                   id="message-input"
-                   name="message"
-                   autocomplete="off"
-                   class="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:border-indigo-500" 
-                   placeholder="Type your message..."
-                   _="on keydown[key is 'Enter'] 
-                      halt the event
-                      if my.value.trim() !== '' 
-                        trigger submit on closest('form')">
-            <button type="submit" class="p-2 text-white bg-indigo-600 rounded-full hover:bg-indigo-700">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
-            </button>
-        </form>
+    <form id="message-form" 
+          class="flex items-center space-x-2 p-4 border-t bg-white" 
+          hx-post="/send-message" 
+          hx-target="#messages-container"
+          hx-swap="beforeend"
+          _="on keydown[key is 'Enter'] from #message-input
+               halt the event
+               if #message-input.value.trim() !== ''
+                 trigger submit
+               end
+             on submit
+               if #message-input.value.trim() === ''
+                 halt the event
+               end
+             on htmx:afterRequest
+               if event.detail.successful
+                 set #message-input.value to ''
+                 focus() on #message-input
+                 trigger refresh on #message-list-wrapper">
+        <input type="hidden" name="thread_id" value="{{with index .Messages 0}}{{.ThreadID}}{{end}}">
+        <button type="button" class="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+            </svg>
+        </button>
+        <input type="text" 
+               id="message-input"
+               name="message"
+               autocomplete="off"
+               class="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:border-indigo-500" 
+               placeholder="Type your message...">
+        <button type="submit" class="p-2 text-white bg-indigo-600 rounded-full hover:bg-indigo-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+        </button>
+    </form>
     </div>
 </div>
 {{end}}

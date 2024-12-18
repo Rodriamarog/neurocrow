@@ -74,6 +74,7 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 func GetChat(w http.ResponseWriter, r *http.Request) {
     // Get the thread_id from the message that was clicked
     threadID := r.URL.Query().Get("thread_id")
+    log.Printf("GetChat called with thread_id: %s", threadID)
     
     // Fetch messages for this thread
     rows, err := db.DB.Query(`
@@ -105,12 +106,20 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
         messages = append(messages, msg)
     }
 
+    log.Printf("Found %d messages for thread %s", len(messages), threadID)
+
     data := map[string]interface{}{
         "Messages": messages,
     }
 
     tmpl := template.Must(template.ParseFiles("templates/components/chat-view.html"))
-    tmpl.ExecuteTemplate(w, "chat-view", data)
+    err = tmpl.ExecuteTemplate(w, "chat-view", data)
+    if err != nil {
+        log.Printf("Error executing template: %v", err)
+        http.Error(w, "Error rendering chat", http.StatusInternalServerError)
+        return
+    }
+    log.Printf("Successfully rendered chat view for thread %s", threadID)
 }
 
 func SendMessage(w http.ResponseWriter, r *http.Request) {
@@ -165,14 +174,9 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Modify the template to include multiple scroll triggers
+    // Simplify the template to just show the message
     tmpl := template.Must(template.New("message").Parse(`
-        <div class="flex items-start max-w-[85%] justify-end ml-auto"
-             _="on load
-                wait 10ms
-                call closest('#messages-container').scrollTo(0, closest('#messages-container').scrollHeight)
-                wait 50ms
-                call closest('#messages-container').scrollTo(0, closest('#messages-container').scrollHeight)">
+        <div class="flex items-start max-w-[85%] justify-end ml-auto">
             <div class="bg-indigo-600 text-white rounded-lg px-4 py-2">
                 <p class="text-sm">{{.}}</p>
             </div>
@@ -208,7 +212,7 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
         )
         SELECT 
             id, client_id, page_id, platform,
-            thread_owner as from_user,  -- Use thread owner instead of message sender
+            thread_owner as from_user,  
             content, timestamp, thread_id, read
         FROM latest_messages
         ORDER BY timestamp DESC
@@ -235,6 +239,16 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
         messages = append(messages, msg)
     }
 
+    // If this is an HTMX request, just return the message list partial
+    if r.Header.Get("HX-Request") == "true" {
+        tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
+        tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
+            "Messages": messages,
+        })
+        return
+    }
+
+    // Otherwise return the full template
     tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
     tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
         "Messages": messages,

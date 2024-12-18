@@ -13,8 +13,8 @@ type RateLimiter struct {
 
 func NewRateLimiter() *RateLimiter {
     return &RateLimiter{
-        MessageLimit: NewIPRateLimiter(120, time.Minute),
-        ViewLimit:    NewIPRateLimiter(600, time.Minute),
+        MessageLimit: NewIPRateLimiter(300, time.Minute),  // 300 per minute for testing
+        ViewLimit:    NewIPRateLimiter(1200, time.Minute), // 1200 per minute for testing
     }
 }
 
