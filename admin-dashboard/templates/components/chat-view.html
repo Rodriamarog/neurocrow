@@ -28,9 +28,20 @@
     <div id="messages-container" 
          class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
          hx-swap="beforeend"
-         _="on htmx:afterSwap 
+         _="on load
+            set my.scrollTop to my.scrollHeight
+            on htmx:afterSwap 
             wait 10ms 
-            set my.scrollTop to my.scrollHeight">
+            set my.scrollTop to my.scrollHeight
+            on scroll
+            if (event.target.scrollHeight - event.target.scrollTop - event.target.clientHeight) > 500
+               remove .opacity-0 from #scroll-bottom-btn
+               remove .pointer-events-none from #scroll-bottom-btn
+            else
+               add .at-bottom to me
+               add .opacity-0 to #scroll-bottom-btn
+               add .pointer-events-none to #scroll-bottom-btn
+            end">
         {{range .Messages}}
         <div class="flex items-start max-w-[85%] {{if eq .FromUser "admin"}}justify-end ml-auto{{end}}">
             {{if ne .FromUser "admin"}}
@@ -43,6 +54,17 @@
         {{end}}
     </div>
 
+    <!-- Scroll to Bottom Button -->
+    <button 
+        id="scroll-bottom-btn"
+        class="fixed left-1/2 -translate-x-1/2 bottom-24 bg-white text-gray-800 rounded-full px-4 py-2 shadow-lg opacity-0 transition-opacity duration-200 hover:bg-gray-50 pointer-events-none flex items-center space-x-2"
+        _="on click
+           set #messages-container.scrollTop to #messages-container.scrollHeight">
+        <span class="text-sm font-medium">Scroll to bottom</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+        </svg>
+    </button>
 
     <!-- Fixed Input Area -->
     <form id="message-form" 
