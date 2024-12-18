@@ -33,11 +33,15 @@
                 set my.scrollTop to my.scrollHeight
               end
             on htmx:beforeRequest
-              set @fromSender to true
+              set @shouldScroll to true
             on htmx:afterRequest
-              if @fromSender
+              if @shouldScroll
+                wait 10ms
                 set my.scrollTop to my.scrollHeight
-              end">
+              end
+            on htmx:afterSwap
+              wait 10ms
+              set my.scrollTop to my.scrollHeight">
         {{range .Messages}}
         <div class="flex items-start max-w-[85%] {{if eq .FromUser "admin"}}justify-end ml-auto{{end}}">
             {{if ne .FromUser "admin"}}

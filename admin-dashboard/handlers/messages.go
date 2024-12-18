@@ -165,9 +165,14 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Render only the new message
+    // Modify the template to include multiple scroll triggers
     tmpl := template.Must(template.New("message").Parse(`
-        <div class="flex items-start max-w-[85%] justify-end ml-auto">
+        <div class="flex items-start max-w-[85%] justify-end ml-auto"
+             _="on load
+                wait 10ms
+                call closest('#messages-container').scrollTo(0, closest('#messages-container').scrollHeight)
+                wait 50ms
+                call closest('#messages-container').scrollTo(0, closest('#messages-container').scrollHeight)">
             <div class="bg-indigo-600 text-white rounded-lg px-4 py-2">
                 <p class="text-sm">{{.}}</p>
             </div>
@@ -183,16 +188,29 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetMessageList(w http.ResponseWriter, r *http.Request) {
-    // Fetch only the latest message from each thread
     rows, err := db.DB.Query(`
-        WITH latest_messages AS (
-            SELECT DISTINCT ON (thread_id) 
-                id, client_id, page_id, platform, from_user,
-                content, timestamp, thread_id, read
+        WITH thread_owner AS (
+            -- Get first message of each thread
+            SELECT DISTINCT ON (thread_id)
+                thread_id, 
+                from_user as original_sender
             FROM messages
+            ORDER BY thread_id, timestamp ASC
+        ),
+        latest_messages AS (
+            -- Get latest message of each thread
+            SELECT DISTINCT ON (thread_id)
+                m.*, 
+                t.original_sender as thread_owner
+            FROM messages m
+            JOIN thread_owner t ON m.thread_id = t.thread_id
             ORDER BY thread_id, timestamp DESC
         )
-        SELECT * FROM latest_messages
+        SELECT 
+            id, client_id, page_id, platform,
+            thread_owner as from_user,  -- Use thread owner instead of message sender
+            content, timestamp, thread_id, read
+        FROM latest_messages
         ORDER BY timestamp DESC
     `)
     if err != nil {
@@ -217,7 +235,6 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
         messages = append(messages, msg)
     }
 
-    // Parse only the message-list template
     tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
     tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
         "Messages": messages,

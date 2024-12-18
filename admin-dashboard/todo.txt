@@ -1,3 +1,2 @@
 Dic 16, 2024
-We still have the scrolling us up slightly on new messages issue. Seems fucking impossible to fix
-lol
+Fix the 'admin' thread title annoying ass bug.
