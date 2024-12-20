@@ -9,6 +9,17 @@ import (
     "admin-dashboard/models"
 )
 
+var tmpl *template.Template
+
+func init() {
+    tmpl = template.Must(template.ParseFiles(
+        "templates/layout.html",
+        "templates/messages.html",
+        "templates/components/message-list.html",
+        "templates/components/chat-view.html",
+    ))
+}
+
 func GetMessages(w http.ResponseWriter, r *http.Request) {
     // Fetch messages from database
     rows, err := db.DB.Query(`
@@ -58,19 +69,6 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
         messages = append(messages, msg)
     }
 
-    // Create a new template with all required files
-    tmpl, err := template.ParseFiles(
-        "templates/layout.html",
-        "templates/messages.html",
-        "templates/components/message-list.html",
-        "templates/components/chat-view.html",
-    )
-    if err != nil {
-        log.Printf("Error parsing templates: %v", err)
-        http.Error(w, "Error loading templates", http.StatusInternalServerError)
-        return
-    }
-
     // Pass the messages to the template
     data := map[string]interface{}{
         "Messages": messages,
@@ -78,7 +76,7 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 
     // Execute template with data, ignore broken pipe errors
     if err := tmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
-        if !strings.Contains(err.Error(), "write: broken pipe") {
+        if (!strings.Contains(err.Error(), "write: broken pipe")) {
             log.Printf("Error executing template: %v", err)
         }
         return

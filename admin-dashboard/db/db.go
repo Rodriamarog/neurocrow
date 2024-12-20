@@ -37,3 +37,9 @@ func Init() {
 
     log.Println("Successfully connected to database!")
 }
+
+func Close() {
+    if DB != nil {
+        DB.Close()
+    }
+}
