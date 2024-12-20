@@ -1,30 +1,27 @@
 package handlers
 
 import (
-    "log"
-    "net/http"
-    "html/template"
-    "strings"
-    "admin-dashboard/db"
-    "admin-dashboard/models"
+	"admin-dashboard/db"
+	"html/template"
+	"log"
+	"net/http"
+	"strings"
 )
 
 var tmpl *template.Template
 
 func init() {
-    tmpl = template.Must(template.ParseFiles(
-        "templates/layout.html",
-        "templates/messages.html",
-        "templates/components/message-list.html",
-        "templates/components/chat-view.html",
-    ))
+	tmpl = template.Must(template.ParseFiles(
+		"templates/layout.html",
+		"templates/messages.html",
+		"templates/components/message-list.html",
+		"templates/components/chat-view.html",
+	))
 }
 
 func GetMessages(w http.ResponseWriter, r *http.Request) {
-    // Fetch messages from database
-    rows, err := db.DB.Query(`
+	query := `
         WITH thread_owner AS (
-            -- Get first message of each thread
             SELECT DISTINCT ON (thread_id)
                 thread_id, 
                 from_user as original_sender
@@ -32,7 +29,6 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
             ORDER BY thread_id, timestamp ASC
         ),
         latest_messages AS (
-            -- Get latest message of each thread
             SELECT DISTINCT ON (thread_id)
                 m.*, 
                 t.original_sender as thread_owner
@@ -46,119 +42,77 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
             content, timestamp, thread_id, read
         FROM latest_messages
         ORDER BY timestamp DESC
-    `)
-    if err != nil {
-        log.Printf("Error fetching messages: %v", err)
-        http.Error(w, "Error fetching messages", http.StatusInternalServerError)
-        return
-    }
-    defer rows.Close()
+    `
+	messages, err := db.FetchMessages(query)
+	if err != nil {
+		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
+		return
+	}
 
-    var messages []models.Message
-    for rows.Next() {
-        var msg models.Message
-        err := rows.Scan(
-            &msg.ID, &msg.ClientID, &msg.PageID, &msg.Platform,
-            &msg.FromUser, &msg.Content, &msg.Timestamp,
-            &msg.ThreadID, &msg.Read,
-        )
-        if err != nil {
-            log.Printf("Error scanning message: %v", err)
-            continue
-        }
-        messages = append(messages, msg)
-    }
+	data := map[string]interface{}{
+		"Messages": messages,
+	}
 
-    // Pass the messages to the template
-    data := map[string]interface{}{
-        "Messages": messages,
-    }
-
-    // Execute template with data, ignore broken pipe errors
-    if err := tmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
-        if (!strings.Contains(err.Error(), "write: broken pipe")) {
-            log.Printf("Error executing template: %v", err)
-        }
-        return
-    }
+	if err := tmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
+		if !strings.Contains(err.Error(), "write: broken pipe") {
+			log.Printf("Error executing template: %v", err)
+		}
+		return
+	}
 }
 
 func GetChat(w http.ResponseWriter, r *http.Request) {
-    // Get the thread_id from the message that was clicked
-    threadID := r.URL.Query().Get("thread_id")
-    log.Printf("GetChat called with thread_id: %s", threadID)
-    
-    // Fetch messages for this thread
-    rows, err := db.DB.Query(`
+	threadID := r.URL.Query().Get("thread_id")
+	log.Printf("GetChat called with thread_id: %s", threadID)
+
+	query := `
         SELECT id, client_id, page_id, platform, from_user, 
                content, timestamp, thread_id, read 
         FROM messages 
         WHERE thread_id = $1
         ORDER BY timestamp ASC
-    `, threadID)
-    if err != nil {
-        log.Printf("Error fetching chat: %v", err)
-        http.Error(w, "Error fetching chat", http.StatusInternalServerError)
-        return
-    }
-    defer rows.Close()
+    `
+	messages, err := db.FetchMessages(query, threadID)
+	if err != nil {
+		db.HandleError(w, err, "Error fetching chat", http.StatusInternalServerError)
+		return
+	}
 
-    var messages []models.Message
-    for rows.Next() {
-        var msg models.Message
-        err := rows.Scan(
-            &msg.ID, &msg.ClientID, &msg.PageID, &msg.Platform,
-            &msg.FromUser, &msg.Content, &msg.Timestamp,
-            &msg.ThreadID, &msg.Read,
-        )
-        if err != nil {
-            log.Printf("Error scanning message: %v", err)
-            continue
-        }
-        messages = append(messages, msg)
-    }
+	log.Printf("Found %d messages for thread %s", len(messages), threadID)
 
-    log.Printf("Found %d messages for thread %s", len(messages), threadID)
+	data := map[string]interface{}{
+		"Messages": messages,
+	}
 
-    data := map[string]interface{}{
-        "Messages": messages,
-    }
-
-    tmpl := template.Must(template.ParseFiles("templates/components/chat-view.html"))
-    err = tmpl.ExecuteTemplate(w, "chat-view", data)
-    if err != nil {
-        log.Printf("Error executing template: %v", err)
-        http.Error(w, "Error rendering chat", http.StatusInternalServerError)
-        return
-    }
-    log.Printf("Successfully rendered chat view for thread %s", threadID)
+	tmpl := template.Must(template.ParseFiles("templates/components/chat-view.html"))
+	if err := tmpl.ExecuteTemplate(w, "chat-view", data); err != nil {
+		db.HandleError(w, err, "Error rendering chat", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Successfully rendered chat view for thread %s", threadID)
 }
 
 func SendMessage(w http.ResponseWriter, r *http.Request) {
-    if r.Method != "POST" {
-        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-    // Parse the form data
-    err := r.ParseForm()
-    if err != nil {
-        log.Printf("Error parsing form: %v", err)
-        http.Error(w, "Error parsing form", http.StatusBadRequest)
-        return
-    }
+	err := r.ParseForm()
+	if err != nil {
+		db.HandleError(w, err, "Error parsing form", http.StatusBadRequest)
+		return
+	}
 
-    threadID := r.FormValue("thread_id")
-    content := strings.TrimSpace(r.FormValue("message"))
+	threadID := r.FormValue("thread_id")
+	content := strings.TrimSpace(r.FormValue("message"))
 
-    // Prevent empty messages
-    if content == "" {
-        http.Error(w, "Empty message", http.StatusBadRequest)
-        return
-    }
+	if content == "" {
+		http.Error(w, "Empty message", http.StatusBadRequest)
+		return
+	}
 
-    // Insert the new message
-    _, err = db.DB.Exec(`
+	_, err = db.DB.Exec(`
         INSERT INTO messages (
             client_id,
             page_id,
@@ -180,14 +134,12 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
         LIMIT 1
     `, content, threadID)
 
-    if err != nil {
-        log.Printf("Error inserting message: %v", err)
-        http.Error(w, "Error sending message", http.StatusInternalServerError)
-        return
-    }
+	if err != nil {
+		db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
+		return
+	}
 
-    // After successfully sending the message, return both the message and trigger preview update
-    tmpl := template.Must(template.New("message-response").Parse(`
+	tmpl := template.Must(template.New("message-response").Parse(`
         <div class="flex items-start max-w-[85%] justify-end ml-auto"
              hx-get="/thread-preview?thread_id={{.ThreadID}}"
              hx-target="#thread-preview-{{.ThreadID}}"
@@ -199,24 +151,21 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
         </div>
     `))
 
-    err = tmpl.Execute(w, struct {
-        ThreadID string
-        Content  string
-    }{
-        ThreadID: threadID,
-        Content:  content,
-    })
-    if err != nil {
-        log.Printf("Error executing template: %v", err)
-        http.Error(w, "Error rendering message", http.StatusInternalServerError)
-        return
-    }
+	if err := tmpl.Execute(w, struct {
+		ThreadID string
+		Content  string
+	}{
+		ThreadID: threadID,
+		Content:  content,
+	}); err != nil {
+		db.HandleError(w, err, "Error rendering message", http.StatusInternalServerError)
+		return
+	}
 }
 
 func GetMessageList(w http.ResponseWriter, r *http.Request) {
-    rows, err := db.DB.Query(`
+	query := `
         WITH thread_owner AS (
-            -- Get first message of each thread
             SELECT DISTINCT ON (thread_id)
                 thread_id, 
                 from_user as original_sender
@@ -224,7 +173,6 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
             ORDER BY thread_id, timestamp ASC
         ),
         latest_messages AS (
-            -- Get latest message of each thread
             SELECT DISTINCT ON (thread_id)
                 m.*, 
                 t.original_sender as thread_owner
@@ -238,50 +186,31 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
             content, timestamp, thread_id, read
         FROM latest_messages
         ORDER BY timestamp DESC
-    `)
-    if err != nil {
-        log.Printf("Error fetching messages: %v", err)
-        http.Error(w, "Error fetching messages", http.StatusInternalServerError)
-        return
-    }
-    defer rows.Close()
+    `
+	messages, err := db.FetchMessages(query)
+	if err != nil {
+		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
+		return
+	}
 
-    var messages []models.Message
-    for rows.Next() {
-        var msg models.Message
-        err := rows.Scan(
-            &msg.ID, &msg.ClientID, &msg.PageID, &msg.Platform,
-            &msg.FromUser, &msg.Content, &msg.Timestamp,
-            &msg.ThreadID, &msg.Read,
-        )
-        if err != nil {
-            log.Printf("Error scanning message: %v", err)
-            continue
-        }
-        messages = append(messages, msg)
-    }
+	if r.Header.Get("HX-Request") == "true" {
+		tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
+		tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
+			"Messages": messages,
+		})
+		return
+	}
 
-    // If this is an HTMX request, just return the message list partial
-    if r.Header.Get("HX-Request") == "true" {
-        tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
-        tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
-            "Messages": messages,
-        })
-        return
-    }
-
-    // Otherwise return the full template
-    tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
-    tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
-        "Messages": messages,
-    })
+	tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
+	tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
+		"Messages": messages,
+	})
 }
 
 func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
-    threadID := r.URL.Query().Get("thread_id")
-    
-    // Query for just this thread's latest message
-    row := db.DB.QueryRow(`
+	threadID := r.URL.Query().Get("thread_id")
+
+	query := `
         WITH thread_owner AS (
             SELECT DISTINCT ON (thread_id)
                 thread_id, 
@@ -299,21 +228,21 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
         WHERE m.thread_id = $1
         ORDER BY m.timestamp DESC
         LIMIT 1
-    `, threadID)
+    `
+	messages, err := db.FetchMessages(query, threadID)
+	if err != nil {
+		db.HandleError(w, err, "Error fetching thread preview", http.StatusInternalServerError)
+		return
+	}
 
-    var msg models.Message
-    err := row.Scan(
-        &msg.ID, &msg.ClientID, &msg.PageID, &msg.Platform,
-        &msg.FromUser, &msg.Content, &msg.Timestamp,
-        &msg.ThreadID, &msg.Read,
-    )
-    if err != nil {
-        log.Printf("Error scanning message: %v", err)
-        http.Error(w, "Error fetching thread preview", http.StatusInternalServerError)
-        return
-    }
+	if len(messages) == 0 {
+		http.Error(w, "No messages found", http.StatusNotFound)
+		return
+	}
 
-    tmpl := template.Must(template.New("thread-preview").Parse(`
+	msg := messages[0]
+
+	tmpl := template.Must(template.New("thread-preview").Parse(`
     <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
          id="thread-preview-{{.ThreadID}}"
          hx-get="/chat?thread_id={{.ThreadID}}"
@@ -339,5 +268,5 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
     </div>
     `))
 
-    tmpl.Execute(w, msg)
+	tmpl.Execute(w, msg)
 }
