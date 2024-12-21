@@ -1,5 +1,5 @@
 {{define "message-list"}}
-<div class="divide-y">
+<div class="divide-y overflow-x-hidden">
     {{range .Messages}}
     <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
          id="thread-preview-{{.ThreadID}}"
@@ -17,8 +17,8 @@
             <span class="text-xs text-gray-500">{{.Timestamp.Format "15:04"}}</span>
         </div>
         <div class="flex items-center">
-            <div class="h-12 w-12 rounded-full bg-gray-200"></div>
-            <div class="ml-3 flex-1">
+            <div class="h-12 w-12 rounded-full bg-gray-200 flex-shrink-0"></div>
+            <div class="ml-3 flex-1 overflow-hidden">
                 <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>
                 <div class="text-sm text-gray-500 truncate">{{.Content}}</div>
             </div>
