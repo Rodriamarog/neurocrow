@@ -1,0 +1,88 @@
+<!-- templates/pages.html -->
+{{define "content"}}
+<div class="px-4 sm:px-6 lg:px-8">
+    <!-- Header -->
+    <div class="sm:flex sm:items-center mb-8">
+        <div class="sm:flex-auto">
+            <h1 class="text-2xl font-semibold">Connected Pages</h1>
+            <p class="mt-2 text-sm text-gray-700">A list of all Facebook and Instagram pages connected to Neurocrow.</p>
+        </div>
+    </div>
+
+    <!-- Pending Pages Section -->
+    <div class="bg-white shadow rounded-lg mb-8">
+        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+            <h2 class="text-lg font-medium">Pending Pages</h2>
+            <p class="mt-1 text-sm text-gray-500">Pages that need to be activated and configured.</p>
+        </div>
+        <div class="divide-y divide-gray-200">
+            {{range .PendingPages}}
+            <div class="p-4 sm:px-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-medium">{{.Name}}</h3>
+                        <div class="mt-1 text-sm text-gray-500">
+                            <p>Client: {{.ClientName}}</p>
+                            <p>Platform: {{.Platform}}</p>
+                            <p class="font-mono">Page ID: {{.PageID}}</p>
+                        </div>
+                    </div>
+                    <div>
+                        <button 
+                            hx-post="/activate-page"
+                            hx-vals='{"pageId": "{{.ID}}"}'
+                            class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                            Activate Page
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {{end}}
+            {{if not .PendingPages}}
+            <div class="p-4 text-center text-gray-500">
+                No pending pages to activate
+            </div>
+            {{end}}
+        </div>
+    </div>
+
+    <!-- Active Pages Section -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+            <h2 class="text-lg font-medium">Active Pages</h2>
+            <p class="mt-1 text-sm text-gray-500">Currently active pages and their configurations.</p>
+        </div>
+        <div class="divide-y divide-gray-200">
+            {{range .ActivePages}}
+            <div class="p-4 sm:px-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-medium">{{.Name}}</h3>
+                        <div class="mt-1 text-sm text-gray-500">
+                            <p>Client: {{.ClientName}}</p>
+                            <p>Platform: {{.Platform}}</p>
+                            <p>Botpress URL: {{.BotpressURL}}</p>
+                        </div>
+                    </div>
+                    <div>
+                        <button 
+                            hx-delete="/deactivate-page"
+                            hx-vals='{"pageId": "{{.ID}}"}'
+                            class="text-red-600 px-4 py-2 rounded-md text-sm font-medium hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                        >
+                            Deactivate
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {{end}}
+            {{if not .ActivePages}}
+            <div class="p-4 text-center text-gray-500">
+                No active pages
+            </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}
