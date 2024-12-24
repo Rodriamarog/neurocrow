@@ -48,13 +48,13 @@ type PageData struct {
 }
 
 func handlePages(w http.ResponseWriter, r *http.Request) {
-	// Get pending pages
+	// Get pending pages - modify the query to handle NULL client_id
 	pendingRows, err := DB.Query(`
         SELECT 
             p.id, p.name, p.platform, p.page_id, 
-            c.name as client_name
+            COALESCE(c.name, 'No Client') as client_name
         FROM pages p
-        JOIN clients c ON p.client_id = c.id
+        LEFT JOIN clients c ON p.client_id = c.id
         WHERE p.status = 'pending'
         ORDER BY p.created_at DESC
     `)

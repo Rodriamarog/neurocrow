@@ -17,12 +17,10 @@ import (
 var DB *sql.DB
 
 func main() {
-	// Load env
 	if err := godotenv.Load(".env"); err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	// Init DB
 	var err error
 	DB, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -31,32 +29,26 @@ func main() {
 	defer DB.Close()
 
 	log.Println("Starting page sync...")
-	if err := syncPages(); err != nil {
-		log.Printf("Error syncing pages: %v", err)
+	if err := syncPage(); err != nil {
+		log.Printf("Error syncing page: %v", err)
 		os.Exit(1)
 	}
 	log.Println("Page sync completed")
 }
 
 type FacebookPage struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	AccessToken string `json:"access_token"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
-func fetchConnectedPages() ([]FacebookPage, error) {
-	appToken := os.Getenv("FACEBOOK_APP_TOKEN")
-	if appToken == "" {
-		return nil, fmt.Errorf("FACEBOOK_APP_TOKEN not set")
-	}
-
-	// Changed the endpoint to /me/accounts
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me/accounts?access_token=%s", appToken)
-	log.Printf("Fetching connected pages from: %s", url)
+func getPageInfo(pageToken string) (*FacebookPage, error) {
+	// Get page info using the token
+	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me?access_token=%s", pageToken)
+	log.Printf("Fetching page info from Facebook...")
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching pages: %w", err)
+		return nil, fmt.Errorf("error fetching page: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -69,57 +61,46 @@ func fetchConnectedPages() ([]FacebookPage, error) {
 	log.Printf("Response body: %s", string(body))
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Facebook API returned status: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("Facebook API returned status: %s", resp.Status)
 	}
 
-	var result struct {
-		Data  []FacebookPage `json:"data"`
-		Error struct {
-			Message string `json:"message"`
-			Type    string `json:"type"`
-			Code    int    `json:"code"`
-		} `json:"error"`
+	var page FacebookPage
+	if err := json.Unmarshal(body, &page); err != nil {
+		return nil, fmt.Errorf("error parsing page info: %w", err)
 	}
 
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("error decoding response: %w", err)
-	}
-
-	if result.Error.Message != "" {
-		return nil, fmt.Errorf("Facebook API error: %s (code: %d, type: %s)",
-			result.Error.Message, result.Error.Code, result.Error.Type)
-	}
-
-	return result.Data, nil
+	return &page, nil
 }
 
-func syncPages() error {
-	// Get pages from Facebook
-	pages, err := fetchConnectedPages()
+func syncPage() error {
+	pageToken := os.Getenv("PAGE_TOKEN")
+	if pageToken == "" {
+		return fmt.Errorf("PAGE_TOKEN not set")
+	}
+
+	// Get page info
+	page, err := getPageInfo(pageToken)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Found %d pages", len(pages))
+	log.Printf("Got page info: ID=%s, Name=%s", page.ID, page.Name)
 
-	// Add new pages to database
-	for _, page := range pages {
-		_, err := DB.Exec(`
-           INSERT INTO pages (page_id, name, access_token, status, platform)
-           VALUES ($1, $2, $3, 'pending', 'facebook')
-           ON CONFLICT (platform, page_id) 
-           DO UPDATE SET 
-               name = EXCLUDED.name,
-               access_token = EXCLUDED.access_token
-               WHERE pages.status != 'disabled'
-       `, page.ID, page.Name, page.AccessToken)
+	// Insert or update page in database
+	_, err = DB.Exec(`
+        INSERT INTO pages (page_id, name, access_token, status, platform)
+        VALUES ($1, $2, $3, 'pending', 'facebook')
+        ON CONFLICT (platform, page_id) 
+        DO UPDATE SET 
+            name = EXCLUDED.name,
+            access_token = EXCLUDED.access_token
+            WHERE pages.status != 'disabled'
+    `, page.ID, page.Name, pageToken)
 
-		if err != nil {
-			log.Printf("Error storing page %s: %v", page.ID, err)
-			continue
-		}
-		log.Printf("Synced page: %s", page.Name)
+	if err != nil {
+		return fmt.Errorf("error storing page: %w", err)
 	}
 
+	log.Printf("Successfully synced page: %s", page.Name)
 	return nil
 }
