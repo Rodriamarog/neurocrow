@@ -2,6 +2,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -22,7 +24,8 @@ func init() {
 
 func main() {
 	// Routes
-	http.HandleFunc("/", handlePages) // Make the pages view our main page
+	http.HandleFunc("/", handlePages)
+	http.HandleFunc("/activate-form", handleActivateForm)
 	http.HandleFunc("/activate-page", handleActivatePage)
 	http.HandleFunc("/deactivate-page", handleDeactivatePage)
 
@@ -76,7 +79,7 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get active pages
-	activeRows, err := db.Query(`
+	activeRows, err := DB.Query(`
         SELECT 
             p.id, p.name, p.platform, p.page_id, 
             c.name as client_name, p.botpress_url
@@ -113,6 +116,26 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 	tmpl.ExecuteTemplate(w, "layout.html", data)
 }
 
+func handleActivateForm(w http.ResponseWriter, r *http.Request) {
+	pageID := r.URL.Query().Get("pageId")
+
+	// Get page info
+	var page PageData
+	err := DB.QueryRow(`
+        SELECT p.id, p.name, p.platform, c.name as client_name
+        FROM pages p
+        JOIN clients c ON p.client_id = c.id
+        WHERE p.id = $1
+    `, pageID).Scan(&page.ID, &page.Name, &page.Platform, &page.ClientName)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	tmpl.ExecuteTemplate(w, "activate-form", page)
+}
+
 func handleActivatePage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -122,8 +145,14 @@ func handleActivatePage(w http.ResponseWriter, r *http.Request) {
 	pageID := r.FormValue("pageId")
 	botpressURL := r.FormValue("botpressUrl")
 
+	// Validate botpress URL
+	if botpressURL == "" {
+		http.Error(w, "Botpress URL is required", http.StatusBadRequest)
+		return
+	}
+
 	// Update page status
-	_, err := db.Exec(`
+	_, err := DB.Exec(`
         UPDATE pages 
         SET status = 'active',
             botpress_url = $1,
@@ -135,9 +164,6 @@ func handleActivatePage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// Redirect back to pages view
-	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func handleDeactivatePage(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +175,7 @@ func handleDeactivatePage(w http.ResponseWriter, r *http.Request) {
 	pageID := r.FormValue("pageId")
 
 	// Update page status
-	_, err := db.Exec(`
+	_, err := DB.Exec(`
         UPDATE pages 
         SET status = 'disabled',
             botpress_url = NULL,
@@ -164,4 +190,24 @@ func handleDeactivatePage(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect back to pages view
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func fetchConnectedPages() ([]FacebookPage, error) {
+	appToken := os.Getenv("FACEBOOK_APP_TOKEN")
+	url := fmt.Sprintf("https://graph.facebook.com/v19.0/app/subscribed_apps?access_token=%s", appToken)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data []FacebookPage `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Data, nil
 }

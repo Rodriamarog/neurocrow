@@ -24,3 +24,9 @@ type Page struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	ActivatedAt *time.Time `json:"activated_at"`
 }
+
+type FacebookPage struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	AccessToken string `json:"access_token"`
+}
