@@ -50,8 +50,8 @@ func fetchConnectedPages() ([]FacebookPage, error) {
 		return nil, fmt.Errorf("FACEBOOK_APP_TOKEN not set")
 	}
 
-	// First get access token
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/app/subscribed_apps?access_token=%s", appToken)
+	// Changed the endpoint to /me/accounts
+	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me/accounts?access_token=%s", appToken)
 	log.Printf("Fetching connected pages from: %s", url)
 
 	resp, err := http.Get(url)
