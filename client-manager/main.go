@@ -356,57 +356,98 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
-	// Get Facebook pages
+	var allPages []FacebookPage
+
+	// First get Facebook pages and their connected Instagram accounts
 	fbURL := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
 			"access_token=%s&"+
-			"fields=id,name,access_token",
+			"fields=id,name,access_token,instagram_business_account{id,name,username}",
 		userToken,
 	)
 
-	log.Printf("Fetching Facebook pages")
+	log.Printf("Fetching Facebook pages and connected Instagram accounts")
 	fbResp, err := http.Get(fbURL)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching Facebook pages: %w", err)
+		return nil, fmt.Errorf("error fetching pages: %w", err)
 	}
 	defer fbResp.Body.Close()
 
+	fbBody, err := io.ReadAll(fbResp.Body)
+	log.Printf("Facebook API Response: %s", string(fbBody))
+
 	var fbResult struct {
-		Data  []FacebookPage `json:"data"`
+		Data []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			AccessToken string `json:"access_token"`
+			Instagram   struct {
+				ID       string `json:"id"`
+				Name     string `json:"name"`
+				Username string `json:"username"`
+			} `json:"instagram_business_account"`
+		} `json:"data"`
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 
-	if err := json.NewDecoder(fbResp.Body).Decode(&fbResult); err != nil {
+	if err := json.Unmarshal(fbBody, &fbResult); err != nil {
 		return nil, fmt.Errorf("error parsing Facebook response: %w", err)
 	}
 
-	// Get Instagram accounts with detailed logging
+	// Add Facebook pages and their connected Instagram accounts
+	for _, page := range fbResult.Data {
+		// Add Facebook page
+		allPages = append(allPages, FacebookPage{
+			ID:          page.ID,
+			Name:        page.Name,
+			AccessToken: page.AccessToken,
+			Platform:    "facebook",
+		})
+		log.Printf("Added Facebook page: %s", page.Name)
+
+		// If this page has a connected Instagram account, add it
+		if page.Instagram.ID != "" {
+			allPages = append(allPages, FacebookPage{
+				ID:          page.Instagram.ID,
+				Name:        page.Instagram.Name,
+				AccessToken: page.AccessToken,
+				Platform:    "instagram",
+			})
+			log.Printf("Added connected Instagram account: %s", page.Instagram.Name)
+		}
+	}
+
+	// Now get standalone Instagram accounts
 	igURL := fmt.Sprintf(
-		"https://graph.facebook.com/v19.0/me/instagram_accounts?"+
+		"https://graph.facebook.com/v19.0/me/businesses?"+
 			"access_token=%s&"+
-			"fields=id,name,username,profile_pic",
+			"fields=owned_instagram_accounts{id,username,name}",
 		userToken,
 	)
 
-	log.Printf("Fetching Instagram accounts from URL: %s", igURL)
+	log.Printf("Fetching standalone Instagram accounts")
 	igResp, err := http.Get(igURL)
 	if err != nil {
 		log.Printf("Error fetching Instagram accounts: %v", err)
-		// Continue with Facebook pages instead of returning error
-		return fbResult.Data, nil
+		// Continue with what we have instead of failing
+		return allPages, nil
 	}
 	defer igResp.Body.Close()
 
-	body, err := io.ReadAll(igResp.Body)
-	log.Printf("Instagram API Response: %s", string(body))
+	igBody, err := io.ReadAll(igResp.Body)
+	log.Printf("Instagram API Response: %s", string(igBody))
 
 	var igResult struct {
 		Data []struct {
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Username string `json:"username"`
+			InstagramAccounts struct {
+				Data []struct {
+					ID       string `json:"id"`
+					Name     string `json:"name"`
+					Username string `json:"username"`
+				} `json:"data"`
+			} `json:"owned_instagram_accounts"`
 		} `json:"data"`
 		Error struct {
 			Message string `json:"message"`
@@ -415,40 +456,36 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		} `json:"error"`
 	}
 
-	if err := json.Unmarshal(body, &igResult); err != nil {
+	if err := json.Unmarshal(igBody, &igResult); err != nil {
 		log.Printf("Error parsing Instagram response: %v", err)
-		// Continue with Facebook pages instead of returning error
-		return fbResult.Data, nil
+		// Continue with what we have instead of failing
+		return allPages, nil
 	}
 
-	if igResult.Error.Message != "" {
-		log.Printf("Instagram API error: %s (Code: %d, Type: %s)",
-			igResult.Error.Message, igResult.Error.Code, igResult.Error.Type)
+	// Add standalone Instagram accounts
+	for _, business := range igResult.Data {
+		for _, ig := range business.InstagramAccounts.Data {
+			// Check if we already have this Instagram account (from Facebook page connection)
+			exists := false
+			for _, existing := range allPages {
+				if existing.ID == ig.ID && existing.Platform == "instagram" {
+					exists = true
+					break
+				}
+			}
+
+			if !exists {
+				allPages = append(allPages, FacebookPage{
+					ID:          ig.ID,
+					Name:        ig.Name,
+					AccessToken: userToken, // Use user token for standalone Instagram accounts
+					Platform:    "instagram",
+				})
+				log.Printf("Added standalone Instagram account: %s", ig.Name)
+			}
+		}
 	}
 
-	// Combine both platforms
-	var allPages []FacebookPage
-
-	// Add Facebook pages
-	for _, page := range fbResult.Data {
-		page.Platform = "facebook"
-		allPages = append(allPages, page)
-		log.Printf("Added Facebook page: %s", page.Name)
-	}
-
-	// Add Instagram accounts
-	for _, ig := range igResult.Data {
-		allPages = append(allPages, FacebookPage{
-			ID:          ig.ID,
-			Name:        ig.Name,
-			Platform:    "instagram",
-			AccessToken: userToken, // Use the user token for Instagram
-		})
-		log.Printf("Added Instagram account: %s", ig.Name)
-	}
-
-	log.Printf("Found total of %d pages/accounts (%d FB, %d IG)",
-		len(allPages), len(fbResult.Data), len(igResult.Data))
-
+	log.Printf("Found total of %d pages/accounts", len(allPages))
 	return allPages, nil
 }
