@@ -1,39 +1,39 @@
 // Success.js
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import './Success.css';
 
 function Success() {
-  const [syncStatus, setSyncStatus] = useState('syncing'); // 'syncing', 'success', 'error'
+  const [syncStatus, setSyncStatus] = useState('syncing');
+  const location = useLocation();
+  const accessToken = location.state?.accessToken;
 
   useEffect(() => {
-    // Get the access token and sync pages when component mounts
-    window.FB.getLoginStatus(function(response) {
-      if (response.status === 'connected') {
-        const userToken = response.authResponse.accessToken;
-        
-        // Send to your backend
-        fetch('https://neurocrow-client-manager.onrender.com', {
-          method: 'POST',
-          headers: {
-              'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ userToken }),
-      })
-        .then(response => {
-          if (!response.ok) {
-            throw new Error('Network response was not ok');
-          }
-          setSyncStatus('success');
-        })
-        .catch(error => {
-          console.error('Error syncing pages:', error);
-          setSyncStatus('error');
-        });
-      } else {
-        setSyncStatus('error');
+    if (!accessToken) {
+      console.error('No access token available');
+      setSyncStatus('error');
+      return;
+    }
+
+    // Send token to your backend
+    fetch('https://neurocrow-client-manager.onrender.com/facebook-token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ userToken: accessToken }),
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
       }
+      setSyncStatus('success');
+    })
+    .catch(error => {
+      console.error('Error syncing pages:', error);
+      setSyncStatus('error');
     });
-  }, []);
+  }, [accessToken]);
 
   const handleContactClick = () => {
     window.open('https://m.me/413548765185533', '_blank');

@@ -1,3 +1,4 @@
+// Login.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Login.css';
@@ -7,7 +8,6 @@ function Login() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [pollInterval, setPollInterval] = useState(null);
 
-  // Cleanup polling on unmount
   useEffect(() => {
     return () => {
       if (pollInterval) {
@@ -16,59 +16,32 @@ function Login() {
     };
   }, [pollInterval]);
 
-  const startPolling = () => {
-    let attempts = 0;
-    const maxAttempts = 60; // 2 minutes maximum polling time
-    
-    const interval = setInterval(() => {
-      window.FB.getLoginStatus((response) => {
-        console.log('Polling status:', response.status);
-        attempts++;
-        
-        if (response.status === 'connected') {
-          clearInterval(interval);
-          setIsVerifying(false);
-          navigate('/success');
-        } else if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          setIsVerifying(false);
-        }
-      }, true); // Force fresh check
-    }, 2000);
-
-    setPollInterval(interval);
-  };
-
   const handleFacebookLogin = () => {
     window.FB.login(function(response) {
       console.log('Login response:', response);
       
       if (response.status === 'connected') {
-        // User is logged in and authorized the app
-        console.log('Successfully logged in:', response);
-        navigate('/success');
+        // Use the token in the response instead of setting it globally
+        const token = response.authResponse.accessToken;
+        console.log('Successfully logged in with token');
+        navigate('/success', { state: { accessToken: token } });
       } else if (response.status === 'not_authorized') {
-        // User is logged into Facebook but hasn't authorized your app
         console.log('Awaiting device verification...');
         setIsVerifying(true);
         startPolling();
       } else {
-        // User cancelled login or did not fully authorize
         console.log('User cancelled login or did not fully authorize.');
         setIsVerifying(false);
       }
     }, {
       scope: [
-        // Facebook Pages
         'pages_show_list',
-        'pages_manage_metadata', // Required dependency for pages_messaging
+        'pages_manage_metadata',
         'pages_messaging',
-        // Instagram
         'instagram_basic',
         'instagram_manage_messages',
       ].join(','),
-      
-      auth_type: 'rerequest' // This forces Facebook to show the permissions dialog
+      auth_type: 'rerequest'
     });
   };
 
