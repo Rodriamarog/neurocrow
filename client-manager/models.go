@@ -30,3 +30,10 @@ type FacebookPage struct {
 	Name        string `json:"name"`
 	AccessToken string `json:"access_token"` // Added this field
 }
+
+type FacebookPageResponse struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	AccessToken string   `json:"access_token"`
+	Tasks       []string `json:"tasks"` // Add this field to check permissions
+}
