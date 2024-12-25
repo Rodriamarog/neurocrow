@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -381,7 +382,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		return nil, fmt.Errorf("error parsing Facebook response: %w", err)
 	}
 
-	// Get Instagram accounts
+	// Get Instagram accounts with detailed logging
 	igURL := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/instagram_accounts?"+
 			"access_token=%s&"+
@@ -389,12 +390,17 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		userToken,
 	)
 
-	log.Printf("Fetching Instagram accounts")
+	log.Printf("Fetching Instagram accounts from URL: %s", igURL)
 	igResp, err := http.Get(igURL)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching Instagram accounts: %w", err)
+		log.Printf("Error fetching Instagram accounts: %v", err)
+		// Continue with Facebook pages instead of returning error
+		return fbResult.Data, nil
 	}
 	defer igResp.Body.Close()
+
+	body, err := io.ReadAll(igResp.Body)
+	log.Printf("Instagram API Response: %s", string(body))
 
 	var igResult struct {
 		Data []struct {
@@ -404,11 +410,20 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		} `json:"data"`
 		Error struct {
 			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    int    `json:"code"`
 		} `json:"error"`
 	}
 
-	if err := json.NewDecoder(igResp.Body).Decode(&igResult); err != nil {
-		return nil, fmt.Errorf("error parsing Instagram response: %w", err)
+	if err := json.Unmarshal(body, &igResult); err != nil {
+		log.Printf("Error parsing Instagram response: %v", err)
+		// Continue with Facebook pages instead of returning error
+		return fbResult.Data, nil
+	}
+
+	if igResult.Error.Message != "" {
+		log.Printf("Instagram API error: %s (Code: %d, Type: %s)",
+			igResult.Error.Message, igResult.Error.Code, igResult.Error.Type)
 	}
 
 	// Combine both platforms
