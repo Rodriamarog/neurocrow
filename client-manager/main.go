@@ -260,7 +260,7 @@ func fetchConnectedPages() ([]FacebookPage, error) {
 }
 
 func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Received Facebook token request")
+	log.Printf("=== Starting Facebook token request handling ===")
 
 	var data struct {
 		UserToken string `json:"userToken"`
@@ -272,6 +272,15 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log how many pages are currently in DB before any changes
+	var countBefore int
+	err := DB.QueryRow("SELECT COUNT(*) FROM pages WHERE platform = 'facebook' AND status != 'disabled'").Scan(&countBefore)
+	if err != nil {
+		log.Printf("Error counting current pages: %v", err)
+	} else {
+		log.Printf("Current active/pending pages in DB before update: %d", countBefore)
+	}
+
 	// Get current pages from Facebook
 	pages, err := getConnectedPages(data.UserToken)
 	if err != nil {
@@ -280,7 +289,10 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Found %d connected pages", len(pages))
+	log.Printf("Pages received from Facebook API: %d", len(pages))
+	for _, p := range pages {
+		log.Printf("- Page from FB: ID=%s, Name=%s", p.ID, p.Name)
+	}
 
 	// Start transaction
 	tx, err := DB.Begin()
@@ -291,8 +303,8 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// First disable all pages for this platform
-	_, err = tx.Exec(`
+	// First disable all pages
+	result, err := tx.Exec(`
         UPDATE pages 
         SET status = 'disabled'
         WHERE platform = 'facebook'
@@ -303,10 +315,14 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("Pages marked as disabled: %d", rowsAffected)
+
 	// Now insert/update currently selected pages
 	for _, page := range pages {
-		log.Printf("Processing page: %s", page.Name)
-		_, err := tx.Exec(`
+		log.Printf("Processing page %s (ID: %s)", page.Name, page.ID)
+
+		result, err := tx.Exec(`
             INSERT INTO pages (page_id, name, access_token, status, platform)
             VALUES ($1, $2, $3, 
                 CASE 
@@ -322,7 +338,7 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
             )
             ON CONFLICT (platform, page_id) 
             DO UPDATE SET 
-    			name = EXCLUDED.name,
+                name = EXCLUDED.name,
                 access_token = EXCLUDED.access_token,
                 status = CASE 
                     WHEN pages.status = 'active' THEN 'active'
@@ -334,7 +350,18 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error processing page %s: %v", page.Name, err)
 			continue
 		}
-		log.Printf("Successfully processed page: %s", page.Name)
+
+		rowsAffected, _ := result.RowsAffected()
+		log.Printf("Rows affected for page %s: %d", page.Name, rowsAffected)
+	}
+
+	// Log final state before commit
+	var countAfter int
+	err = tx.QueryRow("SELECT COUNT(*) FROM pages WHERE platform = 'facebook' AND status != 'disabled'").Scan(&countAfter)
+	if err != nil {
+		log.Printf("Error counting pages after update: %v", err)
+	} else {
+		log.Printf("Active/pending pages after update (before commit): %d", countAfter)
 	}
 
 	// Commit transaction
@@ -344,8 +371,8 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("=== Successfully completed Facebook token request ===")
 	w.WriteHeader(http.StatusOK)
-	log.Printf("Successfully processed Facebook token request")
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
