@@ -16,12 +16,34 @@ function Login() {
     };
   }, [pollInterval]);
 
+  const startPolling = () => {
+    let attempts = 0;
+    const maxAttempts = 60; // 2 minutes maximum polling time
+    
+    const interval = setInterval(() => {
+      window.FB.getLoginStatus((response) => {
+        attempts++;
+        
+        if (response.status === 'connected') {
+          clearInterval(interval);
+          setIsVerifying(false);
+          const token = response.authResponse.accessToken;
+          navigate('/success', { state: { accessToken: token } });
+        } else if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          setIsVerifying(false);
+        }
+      }, true);
+    }, 2000);
+
+    setPollInterval(interval);
+  };
+
   const handleFacebookLogin = () => {
     window.FB.login(function(response) {
       console.log('Login response:', response);
       
       if (response.status === 'connected') {
-        // Use the token in the response instead of setting it globally
         const token = response.authResponse.accessToken;
         console.log('Successfully logged in with token');
         navigate('/success', { state: { accessToken: token } });
