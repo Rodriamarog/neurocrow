@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -355,16 +356,10 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
-	appToken := os.Getenv("FACEBOOK_APP_TOKEN")
-	if appToken == "" {
-		return nil, fmt.Errorf("FACEBOOK_APP_TOKEN not set")
-	}
-
-	// First get all pages
 	url := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
 			"access_token=%s&"+
-			"fields=id,name,access_token",
+			"fields=id,name,access_token,tasks,permissions", // Added permissions
 		userToken,
 	)
 
@@ -375,53 +370,61 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	log.Printf("Main API response: %s", string(body))
+
 	var result struct {
-		Data  []FacebookPage `json:"data"`
+		Data  []FacebookPageResponse `json:"data"`
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("error parsing response: %w", err)
 	}
 
-	// Check subscriptions using app token
 	var selectedPages []FacebookPage
-	for _, page := range result.Data {
+	for _, p := range result.Data {
+		// Check subscription with detailed logging
 		verifyURL := fmt.Sprintf(
-			"https://graph.facebook.com/v19.0/%s/subscribed_apps?access_token=%s",
-			page.ID,
-			appToken, // Using app token instead of page token
+			"https://graph.facebook.com/v19.0/%s/subscribed_apps"+
+				"?access_token=%s&"+
+				"fields=subscribed,name,id,permissions", // Added fields
+			p.ID,
+			p.AccessToken,
 		)
 
-		log.Printf("Checking subscription for page %s (%s)", page.Name, page.ID)
+		log.Printf("Checking subscription for page %s (%s)", p.Name, p.ID)
 		verifyResp, err := http.Get(verifyURL)
 		if err != nil {
-			log.Printf("Error verifying page %s: %v", page.ID, err)
+			log.Printf("Error verifying page %s: %v", p.ID, err)
 			continue
 		}
 
-		var verifyResult struct {
-			Data []struct{} `json:"data"`
-		}
-		if err := json.NewDecoder(verifyResp.Body).Decode(&verifyResult); err != nil {
-			log.Printf("Error parsing verify response: %v", err)
-			verifyResp.Body.Close()
-			continue
-		}
+		verifyBody, err := io.ReadAll(verifyResp.Body)
 		verifyResp.Body.Close()
 
-		// If data array is not empty, the page is subscribed
-		if len(verifyResult.Data) > 0 {
-			selectedPages = append(selectedPages, page)
-			log.Printf("Page %s is selected", page.Name)
-		} else {
-			log.Printf("Page %s is NOT selected", page.Name)
+		if err != nil {
+			log.Printf("Error reading verify response for page %s: %v", p.ID, err)
+			continue
 		}
+
+		log.Printf("Subscription check response for %s: %s", p.Name, string(verifyBody))
+
+		// Always include the page for now, but log subscription status
+		selectedPages = append(selectedPages, FacebookPage{
+			ID:          p.ID,
+			Name:        p.Name,
+			AccessToken: p.AccessToken,
+		})
+		log.Printf("Added page %s to selected pages list", p.Name)
 	}
 
-	log.Printf("Found %d selected pages out of %d total pages",
-		len(selectedPages), len(result.Data))
+	log.Printf("Returning %d pages", len(selectedPages))
 	return selectedPages, nil
 }
