@@ -13,16 +13,23 @@ import (
 var DB *sql.DB
 
 func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	log.Printf("Attempting to connect to database with URL: %s", dbURL)
+
 	var err error
-	DB, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	DB, err = sql.Open("postgres", dbURL)
 	if err != nil {
+		log.Printf("Error opening database: %v", err)
 		log.Fatal(err)
 	}
 
 	err = DB.Ping()
 	if err != nil {
+		log.Printf("Error pinging database: %v", err)
 		log.Fatal(err)
 	}
+
+	log.Printf("Successfully connected to database")
 
 	// Create tables if they don't exist
 	_, err = DB.Exec(`

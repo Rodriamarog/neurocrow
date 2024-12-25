@@ -16,9 +16,15 @@ var tmpl *template.Template
 
 func init() {
 	tmpl = template.Must(template.ParseGlob("templates/*.html"))
+
+	// Load .env file if it exists
 	if err := godotenv.Load(); err != nil {
-		log.Printf("No .env file found")
+		log.Printf("No .env file found - using environment variables")
 	}
+
+	// Print all environment variables (careful with sensitive info!)
+	log.Printf("Environment variables loaded. DATABASE_URL exists: %v", os.Getenv("DATABASE_URL") != "")
+
 	initDB()
 }
 
