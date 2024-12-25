@@ -6,27 +6,27 @@ import (
 )
 
 type Client struct {
-	ID        string
-	Name      string
-	Email     string
-	CreatedAt time.Time
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Page struct {
-	ID          string
-	ClientID    string
-	Platform    string
-	PageID      string
-	Name        string
-	AccessToken string
-	Status      string
-	BotpressURL string
-	CreatedAt   time.Time
-	ActivatedAt *time.Time
+	ID          string     `json:"id"`
+	ClientID    string     `json:"client_id"`
+	Platform    string     `json:"platform"`
+	PageID      string     `json:"page_id"`
+	Name        string     `json:"name"`
+	AccessToken string     `json:"access_token"`
+	Status      string     `json:"status"`
+	BotpressURL string     `json:"botpress_url"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ActivatedAt *time.Time `json:"activated_at"`
 }
 
-// Add this type definition that was in cmd/sync/main.go
 type FacebookPage struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	AccessToken string `json:"access_token"` // Added this field
 }
