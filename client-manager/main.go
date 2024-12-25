@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -356,75 +355,85 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
-	url := fmt.Sprintf(
+	// Get Facebook pages
+	fbURL := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
 			"access_token=%s&"+
-			"fields=id,name,access_token,tasks,permissions", // Added permissions
+			"fields=id,name,access_token",
 		userToken,
 	)
 
-	log.Printf("Fetching pages from Facebook API")
-	resp, err := http.Get(url)
+	log.Printf("Fetching Facebook pages")
+	fbResp, err := http.Get(fbURL)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching pages: %w", err)
+		return nil, fmt.Errorf("error fetching Facebook pages: %w", err)
 	}
-	defer resp.Body.Close()
+	defer fbResp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response: %w", err)
-	}
-
-	log.Printf("Main API response: %s", string(body))
-
-	var result struct {
-		Data  []FacebookPageResponse `json:"data"`
+	var fbResult struct {
+		Data  []FacebookPage `json:"data"`
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("error parsing response: %w", err)
+	if err := json.NewDecoder(fbResp.Body).Decode(&fbResult); err != nil {
+		return nil, fmt.Errorf("error parsing Facebook response: %w", err)
 	}
 
-	var selectedPages []FacebookPage
-	for _, p := range result.Data {
-		// Check subscription with detailed logging
-		verifyURL := fmt.Sprintf(
-			"https://graph.facebook.com/v19.0/%s/subscribed_apps"+
-				"?access_token=%s&"+
-				"fields=subscribed,name,id,permissions", // Added fields
-			p.ID,
-			p.AccessToken,
-		)
+	// Get Instagram accounts
+	igURL := fmt.Sprintf(
+		"https://graph.facebook.com/v19.0/me/instagram_accounts?"+
+			"access_token=%s&"+
+			"fields=id,name,username,profile_pic",
+		userToken,
+	)
 
-		log.Printf("Checking subscription for page %s (%s)", p.Name, p.ID)
-		verifyResp, err := http.Get(verifyURL)
-		if err != nil {
-			log.Printf("Error verifying page %s: %v", p.ID, err)
-			continue
-		}
+	log.Printf("Fetching Instagram accounts")
+	igResp, err := http.Get(igURL)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching Instagram accounts: %w", err)
+	}
+	defer igResp.Body.Close()
 
-		verifyBody, err := io.ReadAll(verifyResp.Body)
-		verifyResp.Body.Close()
+	var igResult struct {
+		Data []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Username string `json:"username"`
+		} `json:"data"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
 
-		if err != nil {
-			log.Printf("Error reading verify response for page %s: %v", p.ID, err)
-			continue
-		}
+	if err := json.NewDecoder(igResp.Body).Decode(&igResult); err != nil {
+		return nil, fmt.Errorf("error parsing Instagram response: %w", err)
+	}
 
-		log.Printf("Subscription check response for %s: %s", p.Name, string(verifyBody))
+	// Combine both platforms
+	var allPages []FacebookPage
 
-		// Always include the page for now, but log subscription status
-		selectedPages = append(selectedPages, FacebookPage{
-			ID:          p.ID,
-			Name:        p.Name,
-			AccessToken: p.AccessToken,
+	// Add Facebook pages
+	for _, page := range fbResult.Data {
+		page.Platform = "facebook"
+		allPages = append(allPages, page)
+		log.Printf("Added Facebook page: %s", page.Name)
+	}
+
+	// Add Instagram accounts
+	for _, ig := range igResult.Data {
+		allPages = append(allPages, FacebookPage{
+			ID:          ig.ID,
+			Name:        ig.Name,
+			Platform:    "instagram",
+			AccessToken: userToken, // Use the user token for Instagram
 		})
-		log.Printf("Added page %s to selected pages list", p.Name)
+		log.Printf("Added Instagram account: %s", ig.Name)
 	}
 
-	log.Printf("Returning %d pages", len(selectedPages))
-	return selectedPages, nil
+	log.Printf("Found total of %d pages/accounts (%d FB, %d IG)",
+		len(allPages), len(fbResult.Data), len(igResult.Data))
+
+	return allPages, nil
 }
