@@ -356,10 +356,11 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
+	// First get list of pages
 	url := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
 			"access_token=%s&"+
-			"fields=id,name,access_token,tasks", // Add tasks to fields
+			"fields=id,name,access_token,tasks,subscribed",
 		userToken,
 	)
 
@@ -376,7 +377,6 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	}
 
 	log.Printf("Facebook API response status: %s", resp.Status)
-	log.Printf("Facebook API response: %s", string(body))
 
 	var result struct {
 		Data  []FacebookPageResponse `json:"data"`
@@ -390,30 +390,50 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	}
 
 	if result.Error.Message != "" {
-		return nil, fmt.Errorf("Facebook API error: %s", result.Error.Message)
+		return nil, fmt.Errorf("facebook API error: %s", result.Error.Message)
 	}
 
-	// Only return pages that have been granted permissions
-	var pages []FacebookPage
+	// Only return pages that are actually selected
+	var selectedPages []FacebookPage
 	for _, p := range result.Data {
-		// Check if we have MANAGE_PAGE permission
-		hasPermission := false
-		for _, task := range p.Tasks {
-			if task == "MANAGE" || task == "CREATE_CONTENT" {
-				hasPermission = true
-				break
-			}
+		// Additional verification call to check if page is really selected
+		verifyURL := fmt.Sprintf(
+			"https://graph.facebook.com/v19.0/%s/subscribed_apps?access_token=%s",
+			p.ID,
+			p.AccessToken,
+		)
+
+		verifyResp, err := http.Get(verifyURL)
+		if err != nil {
+			log.Printf("Error verifying page %s: %v", p.ID, err)
+			continue
+		}
+		defer verifyResp.Body.Close()
+
+		var verifyResult struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
 		}
 
-		if hasPermission {
-			pages = append(pages, FacebookPage{
+		if err := json.NewDecoder(verifyResp.Body).Decode(&verifyResult); err != nil {
+			log.Printf("Error parsing verification for page %s: %v", p.ID, err)
+			continue
+		}
+
+		// Only include page if it's subscribed to our app
+		if len(verifyResult.Data) > 0 {
+			selectedPages = append(selectedPages, FacebookPage{
 				ID:          p.ID,
 				Name:        p.Name,
 				AccessToken: p.AccessToken,
 			})
+			log.Printf("Page %s (%s) is selected", p.Name, p.ID)
+		} else {
+			log.Printf("Page %s (%s) is NOT selected", p.Name, p.ID)
 		}
 	}
 
-	log.Printf("Successfully parsed %d pages with permissions from Facebook response", len(pages))
-	return pages, nil
+	log.Printf("Found %d selected pages out of %d total pages", len(selectedPages), len(result.Data))
+	return selectedPages, nil
 }
