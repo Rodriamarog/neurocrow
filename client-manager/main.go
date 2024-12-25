@@ -92,7 +92,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func handlePages(w http.ResponseWriter, r *http.Request) {
-	// Get pending pages - modify the query to handle NULL client_id
+	// Get pending pages - only non-disabled ones
 	pendingRows, err := DB.Query(`
         SELECT 
             p.id, p.name, p.platform, p.page_id, 
@@ -100,6 +100,7 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
         FROM pages p
         LEFT JOIN clients c ON p.client_id = c.id
         WHERE p.status = 'pending'
+        AND p.status != 'disabled'  -- Added this condition
         ORDER BY p.created_at DESC
     `)
 	if err != nil {
@@ -122,14 +123,16 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 		pendingPages = append(pendingPages, page)
 	}
 
-	// Get active pages
+	// Get active pages - only non-disabled ones
 	activeRows, err := DB.Query(`
         SELECT 
             p.id, p.name, p.platform, p.page_id, 
-            c.name as client_name, p.botpress_url
+            COALESCE(c.name, 'No Client') as client_name,
+            p.botpress_url
         FROM pages p
-        JOIN clients c ON p.client_id = c.id
+        LEFT JOIN clients c ON p.client_id = c.id
         WHERE p.status = 'active'
+        AND p.status != 'disabled'  -- Added this condition
         ORDER BY p.created_at DESC
     `)
 	if err != nil {
@@ -257,77 +260,92 @@ func fetchConnectedPages() ([]FacebookPage, error) {
 }
 
 func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Received request to /facebook-token")
+	log.Printf("Received Facebook token request")
 
 	var data struct {
 		UserToken string `json:"userToken"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		log.Printf("Error decoding request body: %v", err)
+		log.Printf("Error decoding request: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Get currently selected pages from Facebook
+	// Get current pages from Facebook
 	pages, err := getConnectedPages(data.UserToken)
 	if err != nil {
-		log.Printf("Error getting connected pages: %v", err)
+		log.Printf("Error getting pages: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Begin transaction
+	log.Printf("Found %d connected pages", len(pages))
+
+	// Start transaction
 	tx, err := DB.Begin()
 	if err != nil {
-		log.Printf("Error beginning transaction: %v", err)
+		log.Printf("Error starting transaction: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
 
-	// First, mark all pages as disabled
+	// First disable all pages for this platform
 	_, err = tx.Exec(`
         UPDATE pages 
-        SET status = 'disabled', 
-            botpress_url = NULL,
-            activated_at = NULL
+        SET status = 'disabled'
         WHERE platform = 'facebook'
     `)
 	if err != nil {
-		log.Printf("Error disabling old pages: %v", err)
+		log.Printf("Error disabling pages: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Then insert/update currently selected pages
+	// Now insert/update currently selected pages
 	for _, page := range pages {
+		log.Printf("Processing page: %s", page.Name)
 		_, err := tx.Exec(`
             INSERT INTO pages (page_id, name, access_token, status, platform)
-            VALUES ($1, $2, $3, 'pending', 'facebook')
+            VALUES ($1, $2, $3, 
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1 FROM pages 
+                        WHERE platform = 'facebook' 
+                        AND page_id = $1 
+                        AND status = 'active'
+                    ) THEN 'active'
+                    ELSE 'pending'
+                END, 
+                'facebook'
+            )
             ON CONFLICT (platform, page_id) 
             DO UPDATE SET 
-                name = EXCLUDED.name,
+    			name = EXCLUDED.name,
                 access_token = EXCLUDED.access_token,
-                status = 'pending'
+                status = CASE 
+                    WHEN pages.status = 'active' THEN 'active'
+                    ELSE 'pending'
+                END
         `, page.ID, page.Name, page.AccessToken)
 
 		if err != nil {
-			log.Printf("Error storing page %s: %v", page.Name, err)
+			log.Printf("Error processing page %s: %v", page.Name, err)
 			continue
 		}
-		log.Printf("Successfully stored page: %s", page.Name)
+		log.Printf("Successfully processed page: %s", page.Name)
 	}
 
 	// Commit transaction
 	if err = tx.Commit(); err != nil {
-		log.Printf("Error committing transaction: %v", err)
+		log.Printf("Error committing: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	log.Printf("Successfully handled token request")
+	log.Printf("Successfully processed Facebook token request")
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
