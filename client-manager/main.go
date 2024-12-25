@@ -29,20 +29,22 @@ func init() {
 }
 
 func main() {
-	// Routes
-	http.HandleFunc("/", handlePages)
-	// Routes with CORS middleware
-	http.HandleFunc("/facebook-token", corsMiddleware(handleFacebookToken))
-	http.HandleFunc("/activate-form", handleActivateForm)
-	http.HandleFunc("/activate-page", handleActivatePage)
-	http.HandleFunc("/deactivate-page", handleDeactivatePage)
+	// Wrap ALL routes with CORS middleware
+	router := http.NewServeMux()
+
+	// Apply CORS to all routes
+	router.HandleFunc("/", corsMiddleware(handlePages))
+	router.HandleFunc("/facebook-token", corsMiddleware(handleFacebookToken))
+	router.HandleFunc("/activate-form", corsMiddleware(handleActivateForm))
+	router.HandleFunc("/activate-page", corsMiddleware(handleActivatePage))
+	router.HandleFunc("/deactivate-page", corsMiddleware(handleDeactivatePage))
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	log.Printf("Server starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, router))
 }
 
 type PageData struct {
@@ -73,10 +75,12 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 
-		// Rest of CORS headers
+		// Required CORS headers
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
+		// Handle preflight requests
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
