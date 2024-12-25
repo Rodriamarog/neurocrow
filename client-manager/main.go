@@ -239,26 +239,6 @@ func handleDeactivatePage(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func fetchConnectedPages() ([]FacebookPage, error) {
-	appToken := os.Getenv("FACEBOOK_APP_TOKEN")
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/app/subscribed_apps?access_token=%s", appToken)
-
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Data []FacebookPage `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	return result.Data, nil
-}
-
 func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	log.Printf("=== Starting Facebook token request handling ===")
 
@@ -379,7 +359,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	url := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
 			"access_token=%s&"+
-			"fields=id,name,access_token",
+			"fields=id,name,access_token,tasks", // Add tasks to fields
 		userToken,
 	)
 
@@ -390,7 +370,6 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	}
 	defer resp.Body.Close()
 
-	// Read the response body for logging
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response: %w", err)
@@ -400,7 +379,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	log.Printf("Facebook API response: %s", string(body))
 
 	var result struct {
-		Data  []FacebookPage `json:"data"`
+		Data  []FacebookPageResponse `json:"data"`
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
@@ -414,6 +393,27 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		return nil, fmt.Errorf("Facebook API error: %s", result.Error.Message)
 	}
 
-	log.Printf("Successfully parsed %d pages from Facebook response", len(result.Data))
-	return result.Data, nil
+	// Only return pages that have been granted permissions
+	var pages []FacebookPage
+	for _, p := range result.Data {
+		// Check if we have MANAGE_PAGE permission
+		hasPermission := false
+		for _, task := range p.Tasks {
+			if task == "MANAGE" || task == "CREATE_CONTENT" {
+				hasPermission = true
+				break
+			}
+		}
+
+		if hasPermission {
+			pages = append(pages, FacebookPage{
+				ID:          p.ID,
+				Name:        p.Name,
+				AccessToken: p.AccessToken,
+			})
+		}
+	}
+
+	log.Printf("Successfully parsed %d pages with permissions from Facebook response", len(pages))
+	return pages, nil
 }
