@@ -12,13 +12,13 @@ function Success() {
         const userToken = response.authResponse.accessToken;
         
         // Send to your backend
-        fetch('http://localhost:8080/facebook-token', {  // Adjust URL for production
+        fetch('https://neurocrow-client-manager.onrender.com', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+              'Content-Type': 'application/json',
           },
           body: JSON.stringify({ userToken }),
-        })
+      })
         .then(response => {
           if (!response.ok) {
             throw new Error('Network response was not ok');
