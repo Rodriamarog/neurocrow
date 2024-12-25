@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -256,7 +257,10 @@ func fetchConnectedPages() ([]FacebookPage, error) {
 }
 
 func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Received request to /facebook-token")
+
 	if r.Method != "POST" {
+		log.Printf("Wrong method: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -266,19 +270,26 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		log.Printf("Error decoding request body: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("Received token (first 10 chars): %s...", data.UserToken[:10])
+
 	// Get all pages for this user
 	pages, err := getConnectedPages(data.UserToken)
 	if err != nil {
+		log.Printf("Error getting connected pages: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	log.Printf("Found %d pages", len(pages))
+
 	// Store each page
 	for _, page := range pages {
+		log.Printf("Attempting to store page: %s", page.Name)
 		_, err := DB.Exec(`
             INSERT INTO pages (page_id, name, access_token, status, platform)
             VALUES ($1, $2, $3, 'pending', 'facebook')
@@ -291,14 +302,16 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Printf("Error storing page %s: %v", page.Name, err)
+			continue
 		}
+		log.Printf("Successfully stored page: %s", page.Name)
 	}
 
 	w.WriteHeader(http.StatusOK)
+	log.Printf("Successfully handled token request")
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
-	// This endpoint gives us all pages the user manages, with permanent tokens
 	url := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
 			"access_token=%s&"+
@@ -306,11 +319,21 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		userToken,
 	)
 
+	log.Printf("Fetching pages from Facebook API")
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching pages: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// Read the response body for logging
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	log.Printf("Facebook API response status: %s", resp.Status)
+	log.Printf("Facebook API response: %s", string(body))
 
 	var result struct {
 		Data  []FacebookPage `json:"data"`
@@ -319,7 +342,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		} `json:"error"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("error parsing response: %w", err)
 	}
 
@@ -327,5 +350,6 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		return nil, fmt.Errorf("Facebook API error: %s", result.Error.Message)
 	}
 
+	log.Printf("Successfully parsed %d pages from Facebook response", len(result.Data))
 	return result.Data, nil
 }
