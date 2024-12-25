@@ -259,12 +259,6 @@ func fetchConnectedPages() ([]FacebookPage, error) {
 func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received request to /facebook-token")
 
-	if r.Method != "POST" {
-		log.Printf("Wrong method: %s", r.Method)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var data struct {
 		UserToken string `json:"userToken"`
 	}
@@ -275,9 +269,7 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Received token (first 10 chars): %s...", data.UserToken[:10])
-
-	// Get all pages for this user
+	// Get currently selected pages from Facebook
 	pages, err := getConnectedPages(data.UserToken)
 	if err != nil {
 		log.Printf("Error getting connected pages: %v", err)
@@ -285,19 +277,39 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Found %d pages", len(pages))
+	// Begin transaction
+	tx, err := DB.Begin()
+	if err != nil {
+		log.Printf("Error beginning transaction: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
 
-	// Store each page
+	// First, mark all pages as disabled
+	_, err = tx.Exec(`
+        UPDATE pages 
+        SET status = 'disabled', 
+            botpress_url = NULL,
+            activated_at = NULL
+        WHERE platform = 'facebook'
+    `)
+	if err != nil {
+		log.Printf("Error disabling old pages: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Then insert/update currently selected pages
 	for _, page := range pages {
-		log.Printf("Attempting to store page: %s", page.Name)
-		_, err := DB.Exec(`
+		_, err := tx.Exec(`
             INSERT INTO pages (page_id, name, access_token, status, platform)
             VALUES ($1, $2, $3, 'pending', 'facebook')
             ON CONFLICT (platform, page_id) 
             DO UPDATE SET 
                 name = EXCLUDED.name,
-                access_token = EXCLUDED.access_token
-            WHERE pages.status != 'disabled'
+                access_token = EXCLUDED.access_token,
+                status = 'pending'
         `, page.ID, page.Name, page.AccessToken)
 
 		if err != nil {
@@ -305,6 +317,13 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		log.Printf("Successfully stored page: %s", page.Name)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)
