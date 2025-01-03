@@ -27,41 +27,43 @@ var (
 )
 
 func init() {
-	// Load .env in development, use platform env vars in production
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	log.Printf("🚀 Starting Neurocrow Message Router...")
+
 	if err := godotenv.Load(); err != nil {
-		log.Printf("Using platform environment variables")
+		log.Printf("💡 Using platform environment variables (no .env file)")
 	}
 
 	// Connect to database with retry logic
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		log.Fatal("DATABASE_URL environment variable is not set")
+		log.Fatal("❌ DATABASE_URL environment variable is not set")
 	}
 
-	log.Printf("Database URL exists and is %d characters long", len(dbURL))
+	log.Printf("📊 Database URL configured (length: %d chars)", len(dbURL))
 
 	var err error
 	for i := 0; i < 3; i++ {
-		log.Printf("Attempting database connection (attempt %d)...", i+1)
+		log.Printf("🔄 Database connection attempt %d/3...", i+1)
 		db, err = sql.Open("postgres", dbURL)
 		if err != nil {
-			log.Printf("Connection attempt %d failed: %v", i+1, err)
+			log.Printf("❌ Connection attempt %d failed: %v", i+1, err)
 			time.Sleep(time.Second * 2)
 			continue
 		}
 
 		if err = db.Ping(); err != nil {
-			log.Printf("Ping failed: %v", err)
+			log.Printf("❌ Database ping failed: %v", err)
 			time.Sleep(time.Second * 2)
 			continue
 		}
 
-		log.Printf("Successfully connected to database")
+		log.Printf("✅ Successfully connected to database!")
 		break
 	}
 
 	if err != nil {
-		log.Fatal("Failed to connect to database after 3 attempts: ", err)
+		log.Fatal("❌ Failed to connect to database after 3 attempts: ", err)
 	}
 
 	// Set connection pool settings
@@ -69,20 +71,32 @@ func init() {
 	db.SetMaxIdleConns(25)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	log.Printf("Database initialization completed successfully")
+	log.Printf("⚙️ Database connection pool configured (max: 25 connections)")
+
+	// Verify Facebook app secret is set
+	if os.Getenv("FACEBOOK_APP_SECRET") == "" {
+		log.Fatal("❌ FACEBOOK_APP_SECRET environment variable is not set")
+	}
+
+	// Verify webhook token is set
+	if os.Getenv("VERIFY_TOKEN") == "" {
+		log.Fatal("❌ VERIFY_TOKEN environment variable is not set")
+	}
+
+	log.Printf("✅ All required environment variables are set")
 }
 
 func main() {
 	router := http.NewServeMux()
-
 	router.HandleFunc("/webhook", recoverMiddleware(validateFacebookRequest(handleWebhook)))
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
+		log.Printf("💡 No PORT specified, using default: %s", port)
 	}
 
-	log.Printf("Server starting on port %s", port)
+	log.Printf("🌐 Server starting on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
 }
 
@@ -90,7 +104,7 @@ func recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("Recovered from panic: %v", err)
+				log.Printf("❌ PANIC RECOVERED: %v", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 			}
 		}()
@@ -100,17 +114,20 @@ func recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func validateFacebookRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("📥 Incoming %s request from %s", r.Method, r.RemoteAddr)
+
 		if r.Method == "POST" {
 			signature := r.Header.Get("X-Hub-Signature-256")
 			if signature == "" {
-				log.Printf("Missing signature header")
+				log.Printf("❌ Missing Facebook signature header")
 				http.Error(w, "Missing signature", http.StatusUnauthorized)
 				return
 			}
+			log.Printf("✅ Facebook signature header present: %s", signature)
 
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				log.Printf("Error reading body: %v", err)
+				log.Printf("❌ Error reading request body: %v", err)
 				http.Error(w, "Error reading body", http.StatusBadRequest)
 				return
 			}
@@ -120,10 +137,11 @@ func validateFacebookRequest(next http.HandlerFunc) http.HandlerFunc {
 			expectedSig := generateFacebookSignature(body, []byte(appSecret))
 
 			if !hmac.Equal([]byte(signature[7:]), []byte(expectedSig)) {
-				log.Printf("Invalid signature")
+				log.Printf("❌ Invalid Facebook signature")
 				http.Error(w, "Invalid signature", http.StatusUnauthorized)
 				return
 			}
+			log.Printf("✅ Facebook signature verified successfully")
 		}
 		next(w, r)
 	}
@@ -143,63 +161,82 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("hub.verify_token")
 		challenge := r.URL.Query().Get("hub.challenge")
 
-		log.Printf("Received verification request: mode=%s, token=%s", mode, token)
+		log.Printf("📝 Webhook verification request received:")
+		log.Printf("   Mode: %s", mode)
+		log.Printf("   Token: %s", token)
+		log.Printf("   Challenge: %s", challenge)
 
 		if mode == "subscribe" && token == verifyToken {
-			log.Printf("Verification successful")
+			log.Printf("✅ Webhook verification successful!")
 			w.Write([]byte(challenge))
 			return
 		}
-		log.Printf("Verification failed")
+		log.Printf("❌ Webhook verification failed")
 		http.Error(w, "Invalid verification token", http.StatusForbidden)
 		return
 	}
 
 	if r.Method == "POST" {
-		// Log incoming webhook
-		log.Printf("Received webhook request from %s", r.RemoteAddr)
+		log.Printf("📨 Incoming webhook from %s", r.RemoteAddr)
 
 		// Read and log raw webhook data
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("Error reading body: %v", err)
+			log.Printf("❌ Error reading webhook body: %v", err)
 			http.Error(w, "Error reading body", http.StatusBadRequest)
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewBuffer(body))
 
-		log.Printf("Webhook raw data: %s", string(body))
+		log.Printf("📄 Raw webhook data: %s", string(body))
 
 		// Parse webhook event
 		var event struct {
 			Object string `json:"object"`
 			Entry  []struct {
-				ID      string `json:"id"`
-				Time    int64  `json:"time"`
-				Changes []struct {
-					Value struct {
-						PageID  string                 `json:"page_id"`
-						Message map[string]interface{} `json:"message,omitempty"`
-					} `json:"value"`
-				} `json:"changes"`
+				ID        string `json:"id"`
+				Time      int64  `json:"time"`
+				Messaging []struct {
+					Sender struct {
+						ID string `json:"id"`
+					} `json:"sender"`
+					Recipient struct {
+						ID string `json:"id"`
+					} `json:"recipient"`
+					Message struct {
+						Mid  string `json:"mid"`
+						Text string `json:"text"`
+					} `json:"message"`
+				} `json:"messaging"`
 			} `json:"entry"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
-			log.Printf("Error parsing webhook data: %v", err)
+			log.Printf("❌ Error parsing webhook JSON: %v", err)
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
+		log.Printf("📦 Parsed webhook data:")
+		log.Printf("   Platform: %s", event.Object)
+		for _, entry := range event.Entry {
+			log.Printf("   Entry ID: %s", entry.ID)
+			log.Printf("   Timestamp: %d", entry.Time)
+			log.Printf("   Messages: %d", len(entry.Messaging))
+		}
+
 		// Validate event type
 		if event.Object != "page" && event.Object != "instagram" {
-			log.Printf("Unsupported webhook object: %s", event.Object)
+			log.Printf("❌ Unsupported webhook object: %s", event.Object)
 			http.Error(w, "Unsupported webhook object", http.StatusBadRequest)
 			return
 		}
 
+		log.Printf("✅ Webhook data validated successfully")
+
 		// Facebook expects a quick 200 OK
 		w.WriteHeader(http.StatusOK)
+		log.Printf("✅ Sent 200 OK response to Facebook")
 
 		// Process messages asynchronously
 		go func() {
@@ -207,9 +244,13 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 			defer cancel()
 
 			for _, entry := range event.Entry {
-				for _, change := range entry.Changes {
-					pageID := change.Value.PageID
-					log.Printf("Processing message for page ID: %s", pageID)
+				for _, msg := range entry.Messaging {
+					pageID := msg.Recipient.ID
+					log.Printf("🔄 Processing message:")
+					log.Printf("   Page ID: %s", pageID)
+					log.Printf("   Sender ID: %s", msg.Sender.ID)
+					log.Printf("   Message ID: %s", msg.Message.Mid)
+					log.Printf("   Content: %s", msg.Message.Text)
 
 					// Look up Botpress webhook URL
 					var botpressURL string
@@ -220,49 +261,58 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 					if err != nil {
 						if err == sql.ErrNoRows {
-							log.Printf("No active Botpress URL found for page %s", pageID)
+							log.Printf("❌ No active Botpress URL found for page %s", pageID)
 							continue
 						}
-						log.Printf("Database error: %v", err)
+						log.Printf("❌ Database error looking up page: %v", err)
 						continue
 					}
 
-					log.Printf("Found Botpress URL for page %s: %s", pageID, botpressURL)
+					log.Printf("✅ Found Botpress URL: %s", botpressURL)
 
 					// Forward to Botpress
 					payload := map[string]interface{}{
-						"type":    event.Object,
-						"pageId":  pageID,
-						"message": change.Value.Message,
+						"type":   event.Object,
+						"pageId": pageID,
+						"sender": msg.Sender.ID,
+						"message": map[string]interface{}{
+							"type": "text",
+							"text": msg.Message.Text,
+							"mid":  msg.Message.Mid,
+						},
 					}
 
 					jsonData, err := json.Marshal(payload)
 					if err != nil {
-						log.Printf("Error marshaling payload: %v", err)
+						log.Printf("❌ Error creating Botpress payload: %v", err)
 						continue
 					}
 
+					log.Printf("📤 Sending to Botpress:")
+					log.Printf("   URL: %s", botpressURL)
+					log.Printf("   Payload: %s", string(jsonData))
+
 					req, err := http.NewRequestWithContext(ctx, "POST", botpressURL, bytes.NewBuffer(jsonData))
 					if err != nil {
-						log.Printf("Error creating request: %v", err)
+						log.Printf("❌ Error creating Botpress request: %v", err)
 						continue
 					}
 
 					req.Header.Set("Content-Type", "application/json")
 
-					log.Printf("Sending message to Botpress: %s", string(jsonData))
-
 					resp, err := httpClient.Do(req)
 					if err != nil {
-						log.Printf("Error sending to Botpress: %v", err)
+						log.Printf("❌ Error sending to Botpress: %v", err)
 						continue
 					}
 
 					if resp.StatusCode != http.StatusOK {
 						body, _ := io.ReadAll(resp.Body)
-						log.Printf("Botpress error (status %d): %s", resp.StatusCode, string(body))
+						log.Printf("❌ Botpress error (status %d): %s", resp.StatusCode, string(body))
 					} else {
-						log.Printf("Successfully forwarded message to Botpress")
+						body, _ := io.ReadAll(resp.Body)
+						log.Printf("✅ Botpress response (status %d): %s", resp.StatusCode, string(body))
+						log.Printf("✅ Message successfully forwarded to Botpress")
 					}
 					resp.Body.Close()
 				}
