@@ -255,7 +255,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 					// Look up Botpress webhook URL
 					var botpressURL string
-					err := db.QueryRowContext(ctx,
+					err = db.QueryRowContext(ctx,
 						"SELECT botpress_url FROM pages WHERE page_id = $1 AND status = 'active'",
 						pageID,
 					).Scan(&botpressURL)
@@ -271,8 +271,8 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 					log.Printf("✅ Found Botpress URL: %s", botpressURL)
 
-					// Forward to Botpress
-					payload := map[string]interface{}{
+					// Create request to Botpress
+					botpressPayload := map[string]interface{}{
 						"type":   event.Object,
 						"pageId": pageID,
 						"sender": msg.Sender.ID,
@@ -283,15 +283,11 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 						},
 					}
 
-					jsonData, err := json.Marshal(payload)
+					jsonData, err := json.Marshal(botpressPayload)
 					if err != nil {
 						log.Printf("❌ Error creating Botpress payload: %v", err)
 						continue
 					}
-
-					log.Printf("📤 Sending to Botpress:")
-					log.Printf("   URL: %s", botpressURL)
-					log.Printf("   Payload: %s", string(jsonData))
 
 					req, err := http.NewRequestWithContext(ctx, "POST", botpressURL, bytes.NewBuffer(jsonData))
 					if err != nil {
@@ -301,42 +297,30 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 					req.Header.Set("Content-Type", "application/json")
 
+					log.Printf("📤 Sending to Botpress:")
+					log.Printf("   URL: %s", botpressURL)
+					log.Printf("   Payload: %s", string(jsonData))
+
+					// Send to Botpress
 					resp, err := httpClient.Do(req)
 					if err != nil {
 						log.Printf("❌ Error sending to Botpress: %v", err)
 						continue
 					}
 
-					// Handle Botpress response
-					if resp.StatusCode != http.StatusOK {
-						body, _ := io.ReadAll(resp.Body)
-						log.Printf("❌ Botpress error (status %d): %s", resp.StatusCode, string(body))
-						continue
-					}
-
-					// Read and parse Botpress response
-					var botpressResponse struct {
-						Messages []struct {
-							Type string `json:"type"`
-							Text string `json:"text"`
-						} `json:"messages"`
-					}
-
-					body, err := io.ReadAll(resp.Body)
+					// Read and log Botpress response
+					body, err = io.ReadAll(resp.Body)
+					resp.Body.Close()
 					if err != nil {
 						log.Printf("❌ Error reading Botpress response: %v", err)
 						continue
 					}
-					resp.Body.Close()
 
-					log.Printf("📩 Raw Botpress response: %s", string(body))
+					log.Printf("📩 Raw Botpress response (status %d):", resp.StatusCode)
+					log.Printf("Headers: %+v", resp.Header)
+					log.Printf("Body: %s", string(body))
 
-					if err := json.Unmarshal(body, &botpressResponse); err != nil {
-						log.Printf("❌ Error parsing Botpress response: %v", err)
-						continue
-					}
-
-					// Get page access token from database
+					// Get page token for sending response
 					var pageToken string
 					err = db.QueryRowContext(ctx,
 						"SELECT access_token FROM pages WHERE page_id = $1 AND status = 'active'",
@@ -348,55 +332,52 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 
-					// Send each message back to user via Facebook
-					for _, message := range botpressResponse.Messages {
-						// Prepare Facebook message payload
-						fbPayload := map[string]interface{}{
-							"recipient": map[string]string{
-								"id": msg.Sender.ID,
-							},
-							"message": map[string]string{
-								"text": message.Text,
-							},
-						}
-
-						jsonData, err := json.Marshal(fbPayload)
-						if err != nil {
-							log.Printf("❌ Error creating Facebook payload: %v", err)
-							continue
-						}
-
-						// Send to Facebook
-						fbURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages?access_token=%s",
-							pageID, pageToken)
-
-						log.Printf("📤 Sending response to Facebook:")
-						log.Printf("   URL: %s", fbURL)
-						log.Printf("   Payload: %s", string(jsonData))
-
-						req, err := http.NewRequestWithContext(ctx, "POST", fbURL, bytes.NewBuffer(jsonData))
-						if err != nil {
-							log.Printf("❌ Error creating Facebook request: %v", err)
-							continue
-						}
-
-						req.Header.Set("Content-Type", "application/json")
-
-						resp, err := httpClient.Do(req)
-						if err != nil {
-							log.Printf("❌ Error sending to Facebook: %v", err)
-							continue
-						}
-
-						fbResp, _ := io.ReadAll(resp.Body)
-						if resp.StatusCode != http.StatusOK {
-							log.Printf("❌ Facebook error (status %d): %s", resp.StatusCode, string(fbResp))
-						} else {
-							log.Printf("✅ Facebook response (status %d): %s", resp.StatusCode, string(fbResp))
-							log.Printf("✅ Message successfully sent to user")
-						}
-						resp.Body.Close()
+					// For now, just echo back the original message as a test
+					fbPayload := map[string]interface{}{
+						"recipient": map[string]string{
+							"id": msg.Sender.ID,
+						},
+						"message": map[string]string{
+							"text": "Received: " + msg.Message.Text,
+						},
 					}
+
+					jsonData, err = json.Marshal(fbPayload)
+					if err != nil {
+						log.Printf("❌ Error creating Facebook payload: %v", err)
+						continue
+					}
+
+					// Send to Facebook
+					fbURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages?access_token=%s",
+						pageID, pageToken)
+
+					log.Printf("📤 Sending response to Facebook:")
+					log.Printf("   URL: %s", fbURL)
+					log.Printf("   Payload: %s", string(jsonData))
+
+					req, err = http.NewRequestWithContext(ctx, "POST", fbURL, bytes.NewBuffer(jsonData))
+					if err != nil {
+						log.Printf("❌ Error creating Facebook request: %v", err)
+						continue
+					}
+
+					req.Header.Set("Content-Type", "application/json")
+
+					resp, err = httpClient.Do(req)
+					if err != nil {
+						log.Printf("❌ Error sending to Facebook: %v", err)
+						continue
+					}
+
+					fbResp, _ := io.ReadAll(resp.Body)
+					if resp.StatusCode != http.StatusOK {
+						log.Printf("❌ Facebook error (status %d): %s", resp.StatusCode, string(fbResp))
+					} else {
+						log.Printf("✅ Facebook response (status %d): %s", resp.StatusCode, string(fbResp))
+						log.Printf("✅ Message successfully sent to user")
+					}
+					resp.Body.Close()
 				}
 			}
 		}()
