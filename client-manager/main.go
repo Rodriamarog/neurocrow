@@ -355,12 +355,38 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
-	// Get Facebook pages and their connected Instagram accounts
+	// Exchange user token for permanent token first
+	permUrl := fmt.Sprintf(
+		"https://graph.facebook.com/v19.0/oauth/access_token?"+
+			"grant_type=fb_exchange_token&"+
+			"client_id=%s&"+
+			"client_secret=%s&"+
+			"fb_exchange_token=%s",
+		os.Getenv("FACEBOOK_APP_ID"),
+		os.Getenv("FACEBOOK_APP_SECRET"),
+		userToken,
+	)
+
+	log.Printf("Getting permanent user token")
+	permResp, err := http.Get(permUrl)
+	if err != nil {
+		return nil, fmt.Errorf("error getting permanent token: %w", err)
+	}
+	defer permResp.Body.Close()
+
+	var permResult struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(permResp.Body).Decode(&permResult); err != nil {
+		return nil, fmt.Errorf("error parsing permanent token response: %w", err)
+	}
+
+	// Use the permanent token to get pages
 	fbURL := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
 			"access_token=%s&"+
 			"fields=id,name,access_token,instagram_business_account{id,name,username}",
-		userToken,
+		permResult.AccessToken,
 	)
 
 	log.Printf("Fetching Facebook pages and connected Instagram accounts")
@@ -394,11 +420,11 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 	// Add Facebook pages and their connected Instagram accounts
 	for _, page := range fbResult.Data {
-		// Add Facebook page
+		// Add Facebook page with permanent token
 		allPages = append(allPages, FacebookPage{
 			ID:          page.ID,
 			Name:        page.Name,
-			AccessToken: page.AccessToken,
+			AccessToken: page.AccessToken, // This is now a permanent token
 			Platform:    "facebook",
 		})
 		log.Printf("Added Facebook page: %s", page.Name)
@@ -408,7 +434,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 			allPages = append(allPages, FacebookPage{
 				ID:          page.Instagram.ID,
 				Name:        page.Instagram.Name,
-				AccessToken: page.AccessToken,
+				AccessToken: page.AccessToken, // Use same permanent token
 				Platform:    "instagram",
 			})
 			log.Printf("Added connected Instagram account: %s", page.Instagram.Name)
