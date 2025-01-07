@@ -14,8 +14,28 @@ import (
 
 func handleWebhook(w http.ResponseWriter, r *http.Request) {
     if r.Method == "GET" {
-        // Handle Facebook webhook verification
-        verifyFacebookWebhook(w, r)
+        // Check if this is a Facebook webhook verification
+        mode := r.URL.Query().Get("hub.mode")
+        token := r.URL.Query().Get("hub.verify_token")
+        challenge := r.URL.Query().Get("hub.challenge")
+
+        // If Facebook verification parameters are present, handle them
+        if mode != "" && token != "" && challenge != "" {
+            verifyToken := os.Getenv("VERIFY_TOKEN")
+            
+            if mode == "subscribe" && token == verifyToken {
+                log.Printf("✅ Facebook webhook verification successful!")
+                w.Write([]byte(challenge))
+                return
+            }
+            log.Printf("❌ Facebook webhook verification failed")
+            http.Error(w, "Invalid verification token", http.StatusForbidden)
+            return
+        }
+
+        // If no Facebook params, assume it's Botpress checking the endpoint
+        log.Printf("✅ Endpoint check - returning 200 OK")
+        w.WriteHeader(http.StatusOK)
         return
     }
 
@@ -64,6 +84,10 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
         // Process messages asynchronously
         go processWebhook(r.Context(), event)
+    } else {
+        // Handle unsupported methods
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
     }
 }
 
