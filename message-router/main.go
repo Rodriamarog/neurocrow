@@ -1,3 +1,4 @@
+// main.go
 package main
 
 import (
@@ -203,11 +204,15 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
                     Recipient struct {
                         ID string `json:"id"`
                     } `json:"recipient"`
-                    Message   struct {
+                    Message   *struct {
                         Mid     string `json:"mid"`
                         Text    string `json:"text"`
                         IsEcho  bool   `json:"is_echo"`
                     } `json:"message"`
+                    Delivery *struct {
+                        Mids       []string `json:"mids"`
+                        Watermark  int64    `json:"watermark"`
+                    } `json:"delivery"`
                 } `json:"messaging"`
             } `json:"entry"`
         }
@@ -246,9 +251,27 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
             for _, entry := range event.Entry {
                 for _, msg := range entry.Messaging {
+                    // Skip if this is a delivery receipt
+                    if msg.Delivery != nil {
+                        log.Printf("📝 Skipping delivery receipt")
+                        continue
+                    }
+
+                    // Skip if there's no message
+                    if msg.Message == nil {
+                        log.Printf("📝 Skipping non-message event")
+                        continue
+                    }
+
                     // Skip echo messages
                     if msg.Message.IsEcho {
                         log.Printf("📝 Skipping echo message with ID: %s", msg.Message.Mid)
+                        continue
+                    }
+
+                    // Only process messages that have content
+                    if msg.Message.Text == "" {
+                        log.Printf("📝 Skipping empty message")
                         continue
                     }
 
@@ -258,7 +281,6 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
                     log.Printf("   Sender ID: %s", msg.Sender.ID)
                     log.Printf("   Message ID: %s", msg.Message.Mid)
                     log.Printf("   Content: %s", msg.Message.Text)
-                    log.Printf("   Is Echo: %v", msg.Message.IsEcho)
 
                     // Look up Botpress webhook URL
                     var botpressURL string
@@ -287,7 +309,6 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
                             "type": "text",
                             "text": msg.Message.Text,
                             "mid": msg.Message.Mid,
-                            "is_echo": msg.Message.IsEcho,
                         },
                     }
 
@@ -340,7 +361,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
                         continue
                     }
 
-                    // Only send response if it's not an echo message
+                    // For now, just echo back the original message as a test
                     fbPayload := map[string]interface{}{
                         "recipient": map[string]string{
                             "id": msg.Sender.ID,
