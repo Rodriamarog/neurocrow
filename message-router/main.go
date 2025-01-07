@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -191,7 +190,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
         
         log.Printf("📄 Raw webhook data: %s", string(body))
         
-        // Parse webhook event
+        // Parse webhook event with updated structure
         var event struct {
             Object string `json:"object"`
             Entry  []struct {
@@ -205,8 +204,9 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
                         ID string `json:"id"`
                     } `json:"recipient"`
                     Message   struct {
-                        Mid  string `json:"mid"`
-                        Text string `json:"text"`
+                        Mid     string `json:"mid"`
+                        Text    string `json:"text"`
+                        IsEcho  bool   `json:"is_echo"`
                     } `json:"message"`
                 } `json:"messaging"`
             } `json:"entry"`
@@ -217,16 +217,6 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
             http.Error(w, "Invalid request body", http.StatusBadRequest)
             return
         }
-
-        // Skip messages from our bot
-        for _, entry := range event.Entry {
-            for _, msg := range entry.Messaging {
-                if msg.Sender.ID == msg.Recipient.ID {
-                    log.Printf("📝 Skipping message from our bot to avoid loops")
-                    w.WriteHeader(http.StatusOK)
-                    return
-                }
-            }
 
         log.Printf("📦 Parsed webhook data:")
         log.Printf("   Platform: %s", event.Object)
@@ -256,13 +246,20 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 
             for _, entry := range event.Entry {
                 for _, msg := range entry.Messaging {
+                    // Skip echo messages
+                    if msg.Message.IsEcho {
+                        log.Printf("📝 Skipping echo message with ID: %s", msg.Message.Mid)
+                        continue
+                    }
+
                     pageID := msg.Recipient.ID
                     log.Printf("🔄 Processing message:")
                     log.Printf("   Page ID: %s", pageID)
                     log.Printf("   Sender ID: %s", msg.Sender.ID)
                     log.Printf("   Message ID: %s", msg.Message.Mid)
                     log.Printf("   Content: %s", msg.Message.Text)
-                    
+                    log.Printf("   Is Echo: %v", msg.Message.IsEcho)
+
                     // Look up Botpress webhook URL
                     var botpressURL string
                     err = db.QueryRowContext(ctx,
@@ -290,6 +287,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
                             "type": "text",
                             "text": msg.Message.Text,
                             "mid": msg.Message.Mid,
+                            "is_echo": msg.Message.IsEcho,
                         },
                     }
 
@@ -342,7 +340,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
                         continue
                     }
 
-                    // For now, just echo back the original message as a test
+                    // Only send response if it's not an echo message
                     fbPayload := map[string]interface{}{
                         "recipient": map[string]string{
                             "id": msg.Sender.ID,
@@ -392,5 +390,4 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
             }
         }()
     }
-}
 }
