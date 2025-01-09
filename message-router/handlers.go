@@ -141,47 +141,50 @@ func forwardToBotpress(ctx context.Context, pageID string, msg MessagingEntry) e
 }
 
 func handleBotpressResponse(w http.ResponseWriter, r *http.Request) {
-    // For GET requests (Botpress validation), just return 200 OK
-    if r.Method == http.MethodGet {
-        log.Printf("✅ Botpress validation request received")
+    // Read the raw body first for logging
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        log.Printf("❌ Error reading request body: %v", err)
+        w.WriteHeader(http.StatusOK)  // Still return 200 OK
+        return
+    }
+    log.Printf("📥 Received Botpress body: %s", string(body))
+
+    // For validation requests (configuration testing), just return 200 OK
+    if len(body) <= 32 { // Validation messages are typically small
+        log.Printf("✅ Received Botpress validation request")
         w.WriteHeader(http.StatusOK)
         return
     }
 
-    // For POST requests, process the actual Botpress response
-    if r.Method == http.MethodPost {
-        var response BotpressResponse
-        if err := json.NewDecoder(r.Body).Decode(&response); err != nil {
-            log.Printf("❌ Error parsing Botpress response: %v", err)
-            // Still return 200 OK to acknowledge receipt
+    // Try to parse as a full Botpress response
+    var response BotpressResponse
+    if err := json.Unmarshal(body, &response); err != nil {
+        log.Printf("❌ Error parsing Botpress response: %v", err)
+        w.WriteHeader(http.StatusOK)  // Still return 200 OK
+        return
+    }
+
+    // Process only if we have the necessary information
+    if response.ConversationId != "" && response.Payload.Text != "" {
+        parts := strings.Split(response.ConversationId, "-")
+        if len(parts) != 2 {
+            log.Printf("❌ Invalid conversation ID format: %s", response.ConversationId)
             w.WriteHeader(http.StatusOK)
             return
         }
 
-        // Process valid responses
-        if response.ConversationId != "" {
-            parts := strings.Split(response.ConversationId, "-")
-            if len(parts) != 2 {
-                log.Printf("❌ Invalid conversation ID format: %s", response.ConversationId)
-                w.WriteHeader(http.StatusOK)
-                return
-            }
-
-            pageID, senderID := parts[0], parts[1]
-
-            // Send response back to Facebook
-            ctx := context.Background()
-            if err := sendFacebookResponse(ctx, pageID, senderID, response.Payload.Text); err != nil {
-                log.Printf("❌ Error sending to Facebook: %v", err)
-            }
+        pageID, senderID := parts[0], parts[1]
+        
+        // Send response back to Facebook
+        ctx := context.Background()
+        if err := sendFacebookResponse(ctx, pageID, senderID, response.Payload.Text); err != nil {
+            log.Printf("❌ Error sending to Facebook: %v", err)
         }
-
-        w.WriteHeader(http.StatusOK)
-        return
     }
 
-    // Any other method
-    w.WriteHeader(http.StatusMethodNotAllowed)
+    // Always return 200 OK to Botpress
+    w.WriteHeader(http.StatusOK)
 }
 
 func sendFacebookResponse(ctx context.Context, pageID, senderID, message string) error {
