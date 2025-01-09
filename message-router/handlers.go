@@ -4,42 +4,37 @@ package main
 import (
     "bytes"
     "context"
-    "database/sql"
     "encoding/json"
     "fmt"
     "io"
     "log"
     "net/http"
     "os"
+    "strings"
     "time"
+    "database/sql"
 )
 
-// handleWebhook processes incoming webhook requests from both Facebook and Botpress
+// handleWebhook processes incoming webhook requests
 func handleWebhook(w http.ResponseWriter, r *http.Request) {
-    // Handle GET requests (Facebook verification and health checks)
     if r.Method == "GET" {
         handleGetRequest(w, r)
         return
     }
 
-    // Handle POST requests (incoming messages)
     if r.Method == "POST" {
         handlePostRequest(w, r)
         return
     }
 
-    // Reject all other methods
     http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
-// handleGetRequest handles GET requests for webhook verification
 func handleGetRequest(w http.ResponseWriter, r *http.Request) {
-    // Extract Facebook verification parameters
     mode := r.URL.Query().Get("hub.mode")
     token := r.URL.Query().Get("hub.verify_token")
     challenge := r.URL.Query().Get("hub.challenge")
 
-    // If Facebook verification parameters are present, handle them
     if mode != "" && token != "" && challenge != "" {
         verifyToken := os.Getenv("VERIFY_TOKEN")
         
@@ -53,175 +48,180 @@ func handleGetRequest(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // If no Facebook params, assume it's a health check
-    log.Printf("✅ Endpoint check - returning 200 OK")
+    // Health check response
     w.WriteHeader(http.StatusOK)
 }
 
-// handlePostRequest handles POST requests for incoming messages
 func handlePostRequest(w http.ResponseWriter, r *http.Request) {
-    log.Printf("📨 Incoming webhook from %s", r.RemoteAddr)
-    
-    // Read request body
     body, err := io.ReadAll(r.Body)
     if err != nil {
-        log.Printf("❌ Error reading webhook body: %v", err)
+        log.Printf("❌ Error reading request body: %v", err)
         http.Error(w, "Error reading body", http.StatusBadRequest)
         return
     }
-    // Restore body for further reading
     r.Body = io.NopCloser(bytes.NewBuffer(body))
-    
-    log.Printf("📄 Raw webhook data: %s", string(body))
 
-    // Check if it's a Facebook request by looking for signature
+    // Handle Facebook messages
     if r.Header.Get("X-Hub-Signature-256") != "" {
-        handleFacebookWebhook(w, r, body)
+        handleFacebookMessage(w, r, body)
         return
     }
 
-    // Check if it's a Botpress request
+    // Handle Botpress responses
     if isBotpressRequest(r) {
-        handleBotpressWebhook(w, r)
+        handleBotpressResponse(w, r)
         return
     }
 
-    // Unknown webhook source
-    log.Printf("⚠️ Unknown webhook source")
+    // Unknown request type
     w.WriteHeader(http.StatusOK)
 }
 
-// handleFacebookWebhook processes Facebook-specific webhook requests
-func handleFacebookWebhook(w http.ResponseWriter, r *http.Request, body []byte) {
-    // Parse webhook event
+func handleFacebookMessage(w http.ResponseWriter, r *http.Request, body []byte) {
     var event FacebookEvent
     if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
-        log.Printf("❌ Error parsing webhook JSON: %v", err)
+        log.Printf("❌ Error parsing Facebook webhook: %v", err)
         http.Error(w, "Invalid request body", http.StatusBadRequest)
         return
     }
 
-    // Log parsed data
-    log.Printf("📦 Parsed webhook data:")
-    log.Printf("   Platform: %s", event.Object)
-    for _, entry := range event.Entry {
-        log.Printf("   Entry ID: %s", entry.ID)
-        log.Printf("   Timestamp: %d", entry.Time)
-        log.Printf("   Messages: %d", len(entry.Messaging))
-    }
-
-    // Validate event type
     if !isValidFacebookObject(event.Object) {
         log.Printf("❌ Unsupported webhook object: %s", event.Object)
         http.Error(w, "Unsupported webhook object", http.StatusBadRequest)
         return
     }
 
-    log.Printf("✅ Webhook data validated successfully")
-
     // Send immediate 200 OK to Facebook
     w.WriteHeader(http.StatusOK)
-    log.Printf("✅ Sent 200 OK response to Facebook")
-
-    // Create background context for async processing
-    ctx := context.Background()
 
     // Process messages asynchronously
-    go processWebhook(ctx, event)
+    ctx := context.Background()
+    go processMessagesAsync(ctx, event)
 }
 
-// handleBotpressWebhook processes Botpress-specific webhook requests
-func handleBotpressWebhook(w http.ResponseWriter, r *http.Request) {
-    log.Printf("✅ Botpress webhook request detected")
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    fmt.Fprintf(w, `{"status":"ok","message":"Webhook received"}`)
-}
-
-// processWebhook handles the asynchronous processing of Facebook messages
-func processWebhook(ctx context.Context, event FacebookEvent) {
+func processMessagesAsync(ctx context.Context, event FacebookEvent) {
     for _, entry := range event.Entry {
         for _, msg := range entry.Messaging {
-            // Skip delivery receipts
-            if msg.Delivery != nil {
-                processDeliveryReceipt(msg.Delivery)
+            if msg.Message == nil || msg.Message.IsEcho || msg.Message.Text == "" {
                 continue
             }
 
-            // Skip empty or echo messages
-            if msg.Message == nil {
-                log.Printf("📝 Skipping non-message event")
-                continue
-            }
-            if msg.Message.IsEcho {
-                log.Printf("📝 Skipping echo message with ID: %s", msg.Message.Mid)
-                continue
-            }
-            if msg.Message.Text == "" {
-                log.Printf("📝 Skipping empty message")
-                continue
-            }
-
-            // Handle the message with retries
-            if err := handleMessageWithRetry(ctx, entry.ID, msg); err != nil {
-                log.Printf("❌ Error handling message after retries: %v", err)
+            // Forward message to Botpress
+            if err := forwardToBotpress(ctx, entry.ID, msg); err != nil {
+                log.Printf("❌ Error forwarding to Botpress: %v", err)
             }
         }
     }
 }
 
-// handleMessageWithRetry attempts to process a message with retries
-func handleMessageWithRetry(ctx context.Context, pageID string, msg MessagingEntry) error {
-    maxRetries := 3
-    backoff := time.Second
-
-    for attempt := 1; attempt <= maxRetries; attempt++ {
-        err := handleMessage(ctx, pageID, msg)
-        if err == nil {
-            return nil
-        }
-
-        log.Printf("⚠️ Attempt %d/%d failed: %v", attempt, maxRetries, err)
-        if attempt < maxRetries {
-            time.Sleep(backoff)
-            backoff *= 2 // Exponential backoff
-        }
+func forwardToBotpress(ctx context.Context, pageID string, msg MessagingEntry) error {
+    // Create Botpress request
+    botpressReq := BotpressRequest{
+        ID:             msg.Message.Mid,
+        ConversationId: fmt.Sprintf("%s-%s", pageID, msg.Sender.ID),
+        Channel:        "facebook",
+        Type:          "text",
+        Content:       msg.Message.Text,
+        Payload: BotpressRequestPayload{
+            Text:     msg.Message.Text,
+            Type:     "text",
+            PageId:   pageID,
+            SenderId: msg.Sender.ID,
+        },
     }
 
-    return fmt.Errorf("failed after %d attempts", maxRetries)
-}
-
-// handleMessage processes a single message
-func handleMessage(ctx context.Context, pageID string, msg MessagingEntry) error {
-    log.Printf("🔄 Processing message:")
-    log.Printf("   Page ID: %s", pageID)
-    log.Printf("   Sender ID: %s", msg.Sender.ID)
-    log.Printf("   Message ID: %s", msg.Message.Mid)
-    log.Printf("   Content: %s", msg.Message.Text)
-
-    // Get Botpress URL with timeout
+    // Get Botpress URL
     botpressURL, err := getBotpressURL(ctx, pageID)
     if err != nil {
         return fmt.Errorf("error getting Botpress URL: %v", err)
     }
 
-    // Send to Botpress
-    botpressResp, err := sendToBotpress(ctx, botpressURL, pageID, msg)
-    if err != nil {
-        return fmt.Errorf("error sending to Botpress: %v", err)
+    // Send to Botpress with retries
+    return sendToBotpressWithRetry(ctx, botpressURL, botpressReq)
+}
+
+func handleBotpressResponse(w http.ResponseWriter, r *http.Request) {
+    var response BotpressResponse
+    if err := json.NewDecoder(r.Body).Decode(&response); err != nil {
+        log.Printf("❌ Error parsing Botpress response: %v", err)
+        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        return
     }
 
-    // Get page token with timeout
+    // Parse conversation ID to get page ID and sender ID
+    parts := strings.Split(response.ConversationId, "-")
+    if len(parts) != 2 {
+        log.Printf("❌ Invalid conversation ID format: %s", response.ConversationId)
+        http.Error(w, "Invalid conversation ID", http.StatusBadRequest)
+        return
+    }
+
+    pageID, senderID := parts[0], parts[1]
+
+    // Send response back to Facebook
+    ctx := context.Background()
+    if err := sendFacebookResponse(ctx, pageID, senderID, response.Payload.Text); err != nil {
+        log.Printf("❌ Error sending to Facebook: %v", err)
+        http.Error(w, "Error sending to Facebook", http.StatusInternalServerError)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+}
+
+func sendFacebookResponse(ctx context.Context, pageID, senderID, message string) error {
     pageToken, err := getPageToken(ctx, pageID)
     if err != nil {
         return fmt.Errorf("error getting page token: %v", err)
     }
 
-    // Send response back to Facebook
-    return sendFacebookMessage(ctx, pageID, pageToken, msg.Sender.ID, botpressResp.Payload.Text)
+    return sendFacebookMessage(ctx, pageID, pageToken, senderID, message)
 }
 
-// getBotpressURL retrieves the Botpress webhook URL from the database
+func sendToBotpressWithRetry(ctx context.Context, url string, payload BotpressRequest) error {
+    maxRetries := 3
+    var lastErr error
+
+    for attempt := 0; attempt < maxRetries; attempt++ {
+        if err := sendToBotpress(ctx, url, payload); err != nil {
+            lastErr = err
+            log.Printf("⚠️ Botpress attempt %d failed: %v", attempt+1, err)
+            time.Sleep(time.Second * time.Duration(attempt+1))
+            continue
+        }
+        return nil
+    }
+
+    return fmt.Errorf("failed after %d attempts: %v", maxRetries, lastErr)
+}
+
+func sendToBotpress(ctx context.Context, url string, payload BotpressRequest) error {
+    jsonData, err := json.Marshal(payload)
+    if err != nil {
+        return fmt.Errorf("error marshaling payload: %v", err)
+    }
+
+    req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+    if err != nil {
+        return fmt.Errorf("error creating request: %v", err)
+    }
+
+    req.Header.Set("Content-Type", "application/json")
+    
+    resp, err := httpClient.Do(req)
+    if err != nil {
+        return fmt.Errorf("error sending request: %v", err)
+    }
+    defer resp.Body.Close()
+
+    // If we get an empty 200 OK, that's fine - Botpress will send the response separately
+    if resp.StatusCode == http.StatusOK {
+        return nil
+    }
+
+    return fmt.Errorf("received status %d from Botpress", resp.StatusCode)
+}
+
 func getBotpressURL(ctx context.Context, pageID string) (string, error) {
     // Create a context with timeout
     queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -244,65 +244,4 @@ func getBotpressURL(ctx context.Context, pageID string) (string, error) {
 
     log.Printf("✅ Found Botpress URL for page %s", pageID)
     return botpressURL, nil
-}
-
-// sendToBotpress forwards the message to Botpress
-func sendToBotpress(ctx context.Context, botpressURL string, pageID string, msg MessagingEntry) (*BotpressResponse, error) {
-    // Create request payload
-    botpressPayload := map[string]interface{}{
-        "id": msg.Message.Mid,
-        "conversationId": fmt.Sprintf("%s-%s", pageID, msg.Sender.ID),
-        "channel": "facebook",
-        "type": "text",
-        "content": msg.Message.Text,
-        "payload": map[string]interface{}{
-            "text": msg.Message.Text,
-            "type": "text",
-            "pageId": pageID,
-            "senderId": msg.Sender.ID,
-        },
-    }
-
-    jsonData, err := json.Marshal(botpressPayload)
-    if err != nil {
-        return nil, fmt.Errorf("error creating Botpress payload: %v", err)
-    }
-
-    // Create request with timeout context
-    reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-    defer cancel()
-
-    req, err := http.NewRequestWithContext(reqCtx, "POST", botpressURL, bytes.NewBuffer(jsonData))
-    if err != nil {
-        return nil, fmt.Errorf("error creating Botpress request: %v", err)
-    }
-
-    req.Header.Set("Content-Type", "application/json")
-    
-    log.Printf("📤 Sending to Botpress:")
-    log.Printf("   URL: %s", botpressURL)
-    log.Printf("   Payload: %s", string(jsonData))
-
-    // Send request
-    resp, err := httpClient.Do(req)
-    if err != nil {
-        return nil, fmt.Errorf("error sending to Botpress: %v", err)
-    }
-    defer resp.Body.Close()
-
-    // Read response
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, fmt.Errorf("error reading Botpress response: %v", err)
-    }
-
-    log.Printf("📩 Raw Botpress response (status %d): %s", resp.StatusCode, string(body))
-
-    // Parse response
-    var botpressResp BotpressResponse
-    if err := json.Unmarshal(body, &botpressResp); err != nil {
-        return nil, fmt.Errorf("error parsing Botpress response: %v", err)
-    }
-
-    return &botpressResp, nil
 }
