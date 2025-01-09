@@ -187,7 +187,7 @@ func setupRouter() *http.ServeMux {
     // Register routes with middleware
     router.HandleFunc("/", logMiddleware(healthCheckHandler))
     
-    // Special handler for the webhook endpoint
+    // Main webhook endpoint for Facebook
     router.HandleFunc("/webhook", logMiddleware(recoverMiddleware(func(w http.ResponseWriter, r *http.Request) {
         // Check if it's a Botpress request
         if isBotpressRequest(r) {
@@ -212,11 +212,15 @@ func setupRouter() *http.ServeMux {
         w.WriteHeader(http.StatusOK)
         fmt.Fprintf(w, `{"status":"ok"}`)
     })))
+
+    // New endpoint specifically for Botpress responses
+    router.HandleFunc("/botpress-response", logMiddleware(recoverMiddleware(handleBotpressResponse)))
     
     // Log registered routes
     log.Printf("📍 Registered routes:")
     log.Printf("   - GET/POST/HEAD / (Health Check)")
     log.Printf("   - GET/POST /webhook (Multi-purpose Webhook)")
+    log.Printf("   - POST /botpress-response (Botpress Response Handler)")
     
     return router
 }
