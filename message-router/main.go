@@ -143,10 +143,17 @@ func recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-    // Only allow GET requests to the root path
-    if r.Method != http.MethodGet || r.URL.Path != "/" {
-        log.Printf("❌ Invalid request: %s %s", r.Method, r.URL.Path)
+    // Allow both GET and POST requests to the root path
+    if r.URL.Path != "/" {
+        log.Printf("❌ Invalid request path: %s", r.URL.Path)
         http.NotFound(w, r)
+        return
+    }
+
+    // Allow only GET and POST methods
+    if r.Method != http.MethodGet && r.Method != http.MethodPost {
+        log.Printf("❌ Invalid method: %s", r.Method)
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
         return
     }
 
@@ -156,18 +163,37 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Fprintf(w, `{"status":"healthy","message":"Neurocrow Message Router is running"}`)
 }
 
+func botpressHandler(w http.ResponseWriter, r *http.Request) {
+    // Always respond with 200 OK for Botpress health checks
+    w.WriteHeader(http.StatusOK)
+    if r.Method == http.MethodGet {
+        fmt.Fprintf(w, `{"status":"healthy","message":"Webhook endpoint ready"}`)
+    }
+}
+
 func setupRouter() *http.ServeMux {
     router := http.NewServeMux()
     
     // Register routes with middleware
     router.HandleFunc("/", logMiddleware(healthCheckHandler))
-    router.HandleFunc("/webhook", logMiddleware(recoverMiddleware(validateFacebookRequest(handleWebhook))))
+    
+    // Special handler for the webhook endpoint
+    router.HandleFunc("/webhook", logMiddleware(recoverMiddleware(func(w http.ResponseWriter, r *http.Request) {
+        // Check if it's a Botpress request
+        if r.Header.Get("User-Agent") != "" && r.Method == http.MethodPost {
+            botpressHandler(w, r)
+            return
+        }
+        
+        // If not Botpress, apply Facebook validation
+        validateFacebookRequest(handleWebhook)(w, r)
+    })))
     
     // Log registered routes
     log.Printf("📍 Registered routes:")
-    log.Printf("   - GET  / (Health Check)")
+    log.Printf("   - GET/POST / (Health Check)")
     log.Printf("   - GET  /webhook (Facebook Verification)")
-    log.Printf("   - POST /webhook (Facebook Webhook)")
+    log.Printf("   - POST /webhook (Facebook/Botpress Webhook)")
     
     return router
 }
