@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -8,6 +7,7 @@ import (
     "os"
     "time"
     "fmt"
+    "strings" // Added missing import
 
     "github.com/joho/godotenv"
     _ "github.com/lib/pq"
@@ -142,32 +142,42 @@ func recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
     }
 }
 
+// Update the healthCheckHandler to allow HEAD requests
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-    // Allow both GET and POST requests to the root path
     if r.URL.Path != "/" {
         log.Printf("❌ Invalid request path: %s", r.URL.Path)
         http.NotFound(w, r)
         return
     }
 
-    // Allow only GET and POST methods
-    if r.Method != http.MethodGet && r.Method != http.MethodPost {
+    // Allow GET, POST, and HEAD methods
+    if r.Method != http.MethodGet && r.Method != http.MethodPost && r.Method != http.MethodHead {
         log.Printf("❌ Invalid method: %s", r.Method)
         http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
         return
     }
 
-    // Return basic health check response
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusOK)
-    fmt.Fprintf(w, `{"status":"healthy","message":"Neurocrow Message Router is running"}`)
+    
+    // Only write body for GET and POST requests
+    if r.Method != http.MethodHead {
+        fmt.Fprintf(w, `{"status":"healthy","message":"Neurocrow Message Router is running"}`)
+    }
+}
+
+func isBotpressRequest(r *http.Request) bool {
+    userAgent := r.Header.Get("User-Agent")
+    return userAgent == "axios/1.6.8" || // Botpress uses axios
+           strings.Contains(strings.ToLower(userAgent), "botpress")
 }
 
 func botpressHandler(w http.ResponseWriter, r *http.Request) {
     // Always respond with 200 OK for Botpress health checks
     w.WriteHeader(http.StatusOK)
-    if r.Method == http.MethodGet {
-        fmt.Fprintf(w, `{"status":"healthy","message":"Webhook endpoint ready"}`)
+    if r.Method == http.MethodPost {
+        w.Header().Set("Content-Type", "application/json")
+        fmt.Fprintf(w, `{"status":"ok","message":"Webhook received"}`)
     }
 }
 
@@ -180,20 +190,33 @@ func setupRouter() *http.ServeMux {
     // Special handler for the webhook endpoint
     router.HandleFunc("/webhook", logMiddleware(recoverMiddleware(func(w http.ResponseWriter, r *http.Request) {
         // Check if it's a Botpress request
-        if r.Header.Get("User-Agent") != "" && r.Method == http.MethodPost {
-            botpressHandler(w, r)
+        if isBotpressRequest(r) {
+            log.Printf("✅ Botpress request detected")
+            w.WriteHeader(http.StatusOK)
+            if r.Method == http.MethodPost {
+                w.Header().Set("Content-Type", "application/json")
+                fmt.Fprintf(w, `{"status":"ok","message":"Webhook received"}`)
+            }
             return
         }
         
-        // If not Botpress, apply Facebook validation
-        validateFacebookRequest(handleWebhook)(w, r)
+        // If it has Facebook signature headers, treat as Facebook webhook
+        if r.Header.Get("X-Hub-Signature-256") != "" {
+            log.Printf("✅ Facebook webhook request detected")
+            validateFacebookRequest(handleWebhook)(w, r)
+            return
+        }
+
+        // For any other request, return OK but log it
+        log.Printf("ℹ️ Unknown request type to webhook endpoint")
+        w.WriteHeader(http.StatusOK)
+        fmt.Fprintf(w, `{"status":"ok"}`)
     })))
     
     // Log registered routes
     log.Printf("📍 Registered routes:")
-    log.Printf("   - GET/POST / (Health Check)")
-    log.Printf("   - GET  /webhook (Facebook Verification)")
-    log.Printf("   - POST /webhook (Facebook/Botpress Webhook)")
+    log.Printf("   - GET/POST/HEAD / (Health Check)")
+    log.Printf("   - GET/POST /webhook (Multi-purpose Webhook)")
     
     return router
 }
