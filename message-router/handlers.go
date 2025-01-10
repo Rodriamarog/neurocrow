@@ -114,72 +114,38 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
         log.Printf("   Entry ID: %s", entry.ID)
         log.Printf("   Entry Time: %d", entry.Time)
 
-        switch event.Object {
-        case "page":
-            log.Printf("📘 Processing Facebook messages")
-            if len(entry.Messaging) == 0 {
-                log.Printf("ℹ️ No messages in entry")
+        // Log the complete entry structure
+        entryJSON, _ := json.MarshalIndent(entry, "", "  ")
+        log.Printf("📝 Entry structure:\n%s", string(entryJSON))
+
+        // Handle both Facebook and Instagram messages similarly since they use the same structure
+        if len(entry.Messaging) == 0 {
+            log.Printf("ℹ️ No messages in entry")
+            continue
+        }
+        
+        for j, msg := range entry.Messaging {
+            log.Printf("   Message %d:", j+1)
+            log.Printf("      Sender ID: %s", msg.Sender.ID)
+            log.Printf("      Recipient ID: %s", msg.Recipient.ID)
+            
+            if msg.Message == nil {
+                log.Printf("      ⚠️ No message content")
                 continue
             }
-            
-            for j, msg := range entry.Messaging {
-                log.Printf("   Message %d:", j+1)
-                log.Printf("      Sender ID: %s", msg.Sender.ID)
-                log.Printf("      Recipient ID: %s", msg.Recipient.ID)
-                
-                if msg.Message == nil {
-                    log.Printf("      ⚠️ No message content")
-                    continue
-                }
-                if msg.Message.IsEcho {
-                    log.Printf("      ⚠️ Echo message - skipping")
-                    continue
-                }
-                if msg.Message.Text == "" {
-                    log.Printf("      ⚠️ Empty message text")
-                    continue
-                }
-
-                if err := forwardToBotpress(ctx, entry.ID, msg, "facebook"); err != nil {
-                    log.Printf("❌ Error forwarding to Botpress: %v", err)
-                }
+            if msg.Message.IsEcho {
+                log.Printf("      ⚠️ Echo message - skipping")
+                continue
             }
-            
-        case "instagram":
-            log.Printf("📸 Processing Instagram messages")
-            if len(entry.Changes) == 0 {
-                log.Printf("ℹ️ No changes in entry")
+            if msg.Message.Text == "" {
+                log.Printf("      ⚠️ Empty message text")
                 continue
             }
 
-            // Log the complete structure of entry.Changes
-            changesJSON, _ := json.MarshalIndent(entry.Changes, "", "  ")
-            log.Printf("📝 Changes structure:\n%s", string(changesJSON))
-            
-            for j, change := range entry.Changes {
-                log.Printf("   Change %d:", j+1)
-                log.Printf("      Field: %s", change.Field)
-                
-                if change.Field != "messages" {
-                    log.Printf("      ⚠️ Not a message change - skipping")
-                    continue
-                }
-
-                // Log the complete structure of change.Value
-                valueJSON, _ := json.MarshalIndent(change.Value, "", "  ")
-                log.Printf("      Value structure:\n%s", string(valueJSON))
-
-                for k, msg := range change.Value.Messages {
-                    log.Printf("      Message %d:", k+1)
-                    log.Printf("         ID: %s", msg.ID)
-                    log.Printf("         From ID: %s", msg.From.ID)
-                    log.Printf("         Text: %s", msg.Text)
-                    log.Printf("         Timestamp: %d", msg.Timestamp)
-
-                    if err := forwardInstagramToBotpress(ctx, entry.ID, msg); err != nil {
-                        log.Printf("❌ Error forwarding Instagram message to Botpress: %v", err)
-                    }
-                }
+            // Forward to Botpress using the appropriate platform
+            platform := event.Object // This will be either "facebook" or "instagram"
+            if err := forwardToBotpress(ctx, entry.ID, msg, platform); err != nil {
+                log.Printf("❌ Error forwarding to Botpress: %v", err)
             }
         }
     }

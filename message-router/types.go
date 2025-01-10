@@ -7,16 +7,13 @@ type FacebookEvent struct {
     Entry  []EntryData `json:"entry"`
 }
 
-// EntryData represents each entry in the Facebook webhook event
+// EntryData represents each entry in the webhook event
 type EntryData struct {
     ID        string           `json:"id"`
     Time      int64           `json:"time"`
     // Handle both types of messaging
-    Messaging []MessagingEntry `json:"messaging,omitempty"`
-    // Add Instagram-specific fields
-    Changes   []InstagramChanges `json:"changes,omitempty"`
+    Messaging []MessagingEntry `json:"messaging"`
 }
-
 // MessagingEntry represents a message in the Facebook webhook
 type MessagingEntry struct {
     Sender struct {
