@@ -14,6 +14,7 @@ type EntryData struct {
     // Handle both types of messaging
     Messaging []MessagingEntry `json:"messaging"`
 }
+
 // MessagingEntry represents a message in the Facebook webhook
 type MessagingEntry struct {
     Sender struct {

@@ -125,23 +125,24 @@ func sendFacebookMessage(ctx context.Context, pageID string, pageToken string, r
     return nil
 }
 
-// sendInstagramMessage sends a message to a user through Instagram
 func sendInstagramMessage(ctx context.Context, pageID string, pageToken string, recipientID string, message string) error {
+    // Instagram uses a different endpoint format
+    igURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/messages?access_token=%s", pageToken)
+
     igPayload := map[string]interface{}{
-        "recipient_id": recipientID,
+        "recipient": map[string]string{
+            "id": recipientID,
+        },
         "message": map[string]string{
             "text": message,
         },
+        "messaging_type": "RESPONSE",
     }
 
     jsonData, err := json.Marshal(igPayload)
     if err != nil {
         return fmt.Errorf("error creating Instagram payload: %v", err)
     }
-
-    // Instagram uses a different API endpoint
-    igURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages?access_token=%s",
-        pageID, pageToken)
 
     log.Printf("📤 Sending response to Instagram:")
     log.Printf("   URL: %s", igURL)
