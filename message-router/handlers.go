@@ -78,12 +78,20 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) {
+    // Log the raw webhook payload
+    log.Printf("📥 Raw webhook payload: %s", string(body))
+
     var event FacebookEvent
     if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
         log.Printf("❌ Error parsing webhook: %v", err)
         http.Error(w, "Invalid request body", http.StatusBadRequest)
         return
     }
+
+    // Log parsed event details
+    log.Printf("📝 Parsed webhook details:")
+    log.Printf("   Object type: %s", event.Object)
+    log.Printf("   Number of entries: %d", len(event.Entry))
 
     if !isValidFacebookObject(event.Object) {
         log.Printf("❌ Unsupported webhook object: %s", event.Object)
@@ -100,26 +108,74 @@ func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 }
 
 func processMessagesAsync(ctx context.Context, event FacebookEvent) {
-    for _, entry := range event.Entry {
+    log.Printf("🔄 Processing messages asynchronously")
+    for i, entry := range event.Entry {
+        log.Printf("📝 Processing entry %d:", i+1)
+        log.Printf("   Entry ID: %s", entry.ID)
+        log.Printf("   Entry Time: %d", entry.Time)
+
         switch event.Object {
         case "page":
-            // Process Facebook messages
-            for _, msg := range entry.Messaging {
-                if msg.Message == nil || msg.Message.IsEcho || msg.Message.Text == "" {
+            log.Printf("📘 Processing Facebook messages")
+            if len(entry.Messaging) == 0 {
+                log.Printf("ℹ️ No messages in entry")
+                continue
+            }
+            
+            for j, msg := range entry.Messaging {
+                log.Printf("   Message %d:", j+1)
+                log.Printf("      Sender ID: %s", msg.Sender.ID)
+                log.Printf("      Recipient ID: %s", msg.Recipient.ID)
+                
+                if msg.Message == nil {
+                    log.Printf("      ⚠️ No message content")
                     continue
                 }
+                if msg.Message.IsEcho {
+                    log.Printf("      ⚠️ Echo message - skipping")
+                    continue
+                }
+                if msg.Message.Text == "" {
+                    log.Printf("      ⚠️ Empty message text")
+                    continue
+                }
+
                 if err := forwardToBotpress(ctx, entry.ID, msg, "facebook"); err != nil {
                     log.Printf("❌ Error forwarding to Botpress: %v", err)
                 }
             }
             
         case "instagram":
-            // Process Instagram messages
-            for _, change := range entry.Changes {
+            log.Printf("📸 Processing Instagram messages")
+            if len(entry.Changes) == 0 {
+                log.Printf("ℹ️ No changes in entry")
+                continue
+            }
+
+            // Log the complete structure of entry.Changes
+            changesJSON, _ := json.MarshalIndent(entry.Changes, "", "  ")
+            log.Printf("📝 Changes structure:\n%s", string(changesJSON))
+            
+            for j, change := range entry.Changes {
+                log.Printf("   Change %d:", j+1)
+                log.Printf("      Field: %s", change.Field)
+                
                 if change.Field != "messages" {
+                    log.Printf("      ⚠️ Not a message change - skipping")
                     continue
                 }
-                for _, msg := range change.Value.Messages {
+
+                // Log the complete structure of change.Value
+                valueJSON, _ := json.MarshalIndent(change.Value, "", "  ")
+                log.Printf("      Value structure:\n%s", string(valueJSON))
+
+                for k, msg := range change.Value.Messages {
+                    log.Printf("      Message %d:", k+1)
+                    log.Printf("         ID: %s", msg.ID)
+                    log.Printf("         From ID: %s", msg.From.ID)
+                    log.Printf("         Text: %s", msg.Text)
+                    log.Printf("         Timestamp: %d", msg.Timestamp)
+
                     if err := forwardInstagramToBotpress(ctx, entry.ID, msg); err != nil {
                         log.Printf("❌ Error forwarding Instagram message to Botpress: %v", err)
                     }
