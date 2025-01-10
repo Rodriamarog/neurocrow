@@ -7,7 +7,6 @@ import (
     "crypto/hmac"
     "crypto/sha256"
     "encoding/hex"
-	"database/sql"
     "encoding/json"
     "fmt"
     "io"
@@ -15,7 +14,7 @@ import (
     "net/http"
 )
 
-// validateFacebookRequest is middleware to validate Facebook webhook requests
+// validateFacebookRequest is middleware to validate webhook requests
 func validateFacebookRequest(next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         log.Printf("📥 Incoming %s request from %s", r.Method, r.RemoteAddr)
@@ -23,11 +22,11 @@ func validateFacebookRequest(next http.HandlerFunc) http.HandlerFunc {
         if r.Method == "POST" {
             signature := r.Header.Get("X-Hub-Signature-256")
             if signature == "" {
-                log.Printf("❌ Missing Facebook signature header")
+                log.Printf("❌ Missing signature header")
                 http.Error(w, "Missing signature", http.StatusUnauthorized)
                 return
             }
-            log.Printf("✅ Facebook signature header present: %s", signature)
+            log.Printf("✅ Signature header present: %s", signature)
 
             body, err := io.ReadAll(r.Body)
             if err != nil {
@@ -41,11 +40,11 @@ func validateFacebookRequest(next http.HandlerFunc) http.HandlerFunc {
             expectedSig := generateFacebookSignature(body, appSecret)
             
             if !hmac.Equal([]byte(signature[7:]), []byte(expectedSig)) {
-                log.Printf("❌ Invalid Facebook signature")
+                log.Printf("❌ Invalid signature")
                 http.Error(w, "Invalid signature", http.StatusUnauthorized)
                 return
             }
-            log.Printf("✅ Facebook signature verified successfully")
+            log.Printf("✅ Signature verified successfully")
         }
         next(w, r)
     }
@@ -58,7 +57,7 @@ func generateFacebookSignature(body []byte, secret []byte) string {
     return hex.EncodeToString(mac.Sum(nil))
 }
 
-// verifyFacebookWebhook handles the initial webhook verification from Facebook
+// verifyFacebookWebhook handles the initial webhook verification
 func verifyFacebookWebhook(w http.ResponseWriter, r *http.Request) bool {
     verifyToken := config.VerifyToken
     mode := r.URL.Query().Get("hub.mode")
@@ -122,7 +121,50 @@ func sendFacebookMessage(ctx context.Context, pageID string, pageToken string, r
     }
 
     log.Printf("✅ Facebook response (status %d): %s", resp.StatusCode, string(fbResp))
-    log.Printf("✅ Message successfully sent to user")
+    return nil
+}
+
+// sendInstagramMessage sends a message to a user through Instagram
+func sendInstagramMessage(ctx context.Context, pageID string, pageToken string, recipientID string, message string) error {
+    igPayload := map[string]interface{}{
+        "recipient_id": recipientID,
+        "message": map[string]string{
+            "text": message,
+        },
+    }
+
+    jsonData, err := json.Marshal(igPayload)
+    if err != nil {
+        return fmt.Errorf("error creating Instagram payload: %v", err)
+    }
+
+    // Instagram uses a different API endpoint
+    igURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages?access_token=%s",
+        pageID, pageToken)
+
+    log.Printf("📤 Sending response to Instagram:")
+    log.Printf("   URL: %s", igURL)
+    log.Printf("   Payload: %s", string(jsonData))
+
+    req, err := http.NewRequestWithContext(ctx, "POST", igURL, bytes.NewBuffer(jsonData))
+    if err != nil {
+        return fmt.Errorf("error creating Instagram request: %v", err)
+    }
+
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := httpClient.Do(req)
+    if err != nil {
+        return fmt.Errorf("error sending to Instagram: %v", err)
+    }
+    defer resp.Body.Close()
+
+    igResp, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode != http.StatusOK {
+        return fmt.Errorf("Instagram error (status %d): %s", resp.StatusCode, string(igResp))
+    }
+
+    log.Printf("✅ Instagram response (status %d): %s", resp.StatusCode, string(igResp))
     return nil
 }
 
@@ -149,7 +191,7 @@ func isValidFacebookObject(objectType string) bool {
     return objectType == "page" || objectType == "instagram"
 }
 
-// processDeliveryReceipt handles Facebook message delivery receipts
+// processDeliveryReceipt handles message delivery receipts
 func processDeliveryReceipt(delivery *DeliveryData) {
     if delivery == nil {
         return

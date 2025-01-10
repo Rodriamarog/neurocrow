@@ -11,7 +11,10 @@ type FacebookEvent struct {
 type EntryData struct {
     ID        string           `json:"id"`
     Time      int64           `json:"time"`
-    Messaging []MessagingEntry `json:"messaging"`
+    // Handle both types of messaging
+    Messaging []MessagingEntry `json:"messaging,omitempty"`
+    // Add Instagram-specific fields
+    Changes   []InstagramChanges `json:"changes,omitempty"`
 }
 
 // MessagingEntry represents a message in the Facebook webhook
@@ -77,4 +80,24 @@ type FacebookResponse struct {
     Message struct {
         Text string `json:"text"`
     } `json:"message"`
+}
+
+// InstagramMessage represents the Instagram-specific message structure
+type InstagramMessage struct {
+    ID       string `json:"id"`
+    From     *InstagramUser `json:"from"`
+    Text     string `json:"text"`
+    Timestamp int64  `json:"timestamp"`
+}
+
+type InstagramUser struct {
+    ID   string `json:"id"`
+    Username string `json:"username,omitempty"`
+}
+
+type InstagramChanges struct {
+    Field string `json:"field"`
+    Value struct {
+        Messages []InstagramMessage `json:"messages"`
+    } `json:"value"`
 }

@@ -61,9 +61,9 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
     }
     r.Body = io.NopCloser(bytes.NewBuffer(body))
 
-    // Handle Facebook messages
+    // Handle Facebook/Instagram messages
     if r.Header.Get("X-Hub-Signature-256") != "" {
-        handleFacebookMessage(w, r, body)
+        handlePlatformMessage(w, r, body)
         return
     }
 
@@ -77,10 +77,10 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
 }
 
-func handleFacebookMessage(w http.ResponseWriter, r *http.Request, body []byte) {
+func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) {
     var event FacebookEvent
     if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
-        log.Printf("❌ Error parsing Facebook webhook: %v", err)
+        log.Printf("❌ Error parsing webhook: %v", err)
         http.Error(w, "Invalid request body", http.StatusBadRequest)
         return
     }
@@ -91,7 +91,7 @@ func handleFacebookMessage(w http.ResponseWriter, r *http.Request, body []byte) 
         return
     }
 
-    // Send immediate 200 OK to Facebook
+    // Send immediate 200 OK
     w.WriteHeader(http.StatusOK)
 
     // Process messages asynchronously
@@ -101,25 +101,66 @@ func handleFacebookMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 
 func processMessagesAsync(ctx context.Context, event FacebookEvent) {
     for _, entry := range event.Entry {
-        for _, msg := range entry.Messaging {
-            if msg.Message == nil || msg.Message.IsEcho || msg.Message.Text == "" {
-                continue
+        switch event.Object {
+        case "page":
+            // Process Facebook messages
+            for _, msg := range entry.Messaging {
+                if msg.Message == nil || msg.Message.IsEcho || msg.Message.Text == "" {
+                    continue
+                }
+                if err := forwardToBotpress(ctx, entry.ID, msg, "facebook"); err != nil {
+                    log.Printf("❌ Error forwarding to Botpress: %v", err)
+                }
             }
-
-            // Forward message to Botpress
-            if err := forwardToBotpress(ctx, entry.ID, msg); err != nil {
-                log.Printf("❌ Error forwarding to Botpress: %v", err)
+            
+        case "instagram":
+            // Process Instagram messages
+            for _, change := range entry.Changes {
+                if change.Field != "messages" {
+                    continue
+                }
+                for _, msg := range change.Value.Messages {
+                    if err := forwardInstagramToBotpress(ctx, entry.ID, msg); err != nil {
+                        log.Printf("❌ Error forwarding Instagram message to Botpress: %v", err)
+                    }
+                }
             }
         }
     }
 }
 
-func forwardToBotpress(ctx context.Context, pageID string, msg MessagingEntry) error {
+func forwardInstagramToBotpress(ctx context.Context, pageID string, msg InstagramMessage) error {
+    // Create Botpress request for Instagram
+    botpressReq := BotpressRequest{
+        ID:             msg.ID,
+        ConversationId: fmt.Sprintf("%s-%s", pageID, msg.From.ID),
+        Channel:        "instagram",
+        Type:          "text",
+        Content:       msg.Text,
+        Payload: BotpressRequestPayload{
+            Text:     msg.Text,
+            Type:     "text",
+            PageId:   pageID,
+            SenderId: msg.From.ID,
+        },
+    }
+
+    // Get Botpress URL
+    botpressURL, err := getBotpressURL(ctx, pageID)
+    if err != nil {
+        return fmt.Errorf("error getting Botpress URL: %v", err)
+    }
+
+    // Send to Botpress with retries
+    return sendToBotpressWithRetry(ctx, botpressURL, botpressReq)
+}
+
+func forwardToBotpress(ctx context.Context, pageID string, msg MessagingEntry, platform string) error {
     // Create Botpress request
     botpressReq := BotpressRequest{
         ID:             msg.Message.Mid,
         ConversationId: fmt.Sprintf("%s-%s", pageID, msg.Sender.ID),
-        Channel:        "facebook",
+        Channel:        platform,
         Type:          "text",
         Content:       msg.Message.Text,
         Payload: BotpressRequestPayload{
@@ -176,24 +217,23 @@ func handleBotpressResponse(w http.ResponseWriter, r *http.Request) {
 
         pageID, senderID := parts[0], parts[1]
         
-        // Send response back to Facebook
+        // Get page info to determine platform
         ctx := context.Background()
-        if err := sendFacebookResponse(ctx, pageID, senderID, response.Payload.Text); err != nil {
-            log.Printf("❌ Error sending to Facebook: %v", err)
+        pageInfo, err := getPageInfo(ctx, pageID)
+        if err != nil {
+            log.Printf("❌ Error getting page info: %v", err)
+            w.WriteHeader(http.StatusOK)
+            return
+        }
+
+        // Send response based on platform
+        if err := sendPlatformResponse(ctx, pageInfo, senderID, response.Payload.Text); err != nil {
+            log.Printf("❌ Error sending platform response: %v", err)
         }
     }
 
     // Always return 200 OK to Botpress
     w.WriteHeader(http.StatusOK)
-}
-
-func sendFacebookResponse(ctx context.Context, pageID, senderID, message string) error {
-    pageToken, err := getPageToken(ctx, pageID)
-    if err != nil {
-        return fmt.Errorf("error getting page token: %v", err)
-    }
-
-    return sendFacebookMessage(ctx, pageID, pageToken, senderID, message)
 }
 
 func sendToBotpressWithRetry(ctx context.Context, url string, payload BotpressRequest) error {
@@ -216,13 +256,13 @@ func sendToBotpressWithRetry(ctx context.Context, url string, payload BotpressRe
 func sendToBotpress(ctx context.Context, url string, payload BotpressRequest) error {
     // Step 1: Structure the payload according to Botpress Messaging API requirements
     botpressPayload := map[string]interface{}{
-        "userId": payload.Payload.SenderId,       // Using Facebook sender ID as the user identifier
-        "messageId": payload.ID,                  // Facebook's message ID for deduplication
-        "conversationId": payload.ConversationId, // Our compound ID (pageId-senderId)
+        "userId": payload.Payload.SenderId,       // Using sender ID as the user identifier
+        "messageId": payload.ID,                  // Message ID for deduplication
+        "conversationId": payload.ConversationId, // Compound ID (pageId-senderId)
         "type": "text",
         "text": payload.Content,                  // The actual message content
         "payload": map[string]interface{}{        // Additional context and metadata
-            "source": "facebook",
+            "source": payload.Channel,            // "facebook" or "instagram"
             "pageId": payload.Payload.PageId,
             "senderId": payload.Payload.SenderId,
             "originalPayload": payload.Payload,   // Keep original data for reference
@@ -340,4 +380,45 @@ func getBotpressURL(ctx context.Context, pageID string) (string, error) {
 
     log.Printf("✅ Found Botpress URL for page %s", pageID)
     return botpressURL, nil
+}
+
+type PageInfo struct {
+    Platform    string
+    PageID      string
+    AccessToken string
+}
+
+func getPageInfo(ctx context.Context, pageID string) (*PageInfo, error) {
+    var info PageInfo
+    info.PageID = pageID
+    err := db.QueryRowContext(ctx,
+        "SELECT platform, access_token FROM pages WHERE page_id = $1 AND status = 'active'",
+        pageID,
+    ).Scan(&info.Platform, &info.AccessToken)
+
+    if err != nil {
+        if err == sql.ErrNoRows {
+            return nil, fmt.Errorf("no active page found for ID %s", pageID)
+        }
+        return nil, fmt.Errorf("database error: %v", err)
+    }
+
+    return &info, nil
+}
+
+func sendPlatformResponse(ctx context.Context, pageInfo *PageInfo, senderID, message string) error {
+    switch pageInfo.Platform {
+    case "facebook":
+        return sendFacebookMessage(ctx, pageInfo.PageID, pageInfo.AccessToken, senderID, message)
+    case "instagram":
+        return sendInstagramMessage(ctx, pageInfo.PageID, pageInfo.AccessToken, senderID, message)
+    default:
+        return fmt.Errorf("unsupported platform: %s", pageInfo.Platform)
+    }
+}
+
+func isBotpressRequest(r *http.Request) bool {
+    userAgent := r.Header.Get("User-Agent")
+    return userAgent == "axios/1.6.8" || // Botpress uses axios
+           strings.Contains(strings.ToLower(userAgent), "botpress")
 }
