@@ -7,7 +7,6 @@ import (
     "os"
     "time"
     "fmt"
-    "strings" // Added missing import
 
     "github.com/joho/godotenv"
     _ "github.com/lib/pq"
@@ -164,12 +163,6 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodHead {
         fmt.Fprintf(w, `{"status":"healthy","message":"Neurocrow Message Router is running"}`)
     }
-}
-
-func isBotpressRequest(r *http.Request) bool {
-    userAgent := r.Header.Get("User-Agent")
-    return userAgent == "axios/1.6.8" || // Botpress uses axios
-           strings.Contains(strings.ToLower(userAgent), "botpress")
 }
 
 func botpressHandler(w http.ResponseWriter, r *http.Request) {

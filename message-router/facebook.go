@@ -12,6 +12,7 @@ import (
     "io"
     "log"
     "net/http"
+    "database/sql"  // Added missing import
 )
 
 // validateFacebookRequest is middleware to validate webhook requests
