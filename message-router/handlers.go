@@ -236,17 +236,28 @@ func sendToBotpress(ctx context.Context, url string, payload BotpressRequest) er
     }
     defer resp.Body.Close()
 
-    // Read and log response for debugging
+    // Read and log response
     respBody, err := io.ReadAll(resp.Body)
     log.Printf("📥 Botpress response (status %d): %s", resp.StatusCode, string(respBody))
 
-    // Any 2xx status code is considered success
-    if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+    // Try to parse error response
+    var errorResp struct {
+        Code    int    `json:"code"`
+        Type    string `json:"type"`
+        Message string `json:"message"`
+    }
+    if err := json.Unmarshal(respBody, &errorResp); err == nil && errorResp.Code != 0 {
+        return fmt.Errorf("Botpress error: %s (Code: %d, Type: %s)", 
+            errorResp.Message, errorResp.Code, errorResp.Type)
+    }
+
+    // For successful responses
+    if resp.StatusCode >= 200 && resp.StatusCode < 300 && errorResp.Code == 0 {
         log.Printf("✅ Successfully sent message to Botpress")
         return nil
     }
 
-    return fmt.Errorf("received status %d from Botpress", resp.StatusCode)
+    return fmt.Errorf("received unexpected response from Botpress")
 }
 
 func getBotpressURL(ctx context.Context, pageID string) (string, error) {
