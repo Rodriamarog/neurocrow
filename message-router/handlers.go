@@ -214,50 +214,108 @@ func sendToBotpressWithRetry(ctx context.Context, url string, payload BotpressRe
 }
 
 func sendToBotpress(ctx context.Context, url string, payload BotpressRequest) error {
-    jsonData, err := json.Marshal(payload)
-    if err != nil {
-        return fmt.Errorf("error marshaling payload: %v", err)
+    // Step 1: Structure the payload according to Botpress Messaging API requirements
+    botpressPayload := map[string]interface{}{
+        "userId": payload.Payload.SenderId,       // Using Facebook sender ID as the user identifier
+        "messageId": payload.ID,                  // Facebook's message ID for deduplication
+        "conversationId": payload.ConversationId, // Our compound ID (pageId-senderId)
+        "type": "text",
+        "text": payload.Content,                  // The actual message content
+        "payload": map[string]interface{}{        // Additional context and metadata
+            "source": "facebook",
+            "pageId": payload.Payload.PageId,
+            "senderId": payload.Payload.SenderId,
+            "originalPayload": payload.Payload,   // Keep original data for reference
+        },
     }
 
-    log.Printf("🤖 Sending to Botpress:")
-    log.Printf("   URL: %s", url)
-    log.Printf("   Payload: %s", string(jsonData))
+    // Step 2: Convert payload to JSON and log it
+    jsonData, err := json.Marshal(botpressPayload)
+    if err != nil {
+        return fmt.Errorf("error marshaling Botpress payload: %v", err)
+    }
 
+    // Pretty print the payload for better logging
+    var prettyJSON bytes.Buffer
+    if err := json.Indent(&prettyJSON, jsonData, "", "  "); err != nil {
+        log.Printf("⚠️ Warning: Could not pretty print JSON: %v", err)
+    }
+
+    log.Printf("🤖 Preparing Botpress request:")
+    log.Printf("   URL: %s", url)
+    log.Printf("   Payload:\n%s", prettyJSON.String())
+
+    // Step 3: Create and configure the HTTP request
     req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
     if err != nil {
-        return fmt.Errorf("error creating request: %v", err)
+        return fmt.Errorf("error creating Botpress request: %v", err)
+    }
+
+    // Add required headers
+    token := os.Getenv("BOTPRESS_TOKEN")
+    if token == "" {
+        return fmt.Errorf("BOTPRESS_TOKEN environment variable is not set")
     }
 
     req.Header.Set("Content-Type", "application/json")
-    
+    req.Header.Set("Authorization", "bearer "+token)
+
+    log.Printf("📤 Request headers:")
+    for key, values := range req.Header {
+        log.Printf("   %s: %s", key, values)
+    }
+
+    // Step 4: Send the request and handle the response
+    start := time.Now()
     resp, err := httpClient.Do(req)
     if err != nil {
-        return fmt.Errorf("error sending request: %v", err)
+        return fmt.Errorf("error sending request to Botpress: %v", err)
     }
     defer resp.Body.Close()
 
-    // Read and log response
+    // Step 5: Read and log the complete response
     respBody, err := io.ReadAll(resp.Body)
-    log.Printf("📥 Botpress response (status %d): %s", resp.StatusCode, string(respBody))
+    if err != nil {
+        return fmt.Errorf("error reading Botpress response: %v", err)
+    }
 
-    // Try to parse error response
+    // Try to pretty print the response if it's JSON
+    var prettyResp bytes.Buffer
+    if json.Valid(respBody) {
+        if err := json.Indent(&prettyResp, respBody, "", "  "); err != nil {
+            log.Printf("⚠️ Warning: Could not pretty print response: %v", err)
+        }
+    }
+
+    log.Printf("📥 Botpress response after %v:", time.Since(start))
+    log.Printf("   Status: %d %s", resp.StatusCode, resp.Status)
+    log.Printf("   Headers: %v", resp.Header)
+    if prettyResp.Len() > 0 {
+        log.Printf("   Body:\n%s", prettyResp.String())
+    } else {
+        log.Printf("   Body: %s", string(respBody))
+    }
+
+    // Step 6: Handle different response scenarios
+    // First check for error response format
     var errorResp struct {
         Code    int    `json:"code"`
         Type    string `json:"type"`
         Message string `json:"message"`
     }
+
     if err := json.Unmarshal(respBody, &errorResp); err == nil && errorResp.Code != 0 {
         return fmt.Errorf("Botpress error: %s (Code: %d, Type: %s)", 
             errorResp.Message, errorResp.Code, errorResp.Type)
     }
 
-    // For successful responses
-    if resp.StatusCode >= 200 && resp.StatusCode < 300 && errorResp.Code == 0 {
-        log.Printf("✅ Successfully sent message to Botpress")
-        return nil
+    // Check if status code indicates success
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        return fmt.Errorf("unexpected status code from Botpress: %d", resp.StatusCode)
     }
 
-    return fmt.Errorf("received unexpected response from Botpress")
+    log.Printf("✅ Successfully sent message to Botpress")
+    return nil
 }
 
 func getBotpressURL(ctx context.Context, pageID string) (string, error) {
