@@ -129,6 +129,12 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
             log.Printf("      Sender ID: %s", msg.Sender.ID)
             log.Printf("      Recipient ID: %s", msg.Recipient.ID)
             
+            // Skip if this is a delivery receipt
+            if msg.Delivery != nil {
+                log.Printf("      ⚠️ Delivery receipt - skipping")
+                continue
+            }
+            
             if msg.Message == nil {
                 log.Printf("      ⚠️ No message content")
                 continue
