@@ -197,6 +197,7 @@ func forwardToBotpress(ctx context.Context, pageID string, msg MessagingEntry, p
             PageId:   pageID,
             SenderId: msg.Sender.ID,
         },
+        Direction:      "incoming",  // Add this line
     }
 
     // Get Botpress URL

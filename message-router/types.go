@@ -60,6 +60,7 @@ type BotpressRequest struct {
     Type           string                 `json:"type"`
     Content        string                 `json:"content"`
     Payload        BotpressRequestPayload `json:"payload"`
+    Direction      string                 `json:"direction"` 
 }
 
 // BotpressRequestPayload represents the payload in a Botpress request
