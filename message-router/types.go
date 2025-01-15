@@ -1,102 +1,123 @@
 // types.go
 package main
 
+import "time"
+
 // FacebookEvent represents the incoming webhook event from Facebook
 type FacebookEvent struct {
-    Object string       `json:"object"`
-    Entry  []EntryData `json:"entry"`
+	Object string      `json:"object"`
+	Entry  []EntryData `json:"entry"`
 }
 
 // EntryData represents each entry in the webhook event
 type EntryData struct {
-    ID        string           `json:"id"`
-    Time      int64           `json:"time"`
-    // Handle both types of messaging
-    Messaging []MessagingEntry `json:"messaging"`
+	ID   string `json:"id"`
+	Time int64  `json:"time"`
+	// Handle both types of messaging
+	Messaging []MessagingEntry `json:"messaging"`
 }
 
 // MessagingEntry represents a message in the Facebook webhook
 type MessagingEntry struct {
-    Sender struct {
-        ID string `json:"id"`
-    } `json:"sender"`
-    Recipient struct {
-        ID string `json:"id"`
-    } `json:"recipient"`
-    Message *MessageData `json:"message"`
-    Delivery *DeliveryData `json:"delivery"`
+	Sender struct {
+		ID string `json:"id"`
+	} `json:"sender"`
+	Recipient struct {
+		ID string `json:"id"`
+	} `json:"recipient"`
+	Message  *MessageData  `json:"message"`
+	Delivery *DeliveryData `json:"delivery"`
 }
 
 // MessageData represents the actual message content
 type MessageData struct {
-    Mid     string `json:"mid"`
-    Text    string `json:"text"`
-    IsEcho  bool   `json:"is_echo"`
+	Mid    string `json:"mid"`
+	Text   string `json:"text"`
+	IsEcho bool   `json:"is_echo"`
 }
 
 // DeliveryData represents a delivery receipt from Facebook
 type DeliveryData struct {
-    Mids       []string `json:"mids"`
-    Watermark  int64    `json:"watermark"`
+	Mids      []string `json:"mids"`
+	Watermark int64    `json:"watermark"`
 }
 
 // BotpressResponse represents the webhook response from Botpress
 type BotpressResponse struct {
-    Type    string `json:"type"`
-    Payload struct {
-        Text string `json:"text"`
-    } `json:"payload"`
-    ConversationId          string `json:"conversationId"`
-    BotpressUserId         string `json:"botpressUserId"`
-    BotpressMessageId      string `json:"botpressMessageId"`
-    BotpressConversationId string `json:"botpressConversationId"`
+	Type    string `json:"type"`
+	Payload struct {
+		Text string `json:"text"`
+	} `json:"payload"`
+	ConversationId         string `json:"conversationId"`
+	BotpressUserId         string `json:"botpressUserId"`
+	BotpressMessageId      string `json:"botpressMessageId"`
+	BotpressConversationId string `json:"botpressConversationId"`
 }
 
 // BotpressRequest represents the request we send to Botpress
 type BotpressRequest struct {
-    ID             string                 `json:"id"`
-    ConversationId string                 `json:"conversationId"`
-    Channel        string                 `json:"channel"`
-    Type           string                 `json:"type"`
-    Content        string                 `json:"content"`
-    Payload        BotpressRequestPayload `json:"payload"`
-    Direction      string                 `json:"direction"` 
+	ID             string                 `json:"id"`
+	ConversationId string                 `json:"conversationId"`
+	Channel        string                 `json:"channel"`
+	Type           string                 `json:"type"`
+	Content        string                 `json:"content"`
+	Payload        BotpressRequestPayload `json:"payload"`
+	Direction      string                 `json:"direction"`
 }
 
 // BotpressRequestPayload represents the payload in a Botpress request
 type BotpressRequestPayload struct {
-    Text     string `json:"text"`
-    Type     string `json:"type"`
-    PageId   string `json:"pageId"`
-    SenderId string `json:"senderId"`
+	Text     string `json:"text"`
+	Type     string `json:"type"`
+	PageId   string `json:"pageId"`
+	SenderId string `json:"senderId"`
 }
 
 // FacebookResponse represents a response we send to Facebook
 type FacebookResponse struct {
-    Recipient struct {
-        ID string `json:"id"`
-    } `json:"recipient"`
-    Message struct {
-        Text string `json:"text"`
-    } `json:"message"`
+	Recipient struct {
+		ID string `json:"id"`
+	} `json:"recipient"`
+	Message struct {
+		Text string `json:"text"`
+	} `json:"message"`
 }
 
 // InstagramMessage represents the Instagram-specific message structure
 type InstagramMessage struct {
-    ID       string `json:"id"`
-    From     *InstagramUser `json:"from"`
-    Text     string `json:"text"`
-    Timestamp int64  `json:"timestamp"`
+	ID        string         `json:"id"`
+	From      *InstagramUser `json:"from"`
+	Text      string         `json:"text"`
+	Timestamp int64          `json:"timestamp"`
 }
 
 type InstagramUser struct {
-    ID   string `json:"id"`
-    Username string `json:"username,omitempty"`
+	ID       string `json:"id"`
+	Username string `json:"username,omitempty"`
 }
 
 type InstagramChanges struct {
-    Field string `json:"field"`
-    Value struct {
-        Messages []InstagramMessage `json:"messages"`
-    } `json:"value"`
+	Field string `json:"field"`
+	Value struct {
+		Messages []InstagramMessage `json:"messages"`
+	} `json:"value"`
+}
+
+type ConversationState struct {
+	ThreadID         string
+	PageID           string
+	Platform         string
+	BotEnabled       bool
+	LastBotMessage   time.Time
+	LastHumanMessage time.Time
+	LastUserMessage  time.Time
+	MessageCount     int
+}
+
+type Config struct {
+	DatabaseURL       string
+	FacebookAppSecret string
+	VerifyToken       string
+	Port              string
+	FireworksKey      string
 }

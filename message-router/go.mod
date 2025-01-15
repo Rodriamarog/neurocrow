@@ -1,4 +1,4 @@
-module github.com/yourusername/message-router
+module message-router
 
 go 1.23.4
 
