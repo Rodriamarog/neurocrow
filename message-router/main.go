@@ -16,7 +16,6 @@ import (
 
 var (
 	db         *sql.DB // Client Manager DB
-	socialDB   *sql.DB // Social Dashboard DB
 	httpClient = &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -41,8 +40,7 @@ func loadConfig() {
 	}
 
 	config = Config{
-		ClientManagerDB:   getEnvOrDie("CLIENT_MANAGER_DATABASE_URL"),
-		SocialDashboardDB: getEnvOrDie("SOCIAL_DASHBOARD_DATABASE_URL"),
+		DatabaseURL:       getEnvOrDie("DATABASE_URL"), // Use DATABASE_URL for the single database
 		FacebookAppSecret: getEnvOrDie("FACEBOOK_APP_SECRET"),
 		VerifyToken:       getEnvOrDie("VERIFY_TOKEN"),
 		Port:              getEnvOrDefault("PORT", "8080"),
@@ -51,8 +49,7 @@ func loadConfig() {
 
 	// Log configuration (safely)
 	log.Printf("📝 Configuration loaded:")
-	log.Printf("   Client Manager DB URL length: %d", len(config.ClientManagerDB))
-	log.Printf("   Social Dashboard DB URL length: %d", len(config.SocialDashboardDB))
+	log.Printf("   Database URL length: %d", len(config.DatabaseURL))
 	log.Printf("   Facebook App Secret length: %d", len(config.FacebookAppSecret))
 	log.Printf("   Verify Token length: %d", len(config.VerifyToken))
 	log.Printf("   Fireworks API Key length: %d", len(config.FireworksKey))
@@ -85,34 +82,19 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 
 func setupDatabase() {
-	log.Printf("📊 Setting up database connections...")
+	log.Printf("📊 Setting up database connection...")
 
-	// Setup Client Manager DB
 	var err error
 	for i := 0; i < 3; i++ {
-		log.Printf("🔄 Client Manager DB connection attempt %d/3...", i+1)
-		if db, err = connectDB(config.ClientManagerDB, "Client Manager"); err == nil {
-			log.Printf("✅ Successfully connected to Client Manager DB!")
-			break
-		}
-		log.Printf("❌ Connection attempt %d failed: %v", i+1, err)
-		time.Sleep(time.Second * 2)
-	}
-	if err != nil {
-		log.Fatal("❌ Failed to connect to Client Manager DB after 3 attempts")
-	}
-
-	// Setup Social Dashboard DB
-	for i := 0; i < 3; i++ {
-		log.Printf("🔄 Social Dashboard DB connection attempt %d/3...", i+1)
-		if socialDB, err = connectDB(config.SocialDashboardDB, "Social Dashboard"); err == nil {
-			log.Printf("✅ Successfully connected to Social Dashboard DB!")
+		log.Printf("🔄 Database connection attempt %d/3...", i+1)
+		if db, err = connectDB(config.DatabaseURL, "Database"); err == nil {
+			log.Printf("✅ Successfully connected to database!")
 			return
 		}
 		log.Printf("❌ Connection attempt %d failed: %v", i+1, err)
 		time.Sleep(time.Second * 2)
 	}
-	log.Fatal("❌ Failed to connect to Social Dashboard DB after 3 attempts")
+	log.Fatal("❌ Failed to connect to database after 3 attempts")
 }
 
 func connectDB(dbURL string, dbName string) (*sql.DB, error) {
@@ -235,10 +217,8 @@ func setupRouter() *http.ServeMux {
 
 func cleanup() {
 	if db != nil {
+		log.Printf("🧹 Closing database connection...")
 		db.Close()
-	}
-	if socialDB != nil {
-		socialDB.Close()
 	}
 }
 

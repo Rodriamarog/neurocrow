@@ -115,8 +115,7 @@ type ConversationState struct {
 }
 
 type Config struct {
-	ClientManagerDB   string // For pages, tokens, etc.
-	SocialDashboardDB string // For messages and conversations
+	DatabaseURL       string // Single database URL
 	FacebookAppSecret string
 	VerifyToken       string
 	Port              string

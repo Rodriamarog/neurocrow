@@ -10,20 +10,19 @@ import (
 
 // getOrCreateConversation retrieves or creates a conversation state
 func getOrCreateConversation(ctx context.Context, pageID, threadID, platform string) (*ConversationState, error) {
-	// First, get the UUID from the client manager database (pages table)
 	var pageUUID string
 	err := db.QueryRowContext(ctx, `
         SELECT id 
-        FROM pages 
+        FROM social_pages 
         WHERE page_id = $1
     `, pageID).Scan(&pageUUID)
 
 	if err != nil {
-		return nil, fmt.Errorf("error finding page in client manager: %v", err)
+		return nil, fmt.Errorf("error finding page: %v", err)
 	}
 
 	conv := &ConversationState{}
-	err = socialDB.QueryRowContext(ctx, `
+	err = db.QueryRowContext(ctx, `
         SELECT thread_id, page_id, platform, bot_enabled, 
                COALESCE(last_bot_message_at, '1970-01-01'::timestamp),
                COALESCE(last_human_message_at, '1970-01-01'::timestamp),
@@ -32,8 +31,13 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
         FROM conversations 
         WHERE thread_id = $1 AND page_id = $2
     `, threadID, pageUUID).Scan(
-		&conv.ThreadID, &conv.PageID, &conv.Platform, &conv.BotEnabled,
-		&conv.LastBotMessage, &conv.LastHumanMessage, &conv.LastUserMessage,
+		&conv.ThreadID,
+		&conv.PageID,
+		&conv.Platform,
+		&conv.BotEnabled,
+		&conv.LastBotMessage,
+		&conv.LastHumanMessage,
+		&conv.LastUserMessage,
 		&conv.MessageCount,
 	)
 
@@ -41,12 +45,12 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 		// Create new conversation
 		conv = &ConversationState{
 			ThreadID:   threadID,
-			PageID:     pageUUID, // Using the UUID from client manager
+			PageID:     pageUUID,
 			Platform:   platform,
 			BotEnabled: true,
 		}
 
-		err = socialDB.QueryRowContext(ctx, `
+		err = db.QueryRowContext(ctx, `
             INSERT INTO conversations (
                 thread_id, page_id, platform, bot_enabled, 
                 first_message_at, latest_message_at, message_count
@@ -73,7 +77,7 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 // updateConversationState updates the conversation state in the database
 func updateConversationState(ctx context.Context, conv *ConversationState, botEnabled bool, reason string) error {
 	// Start a transaction
-	tx, err := socialDB.BeginTx(ctx, nil)
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %v", err)
 	}

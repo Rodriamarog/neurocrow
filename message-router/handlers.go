@@ -234,11 +234,11 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 // storeMessage stores a message in the database
 func storeMessage(ctx context.Context, pageID, senderID, platform, content, source string, requiresAttention bool) error {
-	// First get the UUID from the client manager database
+	// Get the UUID from social_pages instead of pages
 	var pageUUID string
 	err := db.QueryRowContext(ctx, `
         SELECT id 
-        FROM pages 
+        FROM social_pages 
         WHERE page_id = $1
     `, pageID).Scan(&pageUUID)
 
@@ -246,32 +246,32 @@ func storeMessage(ctx context.Context, pageID, senderID, platform, content, sour
 		return fmt.Errorf("error finding page: %v", err)
 	}
 
-	// Now we can use this UUID to get the client_id and store the message
-	_, err = socialDB.ExecContext(ctx, `
+	// Now use this UUID to store the message
+	_, err = db.ExecContext(ctx, `
         INSERT INTO messages (
-            id,           -- UUID for the message
-            client_id,    -- UUID from social_pages
-            page_id,      -- UUID we got from pages table
-            platform,     -- text
-            thread_id,    -- text (conversation thread)
-            from_user,    -- text
-            content,      -- text
-            timestamp,    -- timestamptz
-            read,         -- boolean
-            source,       -- text
-            requires_attention  -- boolean
+            id,           
+            client_id,    
+            page_id,      
+            platform,     
+            thread_id,    
+            from_user,    
+            content,      
+            timestamp,    
+            read,         
+            source,       
+            requires_attention  
         ) VALUES (
-            gen_random_uuid(),  -- Generate UUID for message
-            (SELECT client_id FROM social_pages WHERE page_id = $1),
-            $1,                 -- page_id UUID
-            $2,                 -- platform
-            $3,                 -- thread_id (senderID)
-            $4,                 -- from_user
-            $5,                 -- content
-            NOW(),             -- timestamp
-            false,             -- read (default false)
-            $6,                -- source
-            $7                 -- requires_attention
+            gen_random_uuid(),  
+            (SELECT client_id FROM social_pages WHERE id = $1),
+            $1,                 
+            $2,                 
+            $3,                 
+            $4,                 
+            $5,                 
+            NOW(),             
+            false,             
+            $6,                
+            $7                 
         )
     `, pageUUID, platform, senderID, source, content, source, requiresAttention)
 
@@ -487,13 +487,12 @@ func sendToBotpress(ctx context.Context, url string, payload BotpressRequest) er
 }
 
 func getBotpressURL(ctx context.Context, pageID string) (string, error) {
-	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var botpressURL string
 	err := db.QueryRowContext(queryCtx,
-		"SELECT botpress_url FROM pages WHERE page_id = $1 AND status = 'active'",
+		"SELECT botpress_url FROM social_pages WHERE page_id = $1 AND status = 'active'",
 		pageID,
 	).Scan(&botpressURL)
 
@@ -514,7 +513,7 @@ func getPageInfo(ctx context.Context, pageID string) (*PageInfo, error) {
 	var info PageInfo
 	info.PageID = pageID
 	err := db.QueryRowContext(ctx,
-		"SELECT platform, access_token FROM pages WHERE page_id = $1 AND status = 'active'",
+		"SELECT platform, access_token FROM social_pages WHERE page_id = $1 AND status = 'active'",
 		pageID,
 	).Scan(&info.Platform, &info.AccessToken)
 
