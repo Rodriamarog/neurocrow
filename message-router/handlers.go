@@ -234,17 +234,52 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 // storeMessage stores a message in the database
 func storeMessage(ctx context.Context, pageID, senderID, platform, content, source string, requiresAttention bool) error {
-	_, err := db.ExecContext(ctx, `
-        INSERT INTO messages (
-            client_id, page_id, platform, thread_id,
-            from_user, content, timestamp, requires_attention, source
-        ) VALUES (
-            (SELECT client_id FROM social_pages WHERE page_id = $1),
-            $1, $2, $3, $4, $5, NOW(), $6, $7
-        )
-    `, pageID, platform, senderID, source, content, requiresAttention, source)
+	// First get the UUID from the client manager database
+	var pageUUID string
+	err := db.QueryRowContext(ctx, `
+        SELECT id 
+        FROM pages 
+        WHERE page_id = $1
+    `, pageID).Scan(&pageUUID)
 
-	return err
+	if err != nil {
+		return fmt.Errorf("error finding page: %v", err)
+	}
+
+	// Now we can use this UUID to get the client_id and store the message
+	_, err = socialDB.ExecContext(ctx, `
+        INSERT INTO messages (
+            id,           -- UUID for the message
+            client_id,    -- UUID from social_pages
+            page_id,      -- UUID we got from pages table
+            platform,     -- text
+            thread_id,    -- text (conversation thread)
+            from_user,    -- text
+            content,      -- text
+            timestamp,    -- timestamptz
+            read,         -- boolean
+            source,       -- text
+            requires_attention  -- boolean
+        ) VALUES (
+            gen_random_uuid(),  -- Generate UUID for message
+            (SELECT client_id FROM social_pages WHERE page_id = $1),
+            $1,                 -- page_id UUID
+            $2,                 -- platform
+            $3,                 -- thread_id (senderID)
+            $4,                 -- from_user
+            $5,                 -- content
+            NOW(),             -- timestamp
+            false,             -- read (default false)
+            $6,                -- source
+            $7                 -- requires_attention
+        )
+    `, pageUUID, platform, senderID, source, content, source, requiresAttention)
+
+	if err != nil {
+		return fmt.Errorf("error storing message: %v", err)
+	}
+
+	return nil
 }
 
 func forwardToBotpress(ctx context.Context, pageID string, msg MessagingEntry, platform string) error {
