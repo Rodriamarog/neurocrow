@@ -8,14 +8,15 @@ import (
 	"os"
 	"time"
 
-	"message-router/sentiment" // Import our sentiment package
+	"message-router/sentiment"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 var (
-	db         *sql.DB
+	db         *sql.DB // Client Manager DB
+	socialDB   *sql.DB // Social Dashboard DB
 	httpClient = &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -40,7 +41,8 @@ func loadConfig() {
 	}
 
 	config = Config{
-		DatabaseURL:       getEnvOrDie("DATABASE_URL"),
+		ClientManagerDB:   getEnvOrDie("CLIENT_MANAGER_DATABASE_URL"),
+		SocialDashboardDB: getEnvOrDie("SOCIAL_DASHBOARD_DATABASE_URL"),
 		FacebookAppSecret: getEnvOrDie("FACEBOOK_APP_SECRET"),
 		VerifyToken:       getEnvOrDie("VERIFY_TOKEN"),
 		Port:              getEnvOrDefault("PORT", "8080"),
@@ -49,7 +51,8 @@ func loadConfig() {
 
 	// Log configuration (safely)
 	log.Printf("📝 Configuration loaded:")
-	log.Printf("   Database URL length: %d", len(config.DatabaseURL))
+	log.Printf("   Client Manager DB URL length: %d", len(config.ClientManagerDB))
+	log.Printf("   Social Dashboard DB URL length: %d", len(config.SocialDashboardDB))
 	log.Printf("   Facebook App Secret length: %d", len(config.FacebookAppSecret))
 	log.Printf("   Verify Token length: %d", len(config.VerifyToken))
 	log.Printf("   Fireworks API Key length: %d", len(config.FireworksKey))
@@ -82,31 +85,45 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 
 func setupDatabase() {
-	log.Printf("📊 Database URL configured (length: %d chars)", len(config.DatabaseURL))
+	log.Printf("📊 Setting up database connections...")
 
+	// Setup Client Manager DB
 	var err error
 	for i := 0; i < 3; i++ {
-		log.Printf("🔄 Database connection attempt %d/3...", i+1)
-		if db, err = connectDB(); err == nil {
-			log.Printf("✅ Successfully connected to database!")
+		log.Printf("🔄 Client Manager DB connection attempt %d/3...", i+1)
+		if db, err = connectDB(config.ClientManagerDB, "Client Manager"); err == nil {
+			log.Printf("✅ Successfully connected to Client Manager DB!")
+			break
+		}
+		log.Printf("❌ Connection attempt %d failed: %v", i+1, err)
+		time.Sleep(time.Second * 2)
+	}
+	if err != nil {
+		log.Fatal("❌ Failed to connect to Client Manager DB after 3 attempts")
+	}
+
+	// Setup Social Dashboard DB
+	for i := 0; i < 3; i++ {
+		log.Printf("🔄 Social Dashboard DB connection attempt %d/3...", i+1)
+		if socialDB, err = connectDB(config.SocialDashboardDB, "Social Dashboard"); err == nil {
+			log.Printf("✅ Successfully connected to Social Dashboard DB!")
 			return
 		}
 		log.Printf("❌ Connection attempt %d failed: %v", i+1, err)
 		time.Sleep(time.Second * 2)
 	}
-
-	log.Fatal("❌ Failed to connect to database after 3 attempts")
+	log.Fatal("❌ Failed to connect to Social Dashboard DB after 3 attempts")
 }
 
-func connectDB() (*sql.DB, error) {
-	db, err := sql.Open("postgres", config.DatabaseURL)
+func connectDB(dbURL string, dbName string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("error opening database: %v", err)
+		return nil, fmt.Errorf("error opening %s database: %v", dbName, err)
 	}
 
 	// Test connection
 	if err = db.Ping(); err != nil {
-		return nil, fmt.Errorf("error pinging database: %v", err)
+		return nil, fmt.Errorf("error pinging %s database: %v", dbName, err)
 	}
 
 	// Configure connection pool
@@ -114,17 +131,23 @@ func connectDB() (*sql.DB, error) {
 	db.SetMaxIdleConns(25)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	log.Printf("⚙️ Database connection pool configured (max: 25 connections)")
+	log.Printf("⚙️ %s database connection pool configured (max: 25 connections)", dbName)
 	return db, nil
 }
 
 func logMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+
+		// Log incoming request details
 		log.Printf("🔍 Request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		log.Printf("   Headers: %v", r.Header)
 		log.Printf("   Query Parameters: %v", r.URL.Query())
+
+		// Call the next handler
 		next(w, r)
+
+		// Log request completion
 		duration := time.Since(start)
 		log.Printf("⏱️ Request completed in %v", duration)
 	}
@@ -134,6 +157,7 @@ func recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
+				// Log the stack trace
 				log.Printf("❌ PANIC RECOVERED: %v", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 			}
@@ -149,6 +173,7 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Allow GET, POST, and HEAD methods
 	if r.Method != http.MethodGet && r.Method != http.MethodPost && r.Method != http.MethodHead {
 		log.Printf("❌ Invalid method: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -158,6 +183,7 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
+	// Only write body for GET and POST requests
 	if r.Method != http.MethodHead {
 		fmt.Fprintf(w, `{"status":"healthy","message":"Neurocrow Message Router is running"}`)
 	}
@@ -166,9 +192,12 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 func setupRouter() *http.ServeMux {
 	router := http.NewServeMux()
 
+	// Register routes with middleware
 	router.HandleFunc("/", logMiddleware(healthCheckHandler))
 
+	// Main webhook endpoint for Facebook
 	router.HandleFunc("/webhook", logMiddleware(recoverMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		// Check if it's a Botpress request
 		if isBotpressRequest(r) {
 			log.Printf("✅ Botpress request detected")
 			w.WriteHeader(http.StatusOK)
@@ -179,19 +208,23 @@ func setupRouter() *http.ServeMux {
 			return
 		}
 
+		// If it has Facebook signature headers, treat as Facebook webhook
 		if r.Header.Get("X-Hub-Signature-256") != "" {
 			log.Printf("✅ Facebook webhook request detected")
 			validateFacebookRequest(handleWebhook)(w, r)
 			return
 		}
 
+		// For any other request, return OK but log it
 		log.Printf("ℹ️ Unknown request type to webhook endpoint")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{"status":"ok"}`)
 	})))
 
+	// New endpoint specifically for Botpress responses
 	router.HandleFunc("/botpress-response", logMiddleware(recoverMiddleware(handleBotpressResponse)))
 
+	// Log registered routes
 	log.Printf("📍 Registered routes:")
 	log.Printf("   - GET/POST/HEAD / (Health Check)")
 	log.Printf("   - GET/POST /webhook (Multi-purpose Webhook)")
@@ -200,9 +233,23 @@ func setupRouter() *http.ServeMux {
 	return router
 }
 
+func cleanup() {
+	if db != nil {
+		db.Close()
+	}
+	if socialDB != nil {
+		socialDB.Close()
+	}
+}
+
 func main() {
+	// Ensure cleanup on exit
+	defer cleanup()
+
+	// Set up router
 	router := setupRouter()
 
+	// Configure server
 	server := &http.Server{
 		Addr:         ":" + config.Port,
 		Handler:      router,
@@ -211,6 +258,7 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start server
 	log.Printf("🌐 Server starting on port %s", config.Port)
 	log.Printf("🔗 Local URL: http://localhost:%s", config.Port)
 	log.Printf("⚡ Server is ready to handle requests")

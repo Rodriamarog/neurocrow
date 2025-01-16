@@ -475,12 +475,6 @@ func getBotpressURL(ctx context.Context, pageID string) (string, error) {
 	return botpressURL, nil
 }
 
-type PageInfo struct {
-	Platform    string
-	PageID      string
-	AccessToken string
-}
-
 func getPageInfo(ctx context.Context, pageID string) (*PageInfo, error) {
 	var info PageInfo
 	info.PageID = pageID

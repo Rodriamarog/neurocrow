@@ -115,9 +115,31 @@ type ConversationState struct {
 }
 
 type Config struct {
-	DatabaseURL       string
+	ClientManagerDB   string // For pages, tokens, etc.
+	SocialDashboardDB string // For messages and conversations
 	FacebookAppSecret string
 	VerifyToken       string
 	Port              string
 	FireworksKey      string
+}
+
+// PageInfo represents essential page information retrieved from the database
+type PageInfo struct {
+	Platform    string
+	PageID      string
+	AccessToken string
+}
+
+// FireworksResponse represents the response structure from the LLM API
+type FireworksResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
