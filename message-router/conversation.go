@@ -10,16 +10,16 @@ import (
 
 // getOrCreateConversation retrieves or creates a conversation state
 func getOrCreateConversation(ctx context.Context, pageID, threadID, platform string) (*ConversationState, error) {
-	// First, get the UUID from social_pages
+	// First, get the UUID from the client manager database (pages table)
 	var pageUUID string
-	err := socialDB.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
         SELECT id 
-        FROM social_pages 
+        FROM pages 
         WHERE page_id = $1
     `, pageID).Scan(&pageUUID)
 
 	if err != nil {
-		return nil, fmt.Errorf("error finding social page: %v", err)
+		return nil, fmt.Errorf("error finding page in client manager: %v", err)
 	}
 
 	conv := &ConversationState{}
@@ -41,7 +41,7 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 		// Create new conversation
 		conv = &ConversationState{
 			ThreadID:   threadID,
-			PageID:     pageUUID, // Using the UUID here
+			PageID:     pageUUID, // Using the UUID from client manager
 			Platform:   platform,
 			BotEnabled: true,
 		}
@@ -97,10 +97,17 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 			reason,
 		)
 
+		// Note: we're inserting into social dashboard's messages table
 		if _, err := tx.ExecContext(ctx, `
             INSERT INTO messages (
-                client_id, page_id, platform, thread_id,
-                content, from_user, source, requires_attention,
+                client_id, 
+                page_id,
+                platform, 
+                thread_id,
+                content, 
+                from_user, 
+                source, 
+                requires_attention,
                 timestamp
             ) VALUES (
                 (SELECT client_id FROM social_pages WHERE page_id = $1),
