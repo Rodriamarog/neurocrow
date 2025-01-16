@@ -10,8 +10,20 @@ import (
 
 // getOrCreateConversation retrieves or creates a conversation state
 func getOrCreateConversation(ctx context.Context, pageID, threadID, platform string) (*ConversationState, error) {
-	conv := &ConversationState{}
+	// First, get the UUID from social_pages
+	var pageUUID string
 	err := socialDB.QueryRowContext(ctx, `
+        SELECT id 
+        FROM social_pages 
+        WHERE page_id = $1
+    `, pageID).Scan(&pageUUID)
+
+	if err != nil {
+		return nil, fmt.Errorf("error finding social page: %v", err)
+	}
+
+	conv := &ConversationState{}
+	err = socialDB.QueryRowContext(ctx, `
         SELECT thread_id, page_id, platform, bot_enabled, 
                COALESCE(last_bot_message_at, '1970-01-01'::timestamp),
                COALESCE(last_human_message_at, '1970-01-01'::timestamp),
@@ -19,7 +31,7 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
                message_count
         FROM conversations 
         WHERE thread_id = $1 AND page_id = $2
-    `, threadID, pageID).Scan(
+    `, threadID, pageUUID).Scan(
 		&conv.ThreadID, &conv.PageID, &conv.Platform, &conv.BotEnabled,
 		&conv.LastBotMessage, &conv.LastHumanMessage, &conv.LastUserMessage,
 		&conv.MessageCount,
@@ -29,9 +41,9 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 		// Create new conversation
 		conv = &ConversationState{
 			ThreadID:   threadID,
-			PageID:     pageID,
+			PageID:     pageUUID, // Using the UUID here
 			Platform:   platform,
-			BotEnabled: true, // Default to bot enabled
+			BotEnabled: true,
 		}
 
 		err = socialDB.QueryRowContext(ctx, `
