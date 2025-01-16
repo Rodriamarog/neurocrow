@@ -11,7 +11,7 @@ import (
 // getOrCreateConversation retrieves or creates a conversation state
 func getOrCreateConversation(ctx context.Context, pageID, threadID, platform string) (*ConversationState, error) {
 	conv := &ConversationState{}
-	err := db.QueryRowContext(ctx, `
+	err := socialDB.QueryRowContext(ctx, `
         SELECT thread_id, page_id, platform, bot_enabled, 
                COALESCE(last_bot_message_at, '1970-01-01'::timestamp),
                COALESCE(last_human_message_at, '1970-01-01'::timestamp),
@@ -34,7 +34,7 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 			BotEnabled: true, // Default to bot enabled
 		}
 
-		err = db.QueryRowContext(ctx, `
+		err = socialDB.QueryRowContext(ctx, `
             INSERT INTO conversations (
                 thread_id, page_id, platform, bot_enabled, 
                 first_message_at, latest_message_at, message_count
@@ -61,7 +61,7 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 // updateConversationState updates the conversation state in the database
 func updateConversationState(ctx context.Context, conv *ConversationState, botEnabled bool, reason string) error {
 	// Start a transaction
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := socialDB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %v", err)
 	}
