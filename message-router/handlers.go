@@ -151,8 +151,14 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 			// At this point, we have a valid user message
 			log.Printf("      ✅ Processing user message from %s: %q", msg.Sender.ID, msg.Message.Text)
 
+			// Normalize platform name
+			platform := event.Object
+			if platform == "page" {
+				platform = "facebook"
+			}
+
 			// Get or create conversation state
-			conv, err := getOrCreateConversation(ctx, entry.ID, msg.Sender.ID, event.Object)
+			conv, err := getOrCreateConversation(ctx, entry.ID, msg.Sender.ID, platform)
 			if err != nil {
 				log.Printf("❌ Error managing conversation state: %v", err)
 				continue
@@ -172,7 +178,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					float64(analysis.TokensUsed)*0.20/1_000_000)
 
 				// Store message in database
-				if err := storeMessage(ctx, entry.ID, msg.Sender.ID, event.Object, msg.Message.Text, "user", analysis.Status != "general"); err != nil {
+				if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, "user", analysis.Status != "general"); err != nil {
 					log.Printf("❌ Error storing message: %v", err)
 				}
 
@@ -198,7 +204,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 					// Send handoff message to user
 					if err := sendPlatformResponse(ctx, &PageInfo{
-						Platform:    event.Object,
+						Platform:    platform,
 						PageID:      entry.ID,
 						AccessToken: "", // Will be fetched in sendPlatformResponse
 					}, msg.Sender.ID, handoffMsg); err != nil {
@@ -206,7 +212,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					}
 
 					// Store the handoff message
-					if err := storeMessage(ctx, entry.ID, msg.Sender.ID, event.Object, handoffMsg, "system", false); err != nil {
+					if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, handoffMsg, "system", false); err != nil {
 						log.Printf("❌ Error storing handoff message: %v", err)
 					}
 
@@ -214,7 +220,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				}
 
 				// If sentiment is "general" and bot is enabled, forward to Botpress
-				if err := forwardToBotpress(ctx, entry.ID, msg, event.Object); err != nil {
+				if err := forwardToBotpress(ctx, entry.ID, msg, platform); err != nil {
 					log.Printf("❌ Error forwarding to Botpress: %v", err)
 
 					// If Botpress fails, mark for human attention
@@ -224,7 +230,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				}
 			} else {
 				// Bot is disabled, just store the message for human review
-				if err := storeMessage(ctx, entry.ID, msg.Sender.ID, event.Object, msg.Message.Text, "user", true); err != nil {
+				if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, "user", true); err != nil {
 					log.Printf("❌ Error storing message: %v", err)
 				}
 			}
