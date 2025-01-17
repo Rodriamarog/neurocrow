@@ -76,6 +76,10 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 
 // updateConversationState updates the conversation state in the database
 func updateConversationState(ctx context.Context, conv *ConversationState, botEnabled bool, reason string) error {
+	// Add debug logging at the start
+	log.Printf("🔍 Updating conversation state: pageID=%s, platform=%s, threadID=%s, botEnabled=%v",
+		conv.PageID, conv.Platform, conv.ThreadID, botEnabled)
+
 	// Start a transaction
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -85,12 +89,12 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 
 	// Update conversations table
 	if _, err := tx.ExecContext(ctx, `
-        UPDATE conversations 
-        SET bot_enabled = $1,
-            latest_message_at = NOW(),
-            message_count = message_count + 1
-        WHERE thread_id = $2
-    `, botEnabled, conv.ThreadID); err != nil {
+		UPDATE conversations 
+		SET bot_enabled = $1,
+			latest_message_at = NOW(),
+			message_count = message_count + 1
+		WHERE thread_id = $2
+	`, botEnabled, conv.ThreadID); err != nil {
 		return fmt.Errorf("error updating conversation: %v", err)
 	}
 
@@ -101,54 +105,84 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 			reason,
 		)
 
+		// Add debug logging before the query
+		log.Printf("🔍 Querying social_pages with page_id=%s and platform=%s", conv.PageID, conv.Platform)
+
 		// Get page UUID and client_id using the page_id and matching the platform
 		var pageUUID, clientID string
 		err := tx.QueryRowContext(ctx, `
-            SELECT id, COALESCE(client_id, '00000000-0000-0000-0000-000000000000')
-            FROM social_pages 
-            WHERE page_id = $1 AND platform = $2
-        `, conv.PageID, conv.Platform).Scan(&pageUUID, &clientID)
+			SELECT id, COALESCE(client_id, '00000000-0000-0000-0000-000000000000')
+			FROM social_pages 
+			WHERE page_id = $1 AND platform = $2
+		`, conv.PageID, conv.Platform).Scan(&pageUUID, &clientID)
 		if err != nil {
+			// Add debug logging for the error case
+			if err == sql.ErrNoRows {
+				// Also query to see what's actually in the table
+				var count int
+				tx.QueryRowContext(ctx, `
+					SELECT COUNT(*) FROM social_pages WHERE page_id = $1
+				`, conv.PageID).Scan(&count)
+				log.Printf("❌ No matching page found. Found %d pages with page_id=%s", count, conv.PageID)
+
+				// Let's see what platforms exist for this page_id
+				rows, _ := tx.QueryContext(ctx, `
+					SELECT platform FROM social_pages WHERE page_id = $1
+				`, conv.PageID)
+				defer rows.Close()
+
+				platforms := []string{}
+				for rows.Next() {
+					var platform string
+					rows.Scan(&platform)
+					platforms = append(platforms, platform)
+				}
+				if len(platforms) > 0 {
+					log.Printf("📝 Found platforms for this page_id: %v", platforms)
+				}
+			}
 			return fmt.Errorf("error getting page UUID: %v", err)
 		}
 
+		log.Printf("✅ Found page UUID: %s and client_id: %s", pageUUID, clientID)
+
 		// Insert system message
 		if _, err := tx.ExecContext(ctx, `
-            INSERT INTO messages (
-                id,
-                client_id, 
-                page_id,
-                platform, 
-                thread_id,
-                content, 
-                from_user, 
-                source, 
-                requires_attention,
-                timestamp,
-                read
-            ) VALUES (
-                gen_random_uuid(),
-                $1,     -- client_id
-                $2,     -- page_id (UUID)
-                $3,     -- platform
-                $4,     -- thread_id 
-                $5,     -- content
-                'system',
-                'system',
-                $6,     -- requires_attention
-                NOW(),
-                false
-            )
-        `, clientID, pageUUID, conv.Platform, conv.ThreadID, stateMsg, !botEnabled); err != nil {
+			INSERT INTO messages (
+				id,
+				client_id, 
+				page_id,
+				platform, 
+				thread_id,
+				content, 
+				from_user, 
+				source, 
+				requires_attention,
+				timestamp,
+				read
+			) VALUES (
+				gen_random_uuid(),
+				$1,     -- client_id
+				$2,     -- page_id (UUID)
+				$3,     -- platform
+				$4,     -- thread_id 
+				$5,     -- content
+				'system',
+				'system',
+				$6,     -- requires_attention
+				NOW(),
+				false
+			)
+		`, clientID, pageUUID, conv.Platform, conv.ThreadID, stateMsg, !botEnabled); err != nil {
 			return fmt.Errorf("error logging state change: %v", err)
 		}
 
 		// Update the bot_enabled state in the conversation
 		if _, err := tx.ExecContext(ctx, `
-            UPDATE conversations
-            SET bot_enabled = $1
-            WHERE thread_id = $2
-        `, botEnabled, conv.ThreadID); err != nil {
+			UPDATE conversations
+			SET bot_enabled = $1
+			WHERE thread_id = $2
+		`, botEnabled, conv.ThreadID); err != nil {
 			return fmt.Errorf("error updating bot state: %v", err)
 		}
 	}
@@ -158,5 +192,6 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 		return fmt.Errorf("error committing transaction: %v", err)
 	}
 
+	log.Printf("✅ Successfully updated conversation state")
 	return nil
 }
