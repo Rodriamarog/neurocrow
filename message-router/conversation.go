@@ -101,13 +101,13 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 			reason,
 		)
 
-		// Get page UUID and client_id using the page_id from Facebook
+		// Get page UUID and client_id using the page_id and matching the platform
 		var pageUUID, clientID string
 		err := tx.QueryRowContext(ctx, `
             SELECT id, COALESCE(client_id, '00000000-0000-0000-0000-000000000000')
             FROM social_pages 
-            WHERE page_id = $1
-        `, conv.PageID).Scan(&pageUUID, &clientID)
+            WHERE page_id = $1 AND platform = $2
+        `, conv.PageID, conv.Platform).Scan(&pageUUID, &clientID)
 		if err != nil {
 			return fmt.Errorf("error getting page UUID: %v", err)
 		}
@@ -124,21 +124,32 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
                 from_user, 
                 source, 
                 requires_attention,
-                timestamp
+                timestamp,
+                read
             ) VALUES (
                 gen_random_uuid(),
-                $1,
-                $2,
-                'facebook',
-                $3,
-                $4,
+                $1,     -- client_id
+                $2,     -- page_id (UUID)
+                $3,     -- platform
+                $4,     -- thread_id 
+                $5,     -- content
                 'system',
                 'system',
-                $5,
-                NOW()
+                $6,     -- requires_attention
+                NOW(),
+                false
             )
-        `, clientID, pageUUID, conv.ThreadID, stateMsg, !botEnabled); err != nil {
+        `, clientID, pageUUID, conv.Platform, conv.ThreadID, stateMsg, !botEnabled); err != nil {
 			return fmt.Errorf("error logging state change: %v", err)
+		}
+
+		// Update the bot_enabled state in the conversation
+		if _, err := tx.ExecContext(ctx, `
+            UPDATE conversations
+            SET bot_enabled = $1
+            WHERE thread_id = $2
+        `, botEnabled, conv.ThreadID); err != nil {
+			return fmt.Errorf("error updating bot state: %v", err)
 		}
 	}
 
