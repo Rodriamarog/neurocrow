@@ -101,18 +101,18 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 			reason,
 		)
 
-		// First get the UUID from social_pages
-		var pageUUID string
+		// Get page info for current page
+		var pageUUID, clientID string
 		err := tx.QueryRowContext(ctx, `
-            SELECT id 
+            SELECT id, COALESCE(client_id, '00000000-0000-0000-0000-000000000000')
             FROM social_pages 
-            WHERE page_id = $1
-        `, conv.PageID).Scan(&pageUUID)
+            WHERE page_id = $1 AND platform = 'facebook'
+        `, conv.PageID).Scan(&pageUUID, &clientID)
 		if err != nil {
 			return fmt.Errorf("error getting page UUID: %v", err)
 		}
 
-		// Now insert using the UUID
+		// Insert system message
 		if _, err := tx.ExecContext(ctx, `
             INSERT INTO messages (
                 id,
@@ -127,11 +127,17 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
                 timestamp
             ) VALUES (
                 gen_random_uuid(),
-                (SELECT client_id FROM social_pages WHERE id = $1),
-                $1, $2, $3, $4, 'system', 'system', $5,
+                $1,
+                $2, 
+                'facebook', 
+                $3, 
+                $4, 
+                'system', 
+                'system', 
+                $5,
                 NOW()
             )
-        `, pageUUID, conv.Platform, conv.ThreadID, stateMsg, !botEnabled); err != nil {
+        `, clientID, pageUUID, conv.ThreadID, stateMsg, !botEnabled); err != nil {
 			return fmt.Errorf("error logging state change: %v", err)
 		}
 	}

@@ -202,12 +202,15 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 						log.Printf("❌ Error updating conversation state: %v", err)
 					}
 
+					// Get page info with access token
+					pageInfo, err := getPageInfo(ctx, entry.ID)
+					if err != nil {
+						log.Printf("❌ Error getting page info: %v", err)
+						continue
+					}
+
 					// Send handoff message to user
-					if err := sendPlatformResponse(ctx, &PageInfo{
-						Platform:    platform,
-						PageID:      entry.ID,
-						AccessToken: "", // Will be fetched in sendPlatformResponse
-					}, msg.Sender.ID, handoffMsg); err != nil {
+					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, handoffMsg); err != nil {
 						log.Printf("❌ Error sending handoff message: %v", err)
 					}
 
