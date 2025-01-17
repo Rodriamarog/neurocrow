@@ -8,31 +8,31 @@ import (
 	"log"
 )
 
-// getOrCreateConversation retrieves or creates a conversation state
 func getOrCreateConversation(ctx context.Context, pageID, threadID, platform string) (*ConversationState, error) {
+	// Get UUID for database operations
 	var pageUUID string
 	err := db.QueryRowContext(ctx, `
         SELECT id 
         FROM social_pages 
         WHERE page_id = $1
     `, pageID).Scan(&pageUUID)
-
 	if err != nil {
 		return nil, fmt.Errorf("error finding page: %v", err)
 	}
 
 	conv := &ConversationState{}
 	err = db.QueryRowContext(ctx, `
-        SELECT thread_id, page_id, platform, bot_enabled, 
-               COALESCE(last_bot_message_at, '1970-01-01'::timestamp),
-               COALESCE(last_human_message_at, '1970-01-01'::timestamp),
-               COALESCE(last_user_message_at, '1970-01-01'::timestamp),
-               message_count
-        FROM conversations 
-        WHERE thread_id = $1 AND page_id = $2
+        SELECT c.thread_id, sp.page_id, c.platform, c.bot_enabled, 
+               COALESCE(c.last_bot_message_at, '1970-01-01'::timestamp),
+               COALESCE(c.last_human_message_at, '1970-01-01'::timestamp),
+               COALESCE(c.last_user_message_at, '1970-01-01'::timestamp),
+               c.message_count
+        FROM conversations c
+        JOIN social_pages sp ON sp.id = c.page_id
+        WHERE c.thread_id = $1 AND c.page_id = $2
     `, threadID, pageUUID).Scan(
 		&conv.ThreadID,
-		&conv.PageID,
+		&conv.PageID, // Now will get the original page_id from social_pages
 		&conv.Platform,
 		&conv.BotEnabled,
 		&conv.LastBotMessage,
@@ -45,7 +45,7 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 		// Create new conversation
 		conv = &ConversationState{
 			ThreadID:   threadID,
-			PageID:     pageUUID,
+			PageID:     pageID, // Use original pageID
 			Platform:   platform,
 			BotEnabled: true,
 		}
@@ -56,7 +56,7 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
                 first_message_at, latest_message_at, message_count
             ) VALUES ($1, $2, $3, $4, NOW(), NOW(), 1)
             RETURNING thread_id
-        `, conv.ThreadID, conv.PageID, conv.Platform, conv.BotEnabled).Scan(&conv.ThreadID)
+        `, conv.ThreadID, pageUUID, conv.Platform, conv.BotEnabled).Scan(&conv.ThreadID)
 
 		if err != nil {
 			return nil, fmt.Errorf("error creating conversation: %v", err)
