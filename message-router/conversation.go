@@ -101,12 +101,12 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 			reason,
 		)
 
-		// Get page info for current page
+		// Get page UUID and client_id using the page_id from Facebook
 		var pageUUID, clientID string
 		err := tx.QueryRowContext(ctx, `
             SELECT id, COALESCE(client_id, '00000000-0000-0000-0000-000000000000')
             FROM social_pages 
-            WHERE page_id = $1 AND platform = 'facebook'
+            WHERE page_id = $1
         `, conv.PageID).Scan(&pageUUID, &clientID)
 		if err != nil {
 			return fmt.Errorf("error getting page UUID: %v", err)
@@ -128,12 +128,12 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
             ) VALUES (
                 gen_random_uuid(),
                 $1,
-                $2, 
-                'facebook', 
-                $3, 
-                $4, 
-                'system', 
-                'system', 
+                $2,
+                'facebook',
+                $3,
+                $4,
+                'system',
+                'system',
                 $5,
                 NOW()
             )
