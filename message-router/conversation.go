@@ -109,9 +109,10 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 		log.Printf("🔍 Querying social_pages with page_id=%s and platform=%s", conv.PageID, conv.Platform)
 
 		// Get page UUID and client_id using the page_id and matching the platform
-		var pageUUID, clientID string
+		var pageUUID string
+		var clientID sql.NullString // Use sql.NullString to handle NULL values
 		err := tx.QueryRowContext(ctx, `
-			SELECT id, COALESCE(client_id, '00000000-0000-0000-0000-000000000000')
+			SELECT id, client_id
 			FROM social_pages 
 			WHERE page_id = $1 AND platform = $2
 		`, conv.PageID, conv.Platform).Scan(&pageUUID, &clientID)
@@ -144,37 +145,68 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 			return fmt.Errorf("error getting page UUID: %v", err)
 		}
 
-		log.Printf("✅ Found page UUID: %s and client_id: %s", pageUUID, clientID)
+		log.Printf("✅ Found page UUID: %s and client_id: %v", pageUUID, clientID.String)
 
-		// Insert system message
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO messages (
-				id,
-				client_id, 
-				page_id,
-				platform, 
-				thread_id,
-				content, 
-				from_user, 
-				source, 
-				requires_attention,
-				timestamp,
-				read
-			) VALUES (
-				gen_random_uuid(),
-				$1,     -- client_id
-				$2,     -- page_id (UUID)
-				$3,     -- platform
-				$4,     -- thread_id 
-				$5,     -- content
-				'system',
-				'system',
-				$6,     -- requires_attention
-				NOW(),
-				false
-			)
-		`, clientID, pageUUID, conv.Platform, conv.ThreadID, stateMsg, !botEnabled); err != nil {
-			return fmt.Errorf("error logging state change: %v", err)
+		// Insert system message with NULL client_id if not present
+		var insertErr error
+		if clientID.Valid {
+			_, insertErr = tx.ExecContext(ctx, `
+				INSERT INTO messages (
+					id,
+					client_id, 
+					page_id,
+					platform, 
+					thread_id,
+					content, 
+					from_user, 
+					source, 
+					requires_attention,
+					timestamp,
+					read
+				) VALUES (
+					gen_random_uuid(),
+					$1,     -- client_id
+					$2,     -- page_id (UUID)
+					$3,     -- platform
+					$4,     -- thread_id 
+					$5,     -- content
+					'system',
+					'system',
+					$6,     -- requires_attention
+					NOW(),
+					false
+				)
+			`, clientID.String, pageUUID, conv.Platform, conv.ThreadID, stateMsg, !botEnabled)
+		} else {
+			_, insertErr = tx.ExecContext(ctx, `
+				INSERT INTO messages (
+					id,
+					page_id,
+					platform, 
+					thread_id,
+					content, 
+					from_user, 
+					source, 
+					requires_attention,
+					timestamp,
+					read
+				) VALUES (
+					gen_random_uuid(),
+					$1,     -- page_id (UUID)
+					$2,     -- platform
+					$3,     -- thread_id 
+					$4,     -- content
+					'system',
+					'system',
+					$5,     -- requires_attention
+					NOW(),
+					false
+				)
+			`, pageUUID, conv.Platform, conv.ThreadID, stateMsg, !botEnabled)
+		}
+
+		if insertErr != nil {
+			return fmt.Errorf("error logging state change: %v", insertErr)
 		}
 
 		// Update the bot_enabled state in the conversation
