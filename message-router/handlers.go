@@ -190,7 +190,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 			// Always store the incoming message first
 			log.Printf("      💾 Storing message in database")
-			if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, userName, true); err != nil {
+			if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, userName, "user", true); err != nil {
 				log.Printf("❌ Error storing message: %v", err)
 			} else {
 				log.Printf("      ✅ Message stored successfully")
@@ -248,7 +248,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 					// Store the handoff message
 					log.Printf("      💾 Storing handoff message")
-					if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, handoffMsg, "system", false); err != nil {
+					if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, handoffMsg, "system", "system", false); err != nil {
 						log.Printf("❌ Error storing handoff message: %v", err)
 					} else {
 						log.Printf("      ✅ Handoff message stored successfully")
@@ -280,8 +280,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 	log.Printf("✅ Async message processing complete")
 }
 
-// storeMessage stores a message in the database
-func storeMessage(ctx context.Context, pageID, senderID, platform, content, source string, requiresAttention bool) error {
+func storeMessage(ctx context.Context, pageID, senderID, platform, content, fromUser, source string, requiresAttention bool) error {
 	// Get the UUID from social_pages instead of pages
 	var pageUUID string
 	err := db.QueryRowContext(ctx, `
@@ -321,7 +320,7 @@ func storeMessage(ctx context.Context, pageID, senderID, platform, content, sour
             $6,                
             $7                 
         )
-    `, pageUUID, platform, senderID, source, content, source, requiresAttention)
+    `, pageUUID, platform, senderID, fromUser, content, source, requiresAttention)
 
 	if err != nil {
 		return fmt.Errorf("error storing message: %v", err)
