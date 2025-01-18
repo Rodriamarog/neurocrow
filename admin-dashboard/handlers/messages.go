@@ -26,6 +26,7 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
                 thread_id, 
                 from_user as original_sender
             FROM messages
+            WHERE platform IN ('facebook', 'instagram')
             ORDER BY thread_id, timestamp ASC
         ),
         latest_messages AS (
@@ -37,11 +38,17 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
             ORDER BY thread_id, timestamp DESC
         )
         SELECT 
-            id, client_id, page_id, platform,
+            id, 
+            COALESCE(client_id, '00000000-0000-0000-0000-000000000000') as client_id,
+            page_id, 
+            platform,
             thread_owner as from_user,  
-            content, timestamp, thread_id, read
+            content, 
+            timestamp, 
+            thread_id, 
+            read
         FROM latest_messages
-        ORDER BY timestamp DESC
+        ORDER BY timestamp DESC;
     `
 	messages, err := db.FetchMessages(query)
 	if err != nil {
@@ -100,6 +107,7 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	err := r.ParseForm()
 	if err != nil {
+		log.Printf("❌ Error parsing form: %v", err)
 		db.HandleError(w, err, "Error parsing form", http.StatusBadRequest)
 		return
 	}
@@ -108,16 +116,20 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 	content := strings.TrimSpace(r.FormValue("message"))
 
 	if content == "" {
+		log.Printf("❌ Attempted to send empty message to thread: %s", threadID)
 		http.Error(w, "Empty message", http.StatusBadRequest)
 		return
 	}
 
-	_, err = db.DB.Exec(`
+	log.Printf("📤 Sending admin message to thread %s: %q", threadID, content)
+
+	result, err := db.DB.Exec(`
         INSERT INTO messages (
             client_id,
             page_id,
             platform,
             from_user,
+            source,
             content,
             thread_id,
             read
@@ -126,19 +138,34 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
             page_id,
             platform,
             'admin',
+            'human',
             $1,
             $2,
             true
         FROM messages 
         WHERE thread_id = $2 
         LIMIT 1
+        RETURNING id
     `, content, threadID)
 
 	if err != nil {
+		log.Printf("❌ Error storing admin message: %v", err)
 		db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
 		return
 	}
 
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("⚠️ Could not determine if message was stored: %v", err)
+	} else if rowsAffected == 0 {
+		log.Printf("❌ No message stored - thread %s might not exist", threadID)
+		http.Error(w, "Thread not found", http.StatusNotFound)
+		return
+	}
+
+	log.Printf("✅ Successfully stored admin message in thread %s", threadID)
+
+	// HTMX response template
 	tmpl := template.Must(template.New("message-response").Parse(`
         <div class="flex items-start max-w-[85%] justify-end ml-auto"
              hx-get="/thread-preview?thread_id={{.ThreadID}}"
@@ -158,6 +185,7 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		ThreadID: threadID,
 		Content:  content,
 	}); err != nil {
+		log.Printf("❌ Error rendering message response: %v", err)
 		db.HandleError(w, err, "Error rendering message", http.StatusInternalServerError)
 		return
 	}
