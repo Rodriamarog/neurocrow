@@ -108,7 +108,7 @@ func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 }
 
 func processMessagesAsync(ctx context.Context, event FacebookEvent) {
-	log.Printf("🔄 Processing messages asynchronously")
+	log.Printf("🔄 Starting async message processing")
 	for _, entry := range event.Entry {
 		log.Printf("📝 Processing entry ID: %s", entry.ID)
 
@@ -149,41 +149,72 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 			}
 
 			// At this point, we have a valid user message
-			log.Printf("      ✅ Processing user message from %s: %q", msg.Sender.ID, msg.Message.Text)
+			log.Printf("      ✨ Valid message received from sender %s", msg.Sender.ID)
+			log.Printf("      📨 Message content: %q", msg.Message.Text)
 
 			// Normalize platform name
 			platform := event.Object
 			if platform == "page" {
 				platform = "facebook"
+				log.Printf("      🔄 Normalized platform from 'page' to 'facebook'")
 			}
 
+			log.Printf("      🌐 Processing message for platform: %s", platform)
+
 			// Get or create conversation state
+			log.Printf("      🔍 Getting conversation state for thread %s", msg.Sender.ID)
 			conv, err := getOrCreateConversation(ctx, entry.ID, msg.Sender.ID, platform)
 			if err != nil {
 				log.Printf("❌ Error managing conversation state: %v", err)
 				continue
 			}
+			log.Printf("      ✅ Conversation state retrieved, bot enabled: %v", conv.BotEnabled)
+
+			// Get page info for access token
+			log.Printf("      🔑 Fetching page info for ID: %s", entry.ID)
+			pageInfo, err := getPageInfo(ctx, entry.ID)
+			if err != nil {
+				log.Printf("❌ Error getting page info: %v", err)
+				continue
+			}
+			log.Printf("      ✅ Page info retrieved successfully")
+
+			// Get user's profile info
+			log.Printf("      👤 Fetching user profile info")
+			userName, err := getProfileInfo(ctx, msg.Sender.ID, pageInfo.AccessToken, platform)
+			if err != nil {
+				log.Printf("⚠️ Could not get user name, using 'user': %v", err)
+				userName = "user"
+			}
+			log.Printf("      📝 Using name '%s' for message storage", userName)
 
 			// Always store the incoming message first
-			if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, "user", true); err != nil {
+			log.Printf("      💾 Storing message in database")
+			if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, userName, true); err != nil {
 				log.Printf("❌ Error storing message: %v", err)
+			} else {
+				log.Printf("      ✅ Message stored successfully")
 			}
 
 			// Only proceed with bot processing if enabled
 			if conv.BotEnabled {
+				log.Printf("      🤖 Bot is enabled, proceeding with message analysis")
+
 				analysis, err := sentimentAnalyzer.Analyze(ctx, msg.Message.Text)
 				if err != nil {
 					log.Printf("❌ Error analyzing sentiment: %v", err)
 					continue
 				}
 
-				log.Printf("      📊 Sentiment analysis: status=%s, tokens=%d, cost≈$%.5f",
-					analysis.Status,
-					analysis.TokensUsed,
-					float64(analysis.TokensUsed)*0.20/1_000_000)
+				log.Printf("      📊 Sentiment analysis complete:")
+				log.Printf("         Status: %s", analysis.Status)
+				log.Printf("         Tokens used: %d", analysis.TokensUsed)
+				log.Printf("         Estimated cost: $%.5f", float64(analysis.TokensUsed)*0.20/1_000_000)
 
 				// Update conversation state based on analysis
 				if analysis.Status != "general" {
+					log.Printf("      ⚡ Non-general status detected: %s", analysis.Status)
+
 					// Prepare handoff message based on analysis
 					handoffMsg := ""
 					reason := ""
@@ -192,48 +223,61 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					case "need_human":
 						reason = "Usuario solicitó asistencia humana"
 						handoffMsg = "Claro, te conectaré con un agente humano para ayudarte mejor."
+						log.Printf("      👋 Human assistance requested")
 					case "frustrated":
 						reason = "Usuario muestra señales de frustración"
 						handoffMsg = "Lamento la confusión. Te conectaré con un agente especializado inmediatamente."
+						log.Printf("      😤 User frustration detected")
 					}
 
 					// Update conversation state to disable bot
+					log.Printf("      🔄 Updating conversation state to disable bot")
 					if err := updateConversationState(ctx, conv, false, reason); err != nil {
 						log.Printf("❌ Error updating conversation state: %v", err)
-					}
-
-					// Get page info with access token
-					pageInfo, err := getPageInfo(ctx, entry.ID)
-					if err != nil {
-						log.Printf("❌ Error getting page info: %v", err)
-						continue
+					} else {
+						log.Printf("      ✅ Conversation state updated successfully")
 					}
 
 					// Send handoff message to user
+					log.Printf("      📤 Sending handoff message to user")
 					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, handoffMsg); err != nil {
 						log.Printf("❌ Error sending handoff message: %v", err)
+					} else {
+						log.Printf("      ✅ Handoff message sent successfully")
 					}
 
 					// Store the handoff message
+					log.Printf("      💾 Storing handoff message")
 					if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, handoffMsg, "system", false); err != nil {
 						log.Printf("❌ Error storing handoff message: %v", err)
+					} else {
+						log.Printf("      ✅ Handoff message stored successfully")
 					}
 
 					continue
 				}
 
 				// If sentiment is "general" and bot is enabled, forward to Botpress
+				log.Printf("      🤖 Forwarding message to Botpress")
 				if err := forwardToBotpress(ctx, entry.ID, msg, platform); err != nil {
 					log.Printf("❌ Error forwarding to Botpress: %v", err)
 
 					// If Botpress fails, mark for human attention
+					log.Printf("      ⚠️ Botpress error, marking for human attention")
 					if err := updateConversationState(ctx, conv, false, "Error al procesar con Botpress"); err != nil {
 						log.Printf("❌ Error updating conversation state: %v", err)
+					} else {
+						log.Printf("      ✅ Conversation marked for human attention")
 					}
+				} else {
+					log.Printf("      ✅ Message successfully forwarded to Botpress")
 				}
+			} else {
+				log.Printf("      ℹ️ Bot is disabled, message stored for human review")
 			}
 		}
 	}
+	log.Printf("✅ Async message processing complete")
 }
 
 // storeMessage stores a message in the database
@@ -546,4 +590,76 @@ func isBotpressRequest(r *http.Request) bool {
 	userAgent := r.Header.Get("User-Agent")
 	return userAgent == "axios/1.6.8" || // Botpress uses axios
 		strings.Contains(strings.ToLower(userAgent), "botpress")
+}
+
+func getProfileInfo(ctx context.Context, userID string, pageToken string, platform string) (string, error) {
+	log.Printf("🔍 Getting profile info for user %s (platform: %s)", userID, platform)
+
+	// Check cache first
+	if name, found := userCache.Get(userID); found {
+		return name, nil
+	}
+
+	// Different endpoints and handling for Facebook and Instagram
+	var userName string
+	if platform == "facebook" {
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s?fields=name&access_token=%s", userID, pageToken)
+		log.Printf("📡 Making Facebook API request for user %s", userID)
+
+		var profile FacebookProfile
+		if err := makeAPIRequest(ctx, apiURL, &profile); err != nil {
+			return "user", err
+		}
+		userName = profile.Name
+		log.Printf("👤 Using Facebook name: %s", userName)
+	} else {
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s?fields=username&access_token=%s", userID, pageToken)
+		log.Printf("📡 Making Instagram API request for user %s", userID)
+
+		var profile InstagramProfile
+		if err := makeAPIRequest(ctx, apiURL, &profile); err != nil {
+			return "user", err
+		}
+		userName = profile.Username
+		log.Printf("📸 Using Instagram username: %s", userName)
+	}
+
+	if userName == "" {
+		log.Printf("⚠️ No name found in profile for user %s", userID)
+		return "user", fmt.Errorf("no name found in profile")
+	}
+
+	// Cache the result
+	userCache.Set(userID, userName)
+	return userName, nil
+}
+
+// Helper function to make API requests
+func makeAPIRequest(ctx context.Context, url string, result interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	start := time.Now()
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	log.Printf("⏱️ API request completed in %v", time.Since(start))
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Printf("❌ API error: Status %d, Body: %s",
+			resp.StatusCode, string(respBody))
+		return fmt.Errorf("error response from API: %d", resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		return fmt.Errorf("error decoding response: %v", err)
+	}
+
+	return nil
 }

@@ -1,7 +1,11 @@
 // types.go
 package main
 
-import "time"
+import (
+	"log"
+	"sync"
+	"time"
+)
 
 // FacebookEvent represents the incoming webhook event from Facebook
 type FacebookEvent struct {
@@ -141,4 +145,63 @@ type FireworksResponse struct {
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
 	} `json:"usage"`
+}
+
+// UserProfile represents the user profile information from Facebook
+type UserProfile struct {
+	Name     string `json:"name"`
+	Username string `json:"username"` // For Instagram users
+}
+
+type FacebookProfile struct {
+	Name string `json:"name"`
+}
+
+type InstagramProfile struct {
+	Username string `json:"username"`
+}
+
+type UserCache struct {
+	sync.RWMutex
+	data map[string]cachedUser
+}
+
+type cachedUser struct {
+	name      string
+	expiresAt time.Time
+}
+
+var (
+	userCache = &UserCache{
+		data: make(map[string]cachedUser),
+	}
+	cacheDuration = 24 * time.Hour
+)
+
+func (c *UserCache) Get(userID string) (string, bool) {
+	c.RLock()
+	defer c.RUnlock()
+
+	if user, exists := c.data[userID]; exists {
+		if time.Now().Before(user.expiresAt) {
+			log.Printf("🎯 Cache hit for user %s: %s (expires in %v)",
+				userID, user.name, time.Until(user.expiresAt))
+			return user.name, true
+		}
+		log.Printf("⌛ Cache entry expired for user %s", userID)
+	}
+	log.Printf("❌ Cache miss for user %s", userID)
+	return "", false
+}
+
+func (c *UserCache) Set(userID, name string) {
+	c.Lock()
+	defer c.Unlock()
+
+	expiresAt := time.Now().Add(cacheDuration)
+	c.data[userID] = cachedUser{
+		name:      name,
+		expiresAt: expiresAt,
+	}
+	log.Printf("💾 Cached user %s name as %s (expires at %v)", userID, name, expiresAt)
 }
