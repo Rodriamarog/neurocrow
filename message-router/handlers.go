@@ -164,7 +164,12 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				continue
 			}
 
-			// Only analyze if bot is currently enabled
+			// Always store the incoming message first
+			if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, "user", true); err != nil {
+				log.Printf("❌ Error storing message: %v", err)
+			}
+
+			// Only proceed with bot processing if enabled
 			if conv.BotEnabled {
 				analysis, err := sentimentAnalyzer.Analyze(ctx, msg.Message.Text)
 				if err != nil {
@@ -176,11 +181,6 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					analysis.Status,
 					analysis.TokensUsed,
 					float64(analysis.TokensUsed)*0.20/1_000_000)
-
-				// Store message in database
-				if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, "user", analysis.Status != "general"); err != nil {
-					log.Printf("❌ Error storing message: %v", err)
-				}
 
 				// Update conversation state based on analysis
 				if analysis.Status != "general" {
@@ -230,11 +230,6 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					if err := updateConversationState(ctx, conv, false, "Error al procesar con Botpress"); err != nil {
 						log.Printf("❌ Error updating conversation state: %v", err)
 					}
-				}
-			} else {
-				// Bot is disabled, just store the message for human review
-				if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, "user", true); err != nil {
-					log.Printf("❌ Error storing message: %v", err)
 				}
 			}
 		}
