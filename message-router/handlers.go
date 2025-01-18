@@ -404,6 +404,13 @@ func handleBotpressResponse(w http.ResponseWriter, r *http.Request) {
 		// Send response based on platform
 		if err := sendPlatformResponse(ctx, pageInfo, senderID, response.Payload.Text); err != nil {
 			log.Printf("❌ Error sending platform response: %v", err)
+		} else {
+			log.Printf("✅ Platform response sent successfully, storing bot response")
+			if err := storeMessage(ctx, pageID, senderID, pageInfo.Platform, response.Payload.Text, "bot", "bot", false); err != nil {
+				log.Printf("❌ Error storing bot response: %v", err)
+			} else {
+				log.Printf("✅ Stored bot response in database")
+			}
 		}
 	}
 
