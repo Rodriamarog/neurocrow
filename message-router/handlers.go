@@ -143,9 +143,10 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				log.Printf("      📝 Processing echo message")
 				source := "bot"
 				fromUser := "bot"
-				if strings.HasPrefix(msg.Sender.ID, entry.ID) {
+				if msg.Sender.ID == entry.ID {
 					source = "human"
 					fromUser = "admin"
+					log.Printf("      🔍 Detected human agent message (sender ID matches page ID)")
 				}
 
 				// Normalize platform
