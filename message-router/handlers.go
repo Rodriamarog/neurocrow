@@ -118,59 +118,49 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 		}
 
 		for _, msg := range entry.Messaging {
-			// Handle echo messages (responses from page/bot)
+			// ⚠️ Delivery receipt handling
+			if msg.Delivery != nil {
+				log.Printf("      ⚠️ Delivery receipt - skipping")
+				continue
+			}
+
+			// Message validation
+			if msg.Message == nil {
+				log.Printf("      ⚠️ No message content")
+				continue
+			}
+			if msg.Message.Text == "" {
+				log.Printf("      ⚠️ Empty message text")
+				continue
+			}
+			if strings.HasPrefix(msg.Sender.ID, "page-") || strings.HasPrefix(msg.Sender.ID, "bot-") {
+				log.Printf("      ⚠️ Message from non-user sender - skipping")
+				continue
+			}
+
+			// Echo message handling
 			if msg.Message.IsEcho {
 				log.Printf("      📝 Processing echo message")
-
-				// Determine source and from_user based on sender
-				source := "bot" // Default to bot
+				source := "bot"
 				fromUser := "bot"
-
-				// If sender ID matches page ID, it's from a human agent
 				if strings.HasPrefix(msg.Sender.ID, entry.ID) {
 					source = "human"
 					fromUser = "admin"
 				}
 
-				// Normalize platform name
+				// Normalize platform
 				msgPlatform := event.Object
 				if msgPlatform == "page" {
 					msgPlatform = "facebook"
+					log.Printf("      🔄 Normalized platform from 'page' to 'facebook'")
 				}
 
-				// Store the echo message
 				log.Printf("      💾 Storing echo message from %s", source)
 				if err := storeMessage(ctx, entry.ID, msg.Recipient.ID, msgPlatform, msg.Message.Text, fromUser, source, false); err != nil {
 					log.Printf("❌ Error storing echo message: %v", err)
 				} else {
 					log.Printf("      ✅ Echo message stored successfully")
 				}
-
-				// Skip further processing (don't send to Botpress)
-				continue
-			}
-
-			// Skip delivery receipts
-			if msg.Delivery != nil {
-				log.Printf("      ⚠️ Delivery receipt - skipping")
-				continue
-			}
-
-			// Skip if no message content
-			if msg.Message == nil {
-				log.Printf("      ⚠️ No message content")
-				continue
-			}
-
-			// Skip if empty message
-			if msg.Message.Text == "" {
-				log.Printf("      ⚠️ Empty message text")
-				continue
-			}
-
-			// Verify this is a user message by checking the sender ID format
-			if strings.HasPrefix(msg.Sender.ID, "page-") || strings.HasPrefix(msg.Sender.ID, "bot-") {
-				log.Printf("      ⚠️ Message from non-user sender - skipping")
 				continue
 			}
 
