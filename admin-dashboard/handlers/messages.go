@@ -46,7 +46,8 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
             content, 
             timestamp, 
             thread_id, 
-            read
+            read,
+            source
         FROM latest_messages
         ORDER BY timestamp DESC;
     `
@@ -73,10 +74,12 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 	log.Printf("GetChat called with thread_id: %s", threadID)
 
 	query := `
-        SELECT id, client_id, page_id, platform, from_user, 
-               content, timestamp, thread_id, read 
-        FROM messages 
+        SELECT 
+            id, client_id, page_id, platform, from_user,
+            content, timestamp, thread_id, read, source
+        FROM messages
         WHERE thread_id = $1
+          AND (internal IS NULL OR internal = false)
         ORDER BY timestamp ASC
     `
 	messages, err := db.FetchMessages(query, threadID)
@@ -211,7 +214,8 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
         SELECT 
             id, client_id, page_id, platform,
             thread_owner as from_user,  
-            content, timestamp, thread_id, read
+            content, timestamp, thread_id, read,
+            source
         FROM latest_messages
         ORDER BY timestamp DESC
     `
@@ -250,7 +254,8 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
         SELECT 
             m.id, m.client_id, m.page_id, m.platform,
             t.original_sender as from_user,
-            m.content, m.timestamp, m.thread_id, m.read
+            m.content, m.timestamp, m.thread_id, m.read,
+            m.source
         FROM messages m
         JOIN thread_owner t ON m.thread_id = t.thread_id
         WHERE m.thread_id = $1

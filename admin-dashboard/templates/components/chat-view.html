@@ -11,16 +11,24 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
             </svg>
         </button>
-        {{with index .Messages 0}}
-        <div class="flex items-center">
-            <div class="h-8 w-8 rounded-full bg-gray-200"></div>
-            <div class="ml-2">
-                <div class="text-sm font-medium">{{.FromUser}}</div>
-                <div class="text-xs text-gray-500">
-                    {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
+        {{if .Messages}}
+            {{with index .Messages 0}}
+            <div class="flex items-center">
+                <div class="h-8 w-8 rounded-full bg-gray-200"></div>
+                <div class="ml-2">
+                    <div class="text-sm font-medium">{{.FromUser}}</div>
+                    <div class="text-xs text-gray-500">
+                        {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
+                    </div>
                 </div>
             </div>
-        </div>
+            {{end}}
+        {{else}}
+            <div class="flex items-center">
+                <div class="ml-2">
+                    <div class="text-sm text-gray-500">No messages found</div>
+                </div>
+            </div>
         {{end}}
     </div>
 
@@ -42,15 +50,25 @@
                add .opacity-0 to #scroll-bottom-btn
                add .pointer-events-none to #scroll-bottom-btn
             end">
-        {{range .Messages}}
-        <div class="flex items-start max-w-[85%] {{if eq .FromUser "admin"}}justify-end ml-auto{{end}}">
-            {{if ne .FromUser "admin"}}
-            <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0"></div>
-            {{end}}
-            <div class="{{if eq .FromUser "admin"}}bg-indigo-600 text-white{{else}}bg-gray-100 text-gray-900 ml-2{{end}} rounded-lg px-4 py-2 break-words max-w-full">
-                <p class="text-sm break-words">{{.Content}}</p>
+        {{if .Messages}}
+            {{range .Messages}}
+            {{if ne .Source "system"}}
+            <div class="flex items-start max-w-[85%] {{if or (eq .Source "human") (eq .Source "bot") (eq .Source "system")}}justify-end ml-auto{{end}}">
+                {{if eq .Source "user"}}
+                <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0"></div>
+                {{end}}
+                <div class="{{if eq .Source "human"}}bg-indigo-600 text-white{{else if or (eq .Source "bot") (eq .Source "system")}}bg-indigo-500 text-white{{else}}bg-gray-100 text-gray-900 ml-2{{end}} rounded-lg px-4 py-2 break-words max-w-full">
+                    <p class="text-sm break-words">{{.Content}}</p>
+                </div>
             </div>
-        </div>
+            {{end}}
+            {{end}}
+        {{else}}
+            <div class="flex items-center justify-center h-full">
+                <div class="text-gray-500 text-center">
+                    <p>No messages in this conversation yet</p>
+                </div>
+            </div>
         {{end}}
     </div>
 
@@ -86,7 +104,7 @@
                  set #message-input.value to ''
                  focus() on #message-input
                  trigger refresh on #message-list-wrapper">
-        <input type="hidden" name="thread_id" value="{{with index .Messages 0}}{{.ThreadID}}{{end}}">
+        <input type="hidden" name="thread_id" value="{{if .Messages}}{{with index .Messages 0}}{{.ThreadID}}{{end}}{{end}}">
         <button type="button" class="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
@@ -104,6 +122,5 @@
             </svg>
         </button>
     </form>
-    </div>
 </div>
 {{end}}
