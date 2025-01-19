@@ -118,6 +118,38 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 		}
 
 		for _, msg := range entry.Messaging {
+			// Handle echo messages (responses from page/bot)
+			if msg.Message.IsEcho {
+				log.Printf("      📝 Processing echo message")
+
+				// Determine source and from_user based on sender
+				source := "bot" // Default to bot
+				fromUser := "bot"
+
+				// If sender ID matches page ID, it's from a human agent
+				if strings.HasPrefix(msg.Sender.ID, entry.ID) {
+					source = "human"
+					fromUser = "admin"
+				}
+
+				// Normalize platform name
+				msgPlatform := event.Object
+				if msgPlatform == "page" {
+					msgPlatform = "facebook"
+				}
+
+				// Store the echo message
+				log.Printf("      💾 Storing echo message from %s", source)
+				if err := storeMessage(ctx, entry.ID, msg.Recipient.ID, msgPlatform, msg.Message.Text, fromUser, source, false); err != nil {
+					log.Printf("❌ Error storing echo message: %v", err)
+				} else {
+					log.Printf("      ✅ Echo message stored successfully")
+				}
+
+				// Skip further processing (don't send to Botpress)
+				continue
+			}
+
 			// Skip delivery receipts
 			if msg.Delivery != nil {
 				log.Printf("      ⚠️ Delivery receipt - skipping")
@@ -127,12 +159,6 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 			// Skip if no message content
 			if msg.Message == nil {
 				log.Printf("      ⚠️ No message content")
-				continue
-			}
-
-			// Skip if this is a response (echo) from the page/bot/agent
-			if msg.Message.IsEcho {
-				log.Printf("      ⚠️ Echo message from page - skipping")
 				continue
 			}
 
