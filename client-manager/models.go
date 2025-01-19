@@ -40,3 +40,9 @@ type FacebookPageResponse struct {
 	// Add subscription status
 	Subscribed bool `json:"subscribed"`
 }
+
+type FacebookUser struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}

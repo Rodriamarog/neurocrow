@@ -1,0 +1,53 @@
+clients Table
+
+    id (UUID, Primary Key)
+    name (Text)
+    email (Text)
+    created_at (Timestamp)
+
+social_pages Table
+
+    id (UUID, Primary Key)
+    client_id (UUID, Foreign Key)
+    platform (Text)
+    page_id (Text)
+    page_name (Text)
+    access_token (Text)
+    created_at (Timestamp)
+
+conversations Table
+
+    thread_id (Text, Primary Key)
+    page_id (UUID, Foreign Key)
+    platform (Text)
+    bot_enabled (Boolean)
+    last_bot_message_at (Timestamp)
+    last_human_message_at (Timestamp)
+    last_user_message_at (Timestamp)
+    first_message_at (Timestamp)
+    latest_message_at (Timestamp)
+    message_count (Integer)
+    created_at (Timestamp)
+    updated_at (Timestamp)
+
+messages Table
+
+    id (UUID, Primary Key)
+    client_id (UUID, Foreign Key)
+    page_id (UUID, Foreign Key)
+    platform (Text)
+    from_user (Text)
+    content (Text)
+    timestamp (Timestamp)
+    thread_id (Text, Foreign Key)
+    read (Boolean)
+    source (Text)
+    requires_attention (Boolean)
+
+Relationships:
+
+    social_pages.client_id references clients.id.
+    conversations.page_id references social_pages.id.
+    messages.client_id references clients.id.
+    messages.page_id references social_pages.id.
+    messages.thread_id references conversations.thread_id

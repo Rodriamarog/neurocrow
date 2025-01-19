@@ -1,0 +1,23 @@
+clients Table
+
+    id (UUID, Primary Key)
+    name (Text)
+    email (Text)
+    created_at (Timestamp)
+
+pages Table
+
+    id (UUID, Primary Key)
+    client_id (UUID, Foreign Key referencing clients.id)
+    platform (Text)
+    page_id (Text)
+    name (Text)
+    access_token (Text)
+    status (Text)
+    botpress_url (Text)
+    created_at (Timestamp)
+    activated_at (Timestamp)
+
+Relationship:
+
+    pages.client_id references clients.id

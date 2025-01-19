@@ -246,112 +246,144 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		log.Printf("Error decoding request: %v", err)
+		log.Printf("❌ Error decoding request: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Log how many pages are currently in DB before any changes
-	var countBefore int
-	err := DB.QueryRow("SELECT COUNT(*) FROM pages WHERE platform = 'facebook' AND status != 'disabled'").Scan(&countBefore)
+	// 1. Get user details from Facebook
+	fbUser, err := getFacebookUser(data.UserToken)
 	if err != nil {
-		log.Printf("Error counting current pages: %v", err)
-	} else {
-		log.Printf("Current active/pending pages in DB before update: %d", countBefore)
+		log.Printf("❌ Error getting Facebook user details: %v", err)
+		http.Error(w, "Could not verify Facebook user", http.StatusInternalServerError)
+		return
 	}
+	log.Printf("✅ Got Facebook user: %s (%s)", fbUser.Name, fbUser.Email)
 
-	// Get current pages from Facebook
+	// 2. Get connected pages
 	pages, err := getConnectedPages(data.UserToken)
 	if err != nil {
-		log.Printf("Error getting pages: %v", err)
+		log.Printf("❌ Error getting pages: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("✅ Found %d connected pages/accounts", len(pages))
 
-	log.Printf("Pages received from Facebook API: %d", len(pages))
-	for _, p := range pages {
-		log.Printf("- Page from FB: ID=%s, Name=%s", p.ID, p.Name)
-	}
-
-	// Start transaction
+	// 3. Start transaction
 	tx, err := DB.Begin()
 	if err != nil {
-		log.Printf("Error starting transaction: %v", err)
+		log.Printf("❌ Error starting transaction: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
 
-	// First disable all pages
-	result, err := tx.Exec(`
-        UPDATE pages 
-        SET status = 'disabled'
-        WHERE platform = 'facebook'
-    `)
+	// 4. Create or update client
+	var clientID string
+	err = tx.QueryRow(`
+        INSERT INTO clients (name, email)
+        VALUES ($1, $2)
+        ON CONFLICT (email) DO UPDATE
+        SET name = EXCLUDED.name
+        RETURNING id
+    `, fbUser.Name, fbUser.Email).Scan(&clientID)
 	if err != nil {
-		log.Printf("Error disabling pages: %v", err)
+		log.Printf("❌ Error upserting client: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("✅ Upserted client with ID: %s", clientID)
 
+	// 5. Disable client's previous pages
+	result, err := tx.Exec(`
+        UPDATE pages 
+        SET status = 'disabled'
+        WHERE client_id = $1 
+        AND platform IN ('facebook', 'instagram')
+    `, clientID)
+	if err != nil {
+		log.Printf("❌ Error disabling previous pages: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	rowsAffected, _ := result.RowsAffected()
-	log.Printf("Pages marked as disabled: %d", rowsAffected)
+	log.Printf("✅ Disabled %d previous pages", rowsAffected)
 
-	// Now insert/update currently selected pages
+	// 6. Insert/update new pages
 	for _, page := range pages {
-		log.Printf("Processing page %s (ID: %s)", page.Name, page.ID)
+		log.Printf("📝 Processing page %s (ID: %s)", page.Name, page.ID)
 
 		result, err := tx.Exec(`
-            INSERT INTO pages (page_id, name, access_token, status, platform)
-            VALUES ($1, $2, $3, 
+            INSERT INTO pages (
+                client_id,
+                page_id, 
+                name, 
+                access_token, 
+                platform,
+                status
+            ) VALUES (
+                $1, $2, $3, $4, $5,
                 CASE 
                     WHEN EXISTS (
                         SELECT 1 FROM pages 
-                        WHERE platform = 'facebook' 
-                        AND page_id = $1 
+                        WHERE platform = $5 
+                        AND page_id = $2 
                         AND status = 'active'
                     ) THEN 'active'
                     ELSE 'pending'
-                END, 
-                'facebook'
+                END
             )
             ON CONFLICT (platform, page_id) 
             DO UPDATE SET 
+                client_id = EXCLUDED.client_id,
                 name = EXCLUDED.name,
                 access_token = EXCLUDED.access_token,
                 status = CASE 
                     WHEN pages.status = 'active' THEN 'active'
                     ELSE 'pending'
                 END
-        `, page.ID, page.Name, page.AccessToken)
+        `, clientID, page.ID, page.Name, page.AccessToken, page.Platform)
 
 		if err != nil {
-			log.Printf("Error processing page %s: %v", page.Name, err)
+			log.Printf("❌ Error processing page %s: %v", page.Name, err)
 			continue
 		}
 
 		rowsAffected, _ := result.RowsAffected()
-		log.Printf("Rows affected for page %s: %d", page.Name, rowsAffected)
+		log.Printf("✅ Successfully processed page %s (rows affected: %d)", page.Name, rowsAffected)
 	}
 
-	// Log final state before commit
-	var countAfter int
-	err = tx.QueryRow("SELECT COUNT(*) FROM pages WHERE platform = 'facebook' AND status != 'disabled'").Scan(&countAfter)
-	if err != nil {
-		log.Printf("Error counting pages after update: %v", err)
-	} else {
-		log.Printf("Active/pending pages after update (before commit): %d", countAfter)
-	}
-
-	// Commit transaction
+	// 7. Commit transaction
 	if err = tx.Commit(); err != nil {
-		log.Printf("Error committing: %v", err)
+		log.Printf("❌ Error committing transaction: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("=== Successfully completed Facebook token request ===")
+	log.Printf("✅ Successfully completed Facebook token request")
 	w.WriteHeader(http.StatusOK)
+}
+
+// Add this new function
+func getFacebookUser(token string) (*FacebookUser, error) {
+	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=%s", token)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching user info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var user FacebookUser
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		return nil, fmt.Errorf("error parsing user info: %w", err)
+	}
+
+	if user.Email == "" {
+		return nil, fmt.Errorf("no email provided by Facebook")
+	}
+
+	return &user, nil
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
