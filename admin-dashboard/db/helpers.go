@@ -18,6 +18,7 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 	for rows.Next() {
 		var msg models.Message
 		var clientID sql.NullString
+		var profilePicture sql.NullString
 		err := rows.Scan(
 			&msg.ID,
 			&clientID,
@@ -29,7 +30,8 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 			&msg.ThreadID,
 			&msg.Read,
 			&msg.Source,
-			&msg.BotEnabled, // new column
+			&msg.BotEnabled,
+			&profilePicture,
 		)
 		if err != nil {
 			log.Printf("Error scanning message: %v", err)
@@ -38,6 +40,7 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 		if clientID.Valid {
 			msg.ClientID = &clientID.String
 		}
+		msg.ProfilePictureURL = profilePicture
 		messages = append(messages, msg)
 	}
 	return messages, nil
