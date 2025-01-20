@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"admin-dashboard/db"
+	"admin-dashboard/pkg/meta" // Add this line
 	"html/template"
 	"log"
 	"net/http"
@@ -103,6 +104,21 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Found %d messages for thread %s", len(messages), threadID)
+
+	if len(messages) > 0 {
+		row := db.DB.QueryRow("SELECT access_token FROM social_pages WHERE page_id = $1", messages[0].PageID)
+		var accessToken string
+		if err := row.Scan(&accessToken); err != nil {
+			log.Printf("Could not retrieve access token: %v", err)
+		} else {
+			err := meta.UpdateProfilePictureInDB(db.DB, messages[0].ThreadID, messages[0].FromUser, accessToken, messages[0].Platform)
+			if err != nil {
+				log.Printf("Error updating profile picture: %v", err)
+			} else {
+				log.Printf("Profile picture updated for thread %s", messages[0].ThreadID)
+			}
+		}
+	}
 
 	data := map[string]interface{}{
 		"Messages": messages,
