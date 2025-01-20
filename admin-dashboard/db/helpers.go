@@ -29,6 +29,7 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 			&msg.ThreadID,
 			&msg.Read,
 			&msg.Source,
+			&msg.BotEnabled, // new column
 		)
 		if err != nil {
 			log.Printf("Error scanning message: %v", err)
@@ -45,4 +46,26 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 func HandleError(w http.ResponseWriter, err error, message string, statusCode int) {
 	log.Printf("%s: %v", message, err)
 	http.Error(w, message, statusCode)
+}
+
+// UpdateBotStatus updates the bot_enabled status for a specific thread
+func UpdateBotStatus(threadID string, enabled bool) error {
+	log.Printf("🤖 Attempting to update bot status for thread %s to %v", threadID, enabled)
+
+	result, err := DB.Exec(`
+        UPDATE conversations 
+        SET bot_enabled = $2, 
+            updated_at = CURRENT_TIMESTAMP
+        WHERE thread_id = $1
+    `, threadID, enabled)
+
+	if err != nil {
+		log.Printf("❌ Failed to update bot status: %v", err)
+		return err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ Bot status updated. Rows affected: %d", rowsAffected)
+
+	return nil
 }

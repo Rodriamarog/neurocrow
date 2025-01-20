@@ -22,34 +22,44 @@ func init() {
 func GetMessages(w http.ResponseWriter, r *http.Request) {
 	query := `
         WITH thread_owner AS (
-            SELECT DISTINCT ON (thread_id)
-                thread_id, 
-                from_user as original_sender
-            FROM messages
-            WHERE platform IN ('facebook', 'instagram')
-            ORDER BY thread_id, timestamp ASC
+            SELECT DISTINCT ON (m.thread_id)
+                m.thread_id, 
+                m.from_user as original_sender
+            FROM messages m
+            WHERE m.platform IN ('facebook', 'instagram')
+            ORDER BY m.thread_id, m.timestamp ASC
         ),
         latest_messages AS (
-            SELECT DISTINCT ON (thread_id)
-                m.*, 
-                t.original_sender as thread_owner
+            SELECT DISTINCT ON (m.thread_id)
+                m.id, 
+                COALESCE(m.client_id, '00000000-0000-0000-0000-000000000000') as client_id,
+                m.page_id, 
+                m.platform,
+                t.original_sender as thread_owner,
+                m.content, 
+                m.timestamp, 
+                m.thread_id, 
+                m.read,
+                m.source
             FROM messages m
             JOIN thread_owner t ON m.thread_id = t.thread_id
-            ORDER BY thread_id, timestamp DESC
+            ORDER BY m.thread_id, m.timestamp DESC
         )
         SELECT 
-            id, 
-            COALESCE(client_id, '00000000-0000-0000-0000-000000000000') as client_id,
-            page_id, 
-            platform,
-            thread_owner as from_user,  
-            content, 
-            timestamp, 
-            thread_id, 
-            read,
-            source
-        FROM latest_messages
-        ORDER BY timestamp DESC;
+            lm.id, 
+            lm.client_id,
+            lm.page_id, 
+            lm.platform,
+            lm.thread_owner as from_user,  
+            lm.content, 
+            lm.timestamp, 
+            lm.thread_id, 
+            lm.read,
+            lm.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled
+        FROM latest_messages lm
+        LEFT JOIN conversations c ON c.thread_id = lm.thread_id
+        ORDER BY lm.timestamp DESC;
     `
 	messages, err := db.FetchMessages(query)
 	if err != nil {
@@ -75,12 +85,14 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 
 	query := `
         SELECT 
-            id, client_id, page_id, platform, from_user,
-            content, timestamp, thread_id, read, source
-        FROM messages
-        WHERE thread_id = $1
-          AND (internal IS NULL OR internal = false)
-        ORDER BY timestamp ASC
+            m.id, m.client_id, m.page_id, m.platform, m.from_user,
+            m.content, m.timestamp, m.thread_id, m.read, m.source,
+            COALESCE(c.bot_enabled, true) as bot_enabled
+        FROM messages m
+        LEFT JOIN conversations c ON m.thread_id = c.thread_id
+        WHERE m.thread_id = $1
+          AND (m.internal IS NULL OR m.internal = false)
+        ORDER BY m.timestamp ASC
     `
 	messages, err := db.FetchMessages(query, threadID)
 	if err != nil {
@@ -197,27 +209,43 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 func GetMessageList(w http.ResponseWriter, r *http.Request) {
 	query := `
         WITH thread_owner AS (
-            SELECT DISTINCT ON (thread_id)
-                thread_id, 
-                from_user as original_sender
-            FROM messages
-            ORDER BY thread_id, timestamp ASC
+            SELECT DISTINCT ON (m.thread_id)
+                m.thread_id, 
+                m.from_user as original_sender
+            FROM messages m
+            ORDER BY m.thread_id, m.timestamp ASC
         ),
         latest_messages AS (
-            SELECT DISTINCT ON (thread_id)
-                m.*, 
-                t.original_sender as thread_owner
+            SELECT DISTINCT ON (m.thread_id)
+                m.id, 
+                m.client_id, 
+                m.page_id, 
+                m.platform,
+                t.original_sender as thread_owner,  
+                m.content, 
+                m.timestamp, 
+                m.thread_id, 
+                m.read,
+                m.source
             FROM messages m
             JOIN thread_owner t ON m.thread_id = t.thread_id
-            ORDER BY thread_id, timestamp DESC
+            ORDER BY m.thread_id, m.timestamp DESC
         )
         SELECT 
-            id, client_id, page_id, platform,
-            thread_owner as from_user,  
-            content, timestamp, thread_id, read,
-            source
-        FROM latest_messages
-        ORDER BY timestamp DESC
+            lm.id, 
+            lm.client_id, 
+            lm.page_id, 
+            lm.platform,
+            lm.thread_owner as from_user,  
+            lm.content, 
+            lm.timestamp, 
+            lm.thread_id, 
+            lm.read,
+            lm.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled
+        FROM latest_messages lm
+        LEFT JOIN conversations c ON c.thread_id = lm.thread_id
+        ORDER BY lm.timestamp DESC
     `
 	messages, err := db.FetchMessages(query)
 	if err != nil {
@@ -244,20 +272,22 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
 
 	query := `
         WITH thread_owner AS (
-            SELECT DISTINCT ON (thread_id)
-                thread_id, 
-                from_user as original_sender
-            FROM messages
-            WHERE thread_id = $1
-            ORDER BY thread_id, timestamp ASC
+            SELECT DISTINCT ON (m.thread_id)
+                m.thread_id,
+                m.from_user AS original_sender
+            FROM messages m
+            WHERE m.thread_id = $1
+            ORDER BY m.thread_id, m.timestamp ASC
         )
-        SELECT 
+        SELECT
             m.id, m.client_id, m.page_id, m.platform,
-            t.original_sender as from_user,
+            t.original_sender AS from_user,
             m.content, m.timestamp, m.thread_id, m.read,
-            m.source
+            m.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled
         FROM messages m
         JOIN thread_owner t ON m.thread_id = t.thread_id
+        LEFT JOIN conversations c ON m.thread_id = c.thread_id
         WHERE m.thread_id = $1
         ORDER BY m.timestamp DESC
         LIMIT 1
@@ -302,4 +332,28 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
     `))
 
 	tmpl.Execute(w, msg)
+}
+
+// ToggleBotStatus handles enabling/disabling the AI bot for a specific thread
+func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔄 Received toggle request")
+	if r.Method != http.MethodPost {
+		log.Printf("❌ Wrong method for toggle bot status, got: %s", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	threadID := r.FormValue("thread_id")
+	enabled := r.FormValue("enabled") == "true"
+	log.Printf("🔄 Toggling bot status -> threadID: %s, enabled: %v", threadID, enabled)
+
+	err := db.UpdateBotStatus(threadID, enabled)
+	if err != nil {
+		log.Printf("❌ Error toggling bot status, threadID: %s, %v", threadID, err)
+		http.Error(w, "Failed to update bot status", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ Successfully toggled bot status for thread: %s", threadID)
+	w.WriteHeader(http.StatusOK)
 }

@@ -1,6 +1,7 @@
 {{define "message-list"}}
 <div class="divide-y overflow-x-hidden">
     {{range .Messages}}
+    <!-- Conversation container -->
     <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
          id="thread-preview-{{.ThreadID}}"
          hx-get="/chat?thread_id={{.ThreadID}}"
@@ -14,7 +15,31 @@
                     {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
                 </span>
             </div>
-            <span class="text-xs text-gray-500">{{.Timestamp.Format "15:04"}}</span>
+            <div class="flex items-center space-x-3">
+                <!-- Toggle button: stops event to avoid opening chat -->
+                <button
+                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 {{if .BotEnabled}}bg-indigo-600{{else}}bg-gray-200{{end}}"
+                    role="switch"
+                    hx-post="/toggle-bot"
+                    hx-vals='{"thread_id": "{{.ThreadID}}", "enabled": "{{not .BotEnabled}}"}'
+                    hx-swap="none"
+                    _="on click
+                          halt the event
+                          preventDefault(event)
+                          stopPropagation(event)
+                          toggle .bg-indigo-600 .bg-gray-200 on me
+                          toggle .translate-x-5 .translate-x-0 on #toggle-button-{{.ThreadID}}"
+                    aria-checked="{{.BotEnabled}}"
+                >
+                    <span class="sr-only">Toggle bot</span>
+                    <span
+                        id="toggle-button-{{.ThreadID}}"
+                        aria-hidden="true"
+                        class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .BotEnabled}}translate-x-5{{else}}translate-x-0{{end}}"
+                    ></span>
+                </button>
+                <span class="text-xs text-gray-500">{{.Timestamp.Format "15:04"}}</span>
+            </div>
         </div>
         <div class="flex items-center">
             <div class="h-12 w-12 rounded-full bg-gray-200 flex-shrink-0"></div>

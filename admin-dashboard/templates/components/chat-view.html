@@ -52,14 +52,16 @@
             end">
         {{if .Messages}}
             {{range .Messages}}
+            {{if ne .Source "system"}}
             <div class="flex items-start max-w-[85%] {{if or (eq .Source "human") (eq .Source "bot") (eq .Source "system")}}justify-end ml-auto{{end}}">
                 {{if eq .Source "user"}}
                 <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0"></div>
                 {{end}}
-                <div class="{{if eq .Source "human"}}bg-indigo-600 text-white{{else if or (eq .Source "bot") (eq .Source "system")}}bg-blue-500 text-white{{else}}bg-gray-100 text-gray-900 ml-2{{end}} rounded-lg px-4 py-2 break-words max-w-full">
+                <div class="{{if eq .Source "human"}}bg-indigo-600 text-white{{else if or (eq .Source "bot") (eq .Source "system")}}bg-indigo-500 text-white{{else}}bg-gray-100 text-gray-900 ml-2{{end}} rounded-lg px-4 py-2 break-words max-w-full">
                     <p class="text-sm break-words">{{.Content}}</p>
                 </div>
             </div>
+            {{end}}
             {{end}}
         {{else}}
             <div class="flex items-center justify-center h-full">
