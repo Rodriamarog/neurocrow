@@ -40,7 +40,14 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 		if clientID.Valid {
 			msg.ClientID = &clientID.String
 		}
-		msg.ProfilePictureURL = profilePicture
+		if profilePicture.Valid {
+			msg.ProfilePictureURL = profilePicture
+		} else {
+			msg.ProfilePictureURL = sql.NullString{
+				String: "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png",
+				Valid:  true,
+			}
+		}
 		messages = append(messages, msg)
 	}
 	return messages, nil

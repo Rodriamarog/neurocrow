@@ -42,10 +42,12 @@
             </div>
         </div>
         <div class="flex items-center">
-            <div class="h-12 w-12 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
-                <img src="{{if .ProfilePictureURL.Valid}}{{.ProfilePictureURL.String}}{{else}}/path/to/default-avatar.png{{end}}"
-                     alt="Avatar"
-                     class="w-full h-full object-cover">
+            <div class="h-12 w-12 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
+                <img
+                    src="{{if .ProfilePictureURL.Valid}}{{.ProfilePictureURL.String}}{{else}}https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png{{end}}"
+                    alt=""
+                    class="h-full w-full object-cover"
+                >
             </div>
             <div class="ml-3 flex-1 overflow-hidden">
                 <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>

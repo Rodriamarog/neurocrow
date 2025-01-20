@@ -57,7 +57,7 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
             lm.read,
             lm.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            c.profile_picture_url
+            COALESCE(c.profile_picture_url, 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png') AS profile_picture_url
         FROM latest_messages lm
         LEFT JOIN conversations c ON c.thread_id = lm.thread_id
         ORDER BY lm.timestamp DESC;
@@ -89,7 +89,7 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
             m.id, m.client_id, m.page_id, m.platform, m.from_user,
             m.content, m.timestamp, m.thread_id, m.read, m.source,
             COALESCE(c.bot_enabled, true) as bot_enabled,
-            c.profile_picture_url
+            COALESCE(c.profile_picture_url, 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png') AS profile_picture_url
         FROM messages m
         LEFT JOIN conversations c ON m.thread_id = c.thread_id
         WHERE m.thread_id = $1
@@ -245,7 +245,7 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
             lm.read,
             lm.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            c.profile_picture_url
+            COALESCE(c.profile_picture_url, 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png') AS profile_picture_url
         FROM latest_messages lm
         LEFT JOIN conversations c ON c.thread_id = lm.thread_id
         ORDER BY lm.timestamp DESC
@@ -288,7 +288,7 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
             m.content, m.timestamp, m.thread_id, m.read,
             m.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            c.profile_picture_url
+            COALESCE(c.profile_picture_url, 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png') AS profile_picture_url
         FROM messages m
         JOIN thread_owner t ON m.thread_id = t.thread_id
         LEFT JOIN conversations c ON m.thread_id = c.thread_id
