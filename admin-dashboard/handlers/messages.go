@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"admin-dashboard/db"
-	"admin-dashboard/pkg/meta" // Add this line
 	"html/template"
 	"log"
 	"net/http"
@@ -58,7 +57,7 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
             lm.read,
             lm.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            COALESCE(c.profile_picture_url, 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png') AS profile_picture_url
+            c.profile_picture_url
         FROM latest_messages lm
         LEFT JOIN conversations c ON c.thread_id = lm.thread_id
         ORDER BY lm.timestamp DESC;
@@ -90,7 +89,7 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
             m.id, m.client_id, m.page_id, m.platform, m.from_user,
             m.content, m.timestamp, m.thread_id, m.read, m.source,
             COALESCE(c.bot_enabled, true) as bot_enabled,
-            COALESCE(c.profile_picture_url, 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png') AS profile_picture_url
+            c.profile_picture_url
         FROM messages m
         LEFT JOIN conversations c ON m.thread_id = c.thread_id
         WHERE m.thread_id = $1
@@ -104,21 +103,6 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Found %d messages for thread %s", len(messages), threadID)
-
-	if len(messages) > 0 {
-		row := db.DB.QueryRow("SELECT access_token FROM social_pages WHERE page_id = $1", messages[0].PageID)
-		var accessToken string
-		if err := row.Scan(&accessToken); err != nil {
-			log.Printf("Could not retrieve access token: %v", err)
-		} else {
-			err := meta.UpdateProfilePictureInDB(db.DB, messages[0].ThreadID, messages[0].FromUser, accessToken, messages[0].Platform)
-			if err != nil {
-				log.Printf("Error updating profile picture: %v", err)
-			} else {
-				log.Printf("Profile picture updated for thread %s", messages[0].ThreadID)
-			}
-		}
-	}
 
 	data := map[string]interface{}{
 		"Messages": messages,
@@ -261,7 +245,7 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
             lm.read,
             lm.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            COALESCE(c.profile_picture_url, 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png') AS profile_picture_url
+            c.profile_picture_url
         FROM latest_messages lm
         LEFT JOIN conversations c ON c.thread_id = lm.thread_id
         ORDER BY lm.timestamp DESC
@@ -304,7 +288,7 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
             m.content, m.timestamp, m.thread_id, m.read,
             m.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            COALESCE(c.profile_picture_url, 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png') AS profile_picture_url
+            c.profile_picture_url
         FROM messages m
         JOIN thread_owner t ON m.thread_id = t.thread_id
         LEFT JOIN conversations c ON m.thread_id = c.thread_id

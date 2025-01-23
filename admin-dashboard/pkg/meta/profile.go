@@ -10,106 +10,67 @@ import (
 	"strings"
 )
 
-// FacebookProfileResponse represents the structure of Facebook's Graph API response
-type FacebookProfileResponse struct {
-	Picture struct {
-		Data struct {
-			URL          string `json:"url"`
-			IsSilhouette bool   `json:"is_silhouette"` // Add this to detect default avatars
-		} `json:"data"`
-	} `json:"picture"`
+type MessengerProfileResponse struct {
+	Name       string `json:"name"`
+	ProfilePic string `json:"profile_pic"`
+	Error      struct {
+		Message string `json:"message"`
+		Code    int    `json:"code"`
+	} `json:"error"`
 }
 
+// FetchProfilePicture gets the profile picture URL for a user from the Messenger Platform API
 func FetchProfilePicture(userID, accessToken, platform string) (string, error) {
-	// Skip test users
+	// Skip test threads
 	if strings.HasPrefix(userID, "thread_") {
-		return "", fmt.Errorf("test user, skipping profile picture fetch")
+		return "", fmt.Errorf("test thread, skipping profile picture fetch")
 	}
 
-	log.Printf("🔍 Attempting to fetch profile picture for %s on %s", userID, platform)
+	log.Printf("🔍 Attempting to fetch profile picture for user ID %s on %s", userID, platform)
 
-	if platform == "facebook" {
-		url := fmt.Sprintf("https://graph.facebook.com/v18.0/%s?fields=picture.type(large)&access_token=%s",
-			userID, accessToken)
-
-		log.Printf("📡 Calling Facebook API: %s", url)
-		resp, err := http.Get(url)
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch Facebook profile: %v", err)
-		}
-		defer resp.Body.Close()
-
-		// Read and log raw response
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return "", fmt.Errorf("failed to read response body: %v", err)
-		}
-		log.Printf("📥 Facebook API Response: %s", string(body))
-
-		var profile FacebookProfileResponse
-		if err := json.Unmarshal(body, &profile); err != nil {
-			return "", fmt.Errorf("failed to decode Facebook response: %v", err)
-		}
-
-		// Log the parsed data
-		log.Printf("📊 Parsed profile picture URL: %s", profile.Picture.Data.URL)
-		log.Printf("📊 Is silhouette: %v", profile.Picture.Data.IsSilhouette)
-
-		if profile.Picture.Data.IsSilhouette || profile.Picture.Data.URL == "" {
-			return "", fmt.Errorf("no custom profile picture available")
-		}
-
-		return profile.Picture.Data.URL, nil
-
-	} else if platform == "instagram" {
-		url := fmt.Sprintf("https://graph.facebook.com/v18.0/%s?fields=profile_picture_url&access_token=%s",
-			userID, accessToken)
-
-		log.Printf("📡 Calling Instagram API: %s", url)
-		resp, err := http.Get(url)
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch Instagram profile: %v", err)
-		}
-		defer resp.Body.Close()
-
-		// Read and log raw response
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return "", fmt.Errorf("failed to read response body: %v", err)
-		}
-		log.Printf("📥 Instagram API Response: %s", string(body))
-
-		var result struct {
-			ProfilePictureURL string `json:"profile_picture_url"`
-		}
-		if err := json.Unmarshal(body, &result); err != nil {
-			return "", fmt.Errorf("failed to decode Instagram response: %v", err)
-		}
-
-		// Log the parsed URL
-		log.Printf("📊 Parsed profile picture URL: %s", result.ProfilePictureURL)
-
-		if result.ProfilePictureURL == "" {
-			return "", fmt.Errorf("no profile picture available")
-		}
-
-		return result.ProfilePictureURL, nil
+	url := fmt.Sprintf("https://graph.facebook.com/v18.0/%s?fields=name,profile_pic&access_token=%s",
+		userID, accessToken)
+	log.Printf("📡 Calling Messenger Platform API: %s", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch profile: %v", err)
 	}
+	defer resp.Body.Close()
 
-	return "", fmt.Errorf("unsupported platform: %s", platform)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %v", err)
+	}
+	log.Printf("📥 Messenger API Raw Response: %s", string(body))
+
+	var mResp MessengerProfileResponse
+	if err := json.Unmarshal(body, &mResp); err != nil {
+		return "", fmt.Errorf("failed to decode response: %v", err)
+	}
+	if mResp.Error.Message != "" {
+		return "", fmt.Errorf("API error: %s (code %d)", mResp.Error.Message, mResp.Error.Code)
+	}
+	if mResp.ProfilePic == "" {
+		return "", fmt.Errorf("no profile picture available")
+	}
+	return mResp.ProfilePic, nil
 }
 
-func UpdateProfilePictureInDB(db *sql.DB, threadID, userID, accessToken, platform string) error {
-	pictureURL, err := FetchProfilePicture(userID, accessToken, platform)
+func UpdateProfilePictureInDB(db *sql.DB, threadID, accessToken, platform string) error {
+	// thread_id is the Meta user ID for real conversations
+	pictureURL, err := FetchProfilePicture(threadID, accessToken, platform)
 	if err != nil {
-		// If we couldn't get a real profile picture, just log and return without updating
-		log.Printf("Notice: Couldn't fetch profile picture for %s: %v", userID, err)
-		return nil
+		if strings.HasPrefix(threadID, "thread_") {
+			log.Printf("ℹ️ Skipping test thread %s", threadID)
+			return nil
+		}
+		return fmt.Errorf("failed to fetch profile picture: %v", err)
 	}
 
 	_, err = db.Exec(`
         UPDATE conversations 
-        SET profile_picture_url = $1 
+        SET profile_picture_url = $1,
+            updated_at = CURRENT_TIMESTAMP
         WHERE thread_id = $2
     `, pictureURL, threadID)
 
@@ -117,5 +78,6 @@ func UpdateProfilePictureInDB(db *sql.DB, threadID, userID, accessToken, platfor
 		return fmt.Errorf("failed to update profile picture in DB: %v", err)
 	}
 
+	log.Printf("✅ Updated profile picture for thread %s", threadID)
 	return nil
 }

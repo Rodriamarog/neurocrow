@@ -39,18 +39,17 @@ func main() {
 
 	log.Println("Successfully connected to database! Starting profile picture updates...")
 
-	// Get all conversations and their associated social pages
+	// Get all conversations that need profile pictures
 	rows, err := db.Query(`
        SELECT DISTINCT 
            c.thread_id,
            c.platform,
-           m.from_user,
            sp.access_token
        FROM conversations c
-       JOIN messages m ON c.thread_id = m.thread_id
        JOIN social_pages sp ON c.page_id = sp.id
-       WHERE c.profile_picture_url IS NULL 
-       OR c.profile_picture_url = ''
+       WHERE (c.profile_picture_url IS NULL OR c.profile_picture_url = '')
+       AND NOT c.thread_id LIKE 'thread_%'  -- Skip test threads
+       ORDER BY c.platform, c.thread_id
    `)
 	if err != nil {
 		log.Fatal(err)
@@ -60,29 +59,29 @@ func main() {
 	var updatedCount, skippedCount int
 
 	for rows.Next() {
-		var threadID, platform, fromUser, accessToken string
-		if err := rows.Scan(&threadID, &platform, &fromUser, &accessToken); err != nil {
+		var threadID, platform, accessToken string
+		if err := rows.Scan(&threadID, &platform, &accessToken); err != nil {
 			log.Printf("❌ Error scanning row: %v", err)
 			continue
 		}
 
-		// Use the shared meta package to update profile picture
-		err = meta.UpdateProfilePictureInDB(db, threadID, fromUser, accessToken, platform)
+		log.Printf("🔄 Processing thread %s (%s)", threadID, platform)
+
+		err = meta.UpdateProfilePictureInDB(db, threadID, accessToken, platform)
 		if err != nil {
-			log.Printf("❌ Error updating profile picture for thread %s: %v", threadID, err)
+			log.Printf("❌ Failed to update profile picture for thread %s: %v", threadID, err)
 			skippedCount++
 			continue
 		}
 
-		log.Printf("✅ Processed thread %s - user %s", threadID, fromUser)
 		updatedCount++
 	}
 
 	if err = rows.Err(); err != nil {
-		log.Printf("❌ Error iterating rows: %v", err)
+		log.Printf("Error iterating rows: %v", err)
 	}
 
 	log.Printf("Profile picture update completed!")
-	log.Printf("Successfully updated: %d", updatedCount)
-	log.Printf("Skipped/Failed: %d", skippedCount)
+	log.Printf("Successfully updated: %d profiles", updatedCount)
+	log.Printf("Skipped/Failed: %d profiles", skippedCount)
 }

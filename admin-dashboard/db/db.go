@@ -1,45 +1,63 @@
 package db
 
 import (
-    "database/sql"
-    "log"
-    "os"
-    _ "github.com/lib/pq"
-    "github.com/joho/godotenv"
+	"database/sql"
+	"log"
+	"os"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 var DB *sql.DB
 
 func Init() {
-    // Load .env file
-    err := godotenv.Load()
-    if err != nil {
-        log.Fatal("Error loading .env file:", err)
-    }
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file:", err)
+	}
 
-    // Get database URL from environment
-    connStr := os.Getenv("DATABASE_URL")
-    if connStr == "" {
-        log.Fatal("DATABASE_URL not set in .env file")
-    }
+	// Try DATABASE_URL first
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr != "" {
+		DB, err = connect(connStr)
+		if err == nil {
+			log.Println("Successfully connected using DATABASE_URL!")
+			return
+		}
+		log.Printf("Failed to connect with DATABASE_URL: %v", err)
+	}
 
-    // Connect to database
-    DB, err = sql.Open("postgres", connStr)
-    if err != nil {
-        log.Fatal("Error connecting to database:", err)
-    }
+	// Try DATABASE_IPV4 as fallback
+	ipv4Str := os.Getenv("DATABASE_IPV4")
+	if ipv4Str == "" {
+		log.Fatal("Both DATABASE_URL and DATABASE_IPV4 connection attempts failed")
+	}
 
-    // Test connection
-    err = DB.Ping()
-    if err != nil {
-        log.Fatal("Error pinging database:", err)
-    }
+	DB, err = connect(ipv4Str)
+	if err != nil {
+		log.Fatal("Failed to connect with DATABASE_IPV4:", err)
+	}
+	log.Println("Successfully connected using DATABASE_IPV4!")
+}
 
-    log.Println("Successfully connected to database!")
+func connect(connStr string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Ping()
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return db, nil
 }
 
 func Close() {
-    if DB != nil {
-        DB.Close()
-    }
+	if DB != nil {
+		DB.Close()
+	}
 }

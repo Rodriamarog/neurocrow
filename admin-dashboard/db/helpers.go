@@ -31,7 +31,7 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 			&msg.Read,
 			&msg.Source,
 			&msg.BotEnabled,
-			&profilePicture,
+			&profilePicture, // new scan target
 		)
 		if err != nil {
 			log.Printf("Error scanning message: %v", err)
@@ -41,12 +41,9 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 			msg.ClientID = &clientID.String
 		}
 		if profilePicture.Valid {
-			msg.ProfilePictureURL = profilePicture
+			msg.ProfilePictureURL = profilePicture.String
 		} else {
-			msg.ProfilePictureURL = sql.NullString{
-				String: "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png",
-				Valid:  true,
-			}
+			msg.ProfilePictureURL = ""
 		}
 		messages = append(messages, msg)
 	}

@@ -14,7 +14,13 @@
         {{if .Messages}}
             {{with index .Messages 0}}
             <div class="flex items-center">
-                <div class="h-8 w-8 rounded-full bg-gray-200"></div>
+                <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
+                    <img 
+                        src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png{{end}}"
+                        alt=""
+                        class="h-full w-full object-cover"
+                    >
+                </div>
                 <div class="ml-2">
                     <div class="text-sm font-medium">{{.FromUser}}</div>
                     <div class="text-xs text-gray-500">
@@ -56,8 +62,8 @@
             <div class="flex items-start max-w-[85%] {{if or (eq .Source "human") (eq .Source "bot") (eq .Source "system")}}justify-end ml-auto{{end}}">
                 {{if eq .Source "user"}}
                 <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
-                    <img
-                        src="{{if .ProfilePictureURL.Valid}}{{.ProfilePictureURL.String}}{{else}}https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png{{end}}"
+                    <img 
+                        src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png{{end}}"
                         alt=""
                         class="h-full w-full object-cover"
                     >
