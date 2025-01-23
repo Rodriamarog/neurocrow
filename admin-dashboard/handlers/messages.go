@@ -68,6 +68,13 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Header.Get("HX-Request") == "true" {
+		tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
+			"Messages": messages,
+		})
+		return
+	}
+
 	data := map[string]interface{}{
 		"Messages": messages,
 	}
@@ -76,7 +83,6 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(err.Error(), "write: broken pipe") {
 			log.Printf("Error executing template: %v", err)
 		}
-		return
 	}
 }
 
@@ -114,6 +120,74 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("Successfully rendered chat view for thread %s", threadID)
+}
+
+func GetMessageList(w http.ResponseWriter, r *http.Request) {
+	searchQuery := r.URL.Query().Get("search")
+	log.Printf("🔍 Search request - Query: %q", searchQuery)
+
+	query := `
+        WITH thread_owner AS (
+            SELECT DISTINCT ON (m.thread_id)
+                m.thread_id, 
+                m.from_user as original_sender
+            FROM messages m
+            ORDER BY m.thread_id, m.timestamp ASC
+        ),
+        latest_messages AS (
+            SELECT DISTINCT ON (m.thread_id)
+                m.id, 
+                m.client_id, 
+                m.page_id, 
+                m.platform,
+                t.original_sender as thread_owner,  
+                m.content, 
+                m.timestamp, 
+                m.thread_id, 
+                m.read,
+                m.source
+            FROM messages m
+            JOIN thread_owner t ON m.thread_id = t.thread_id
+            ORDER BY m.thread_id, m.timestamp DESC
+        )
+        SELECT 
+            lm.id, 
+            lm.client_id, 
+            lm.page_id, 
+            lm.platform,
+            lm.thread_owner as from_user,  
+            lm.content, 
+            lm.timestamp, 
+            lm.thread_id, 
+            lm.read,
+            lm.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
+            c.profile_picture_url
+        FROM latest_messages lm
+        LEFT JOIN conversations c ON c.thread_id = lm.thread_id
+        WHERE 
+            CASE 
+                WHEN $1 != '' THEN 
+                    lm.content ILIKE '%' || $1 || '%' OR 
+                    lm.thread_owner ILIKE '%' || $1 || '%'
+                ELSE TRUE
+            END
+        ORDER BY lm.timestamp DESC
+    `
+	messages, err := db.FetchMessages(query, searchQuery)
+	if err != nil {
+		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✨ Found %d messages matching search: %q", len(messages), searchQuery)
+
+	tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
+	if err := tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
+		"Messages": messages,
+	}); err != nil {
+		db.HandleError(w, err, "Error rendering message list", http.StatusInternalServerError)
+	}
 }
 
 func SendMessage(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +256,6 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✅ Successfully stored admin message in thread %s", threadID)
 
-	// HTMX response template
 	tmpl := template.Must(template.New("message-response").Parse(`
         <div class="flex items-start max-w-[85%] justify-end ml-auto"
              hx-get="/thread-preview?thread_id={{.ThreadID}}"
@@ -206,68 +279,6 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		db.HandleError(w, err, "Error rendering message", http.StatusInternalServerError)
 		return
 	}
-}
-
-func GetMessageList(w http.ResponseWriter, r *http.Request) {
-	query := `
-        WITH thread_owner AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.thread_id, 
-                m.from_user as original_sender
-            FROM messages m
-            ORDER BY m.thread_id, m.timestamp ASC
-        ),
-        latest_messages AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.id, 
-                m.client_id, 
-                m.page_id, 
-                m.platform,
-                t.original_sender as thread_owner,  
-                m.content, 
-                m.timestamp, 
-                m.thread_id, 
-                m.read,
-                m.source
-            FROM messages m
-            JOIN thread_owner t ON m.thread_id = t.thread_id
-            ORDER BY m.thread_id, m.timestamp DESC
-        )
-        SELECT 
-            lm.id, 
-            lm.client_id, 
-            lm.page_id, 
-            lm.platform,
-            lm.thread_owner as from_user,  
-            lm.content, 
-            lm.timestamp, 
-            lm.thread_id, 
-            lm.read,
-            lm.source,
-            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            c.profile_picture_url
-        FROM latest_messages lm
-        LEFT JOIN conversations c ON c.thread_id = lm.thread_id
-        ORDER BY lm.timestamp DESC
-    `
-	messages, err := db.FetchMessages(query)
-	if err != nil {
-		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
-		return
-	}
-
-	if r.Header.Get("HX-Request") == "true" {
-		tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
-		tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
-			"Messages": messages,
-		})
-		return
-	}
-
-	tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
-	tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
-		"Messages": messages,
-	})
 }
 
 func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
@@ -338,7 +349,6 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, msg)
 }
 
-// ToggleBotStatus handles enabling/disabling the AI bot for a specific thread
 func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔄 Received toggle request")
 	if r.Method != http.MethodPost {

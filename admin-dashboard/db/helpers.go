@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"time"
 )
 
 func FetchMessages(query string, args ...interface{}) ([]models.Message, error) {
+	log.Printf("📝 Executing query with args: %+v", args)
+	start := time.Now()
 	rows, err := DB.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -47,6 +50,7 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 		}
 		messages = append(messages, msg)
 	}
+	log.Printf("✨ Found %d messages in %v", len(messages), time.Since(start))
 	return messages, nil
 }
 

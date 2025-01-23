@@ -1,2 +1,3 @@
-Dic 16, 2024
-Fix the 'admin' thread title annoying ass bug.
+Jan 22
+-Fix the goddamn search bar functionality (its not filtering messages)
+-When I send a message from the dashboard, it fucking removes the profile picture and toggle button. Fix that shit.
