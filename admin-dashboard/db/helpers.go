@@ -9,6 +9,9 @@ import (
 )
 
 func FetchMessages(query string, args ...interface{}) ([]models.Message, error) {
+	if len(args) > 0 && args[0] == "" {
+		args = []interface{}{} // Reset args if empty string
+	}
 	log.Printf("📝 Executing query with args: %+v", args)
 	start := time.Now()
 	rows, err := DB.Query(query, args...)

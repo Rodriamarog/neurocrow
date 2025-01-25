@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"admin-dashboard/db"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -123,59 +124,109 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetMessageList(w http.ResponseWriter, r *http.Request) {
-	searchQuery := r.URL.Query().Get("search")
-	log.Printf("🔍 Search request - Query: %q", searchQuery)
+	// Add explicit debugging for request
+	log.Printf("🔍 Request received at: %s", r.URL.Path)
 
-	query := `
-        WITH thread_owner AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.thread_id, 
-                m.from_user as original_sender
-            FROM messages m
-            ORDER BY m.thread_id, m.timestamp ASC
-        ),
-        latest_messages AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.id, 
-                m.client_id, 
-                m.page_id, 
-                m.platform,
-                t.original_sender as thread_owner,  
-                m.content, 
-                m.timestamp, 
-                m.thread_id, 
-                m.read,
-                m.source
-            FROM messages m
-            JOIN thread_owner t ON m.thread_id = t.thread_id
-            ORDER BY m.thread_id, m.timestamp DESC
-        )
-        SELECT 
-            lm.id, 
-            lm.client_id, 
-            lm.page_id, 
-            lm.platform,
-            lm.thread_owner as from_user,  
-            lm.content, 
-            lm.timestamp, 
-            lm.thread_id, 
-            lm.read,
-            lm.source,
-            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            c.profile_picture_url
-        FROM latest_messages lm
-        LEFT JOIN conversations c ON c.thread_id = lm.thread_id
-        WHERE 
-            CASE 
-                WHEN $1 != '' THEN 
-                    lm.content ILIKE '%' || $1 || '%' OR 
-                    lm.thread_owner ILIKE '%' || $1 || '%'
-                ELSE TRUE
-            END
-        ORDER BY lm.timestamp DESC
-    `
-	messages, err := db.FetchMessages(query, searchQuery)
+	searchQuery := r.URL.Query().Get("search")
+	log.Printf("🔍 Raw URL: %s", r.URL.String())
+	log.Printf("🔍 Search query received: %q", searchQuery)
+
+	var query string
+	var args []interface{}
+
+	if searchQuery != "" {
+		query = `
+            WITH thread_owner AS (
+                SELECT DISTINCT ON (m.thread_id)
+                    m.thread_id, 
+                    m.from_user as original_sender
+                FROM messages m
+                ORDER BY m.thread_id, m.timestamp ASC
+            ),
+            latest_messages AS (
+                SELECT DISTINCT ON (m.thread_id)
+                    m.id, 
+                    m.client_id, 
+                    m.page_id, 
+                    m.platform,
+                    t.original_sender as thread_owner,  
+                    m.content, 
+                    m.timestamp, 
+                    m.thread_id, 
+                    m.read,
+                    m.source
+                FROM messages m
+                JOIN thread_owner t ON m.thread_id = t.thread_id
+                ORDER BY m.thread_id, m.timestamp DESC
+            )
+            SELECT 
+                lm.id, 
+                lm.client_id, 
+                lm.page_id, 
+                lm.platform,
+                lm.thread_owner as from_user,  
+                lm.content, 
+                lm.timestamp, 
+                lm.thread_id, 
+                lm.read,
+                lm.source,
+                COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
+                c.profile_picture_url
+            FROM latest_messages lm
+            LEFT JOIN conversations c ON c.thread_id = lm.thread_id
+            WHERE 
+                lm.content ILIKE $1 OR 
+                lm.thread_owner ILIKE $1
+            ORDER BY lm.timestamp DESC
+        `
+		args = []interface{}{fmt.Sprintf("%%%s%%", searchQuery)}
+	} else {
+		query = `
+            WITH thread_owner AS (
+                SELECT DISTINCT ON (m.thread_id)
+                    m.thread_id, 
+                    m.from_user as original_sender
+                FROM messages m
+                ORDER BY m.thread_id, m.timestamp ASC
+            ),
+            latest_messages AS (
+                SELECT DISTINCT ON (m.thread_id)
+                    m.id, 
+                    m.client_id, 
+                    m.page_id, 
+                    m.platform,
+                    t.original_sender as thread_owner,  
+                    m.content, 
+                    m.timestamp, 
+                    m.thread_id, 
+                    m.read,
+                    m.source
+                FROM messages m
+                JOIN thread_owner t ON m.thread_id = t.thread_id
+                ORDER BY m.thread_id, m.timestamp DESC
+            )
+            SELECT 
+                lm.id, 
+                lm.client_id, 
+                lm.page_id, 
+                lm.platform,
+                lm.thread_owner as from_user,  
+                lm.content, 
+                lm.timestamp, 
+                lm.thread_id, 
+                lm.read,
+                lm.source,
+                COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
+                c.profile_picture_url
+            FROM latest_messages lm
+            LEFT JOIN conversations c ON c.thread_id = lm.thread_id
+            ORDER BY lm.timestamp DESC
+        `
+	}
+
+	messages, err := db.FetchMessages(query, args...)
 	if err != nil {
+		log.Printf("❌ Error executing query: %v", err)
 		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
 		return
 	}
