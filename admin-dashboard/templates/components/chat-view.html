@@ -15,11 +15,9 @@
             {{with index .Messages 0}}
             <div class="flex items-center">
                 <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
-                    <img 
-                        src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png{{end}}"
-                        alt=""
-                        class="h-full w-full object-cover"
-                    >
+                    <img src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}/static/default-avatar.png{{end}}"
+                         alt="Profile"
+                         class="h-full w-full object-cover">
                 </div>
                 <div class="ml-2">
                     <div class="text-sm font-medium">{{.FromUser}}</div>
@@ -59,19 +57,28 @@
         {{if .Messages}}
             {{range .Messages}}
             {{if ne .Source "system"}}
-            <div class="flex items-start max-w-[85%] {{if or (eq .Source "human") (eq .Source "bot") (eq .Source "system")}}justify-end ml-auto{{end}}">
+            <div class="flex items-start max-w-[85%] {{if or (eq .Source "human") (eq .Source "bot")}}justify-end ml-auto space-x-2{{else}}space-x-2{{end}}">
                 {{if eq .Source "user"}}
-                <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
-                    <img 
-                        src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png{{end}}"
-                        alt=""
-                        class="h-full w-full object-cover"
-                    >
-                </div>
+                    {{if ne .ProfilePictureURL ""}}
+                    <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden order-1">
+                        <img src="{{.ProfilePictureURL}}"
+                             alt="User Profile"
+                             class="h-full w-full object-cover">
+                    </div>
+                    {{end}}
                 {{end}}
-                <div class="{{if eq .Source "human"}}bg-indigo-600 text-white{{else if or (eq .Source "bot") (eq .Source "system")}}bg-indigo-500 text-white{{else}}bg-gray-100 text-gray-900 ml-2{{end}} rounded-lg px-4 py-2 break-words max-w-full">
+                
+                <div class="{{if eq .Source "human"}}bg-indigo-600 text-white order-1{{else if eq .Source "bot"}}bg-indigo-500 text-white order-1{{else}}bg-gray-100 text-gray-900 order-2{{end}} rounded-lg px-4 py-2 break-words max-w-full">
                     <p class="text-sm break-words">{{.Content}}</p>
                 </div>
+
+                {{if eq .Source "human"}}
+                    <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden order-2">
+                        <img src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}/static/default-avatar.png{{end}}"
+                             alt="Admin Profile"
+                             class="h-full w-full object-cover">
+                    </div>
+                {{end}}
             </div>
             {{end}}
             {{end}}
@@ -83,6 +90,7 @@
             </div>
         {{end}}
     </div>
+
 
     <!-- Scroll to Bottom Button -->
     <button 
