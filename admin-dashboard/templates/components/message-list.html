@@ -1,5 +1,7 @@
 {{define "message-list"}}
-<div class="divide-y overflow-x-hidden">
+<div class="divide-y overflow-x-hidden"
+     hx-ext="ws" 
+     ws-connect="/ws-connect">
    {{range .Messages}}
    <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
         id="thread-preview-{{.ThreadID}}"
@@ -16,40 +18,44 @@
            </div>
            <div class="flex items-center space-x-3">
                <button
-                   class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 {{if .BotEnabled}}bg-indigo-600{{else}}bg-gray-200{{end}}"
+                   class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2"
+                   :class="isEnabled_{{.ThreadID}} ? 'bg-indigo-600' : 'bg-gray-200'"
+                   x-data="{ isEnabled_{{.ThreadID}}: {{.BotEnabled}} }"
+                   @click="
+                       $event.stopPropagation();
+                       isEnabled_{{.ThreadID}} = !isEnabled_{{.ThreadID}};
+                       fetch('/toggle-bot', {
+                           method: 'POST',
+                           headers: {
+                               'Content-Type': 'application/x-www-form-urlencoded',
+                           },
+                           body: 'thread_id={{.ThreadID}}&enabled=' + isEnabled_{{.ThreadID}}
+                       }).then(response => {
+                           if (!response.ok) {
+                               isEnabled_{{.ThreadID}} = !isEnabled_{{.ThreadID}};
+                           }
+                       })
+                   "
                    role="switch"
-                   hx-post="/toggle-bot"
-                   hx-vals='{"thread_id": "{{.ThreadID}}", "enabled": "{{not .BotEnabled}}"}'
-                   hx-swap="none"
-                   _="on click
-                         halt the event
-                         preventDefault(event)
-                         stopPropagation(event)
-                         toggle .bg-indigo-600 .bg-gray-200 on me
-                         toggle .translate-x-5 .translate-x-0 on #toggle-button-{{.ThreadID}}"
-                   aria-checked="{{.BotEnabled}}"
-               >
+                   aria-checked="{{.BotEnabled}}">
                    <span class="sr-only">Toggle bot</span>
                    <span
-                       id="toggle-button-{{.ThreadID}}"
-                       aria-hidden="true"
-                       class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .BotEnabled}}translate-x-5{{else}}translate-x-0{{end}}"
-                   ></span>
+                       class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                       :class="isEnabled_{{.ThreadID}} ? 'translate-x-5' : 'translate-x-0'">
+                   </span>
                </button>
                <span class="text-xs text-gray-500">{{.Timestamp.Format "15:04"}}</span>
            </div>
        </div>
        <div class="flex items-center">
            <div class="h-12 w-12 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
-               <img 
-                   src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png{{end}}"
-                   alt=""
-                   class="h-full w-full object-cover"
-               >
+               <img src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}/static/default-avatar.png{{end}}"
+                    alt=""
+                    class="h-full w-full object-cover">
            </div>
-           <div class="ml-3 flex-1 overflow-hidden">
+           <div class="ml-3 flex-1">
                <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>
-               <div class="text-sm text-gray-500 truncate overflow-hidden whitespace-nowrap">{{.Content}}</div>
+               <div class="text-sm text-gray-500 truncate">{{.Content}}</div>
            </div>
        </div>
    </div>

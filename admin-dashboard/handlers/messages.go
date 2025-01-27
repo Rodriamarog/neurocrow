@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -15,12 +16,32 @@ import (
 var tmpl *template.Template
 
 func init() {
-	tmpl = template.Must(template.ParseFiles(
+	// Create a new template with NO name first
+	t := template.New("")
+
+	// Read message-bubble.html content first
+	messageBubbleContent, err := os.ReadFile("templates/components/message-bubble.html")
+	if err != nil {
+		log.Fatalf("Could not read message-bubble.html: %v", err)
+	}
+
+	// Parse it first to make sure it's available
+	t, err = t.Parse(string(messageBubbleContent))
+	if err != nil {
+		log.Fatalf("Could not parse message-bubble.html: %v", err)
+	}
+
+	// Then parse everything else
+	tmpl = template.Must(t.ParseFiles(
 		"templates/layout.html",
 		"templates/messages.html",
-		"templates/components/message-list.html",
 		"templates/components/chat-view.html",
+		"templates/components/message-list.html",
+		"templates/components/thread-preview.html",
 	))
+
+	// Print ALL defined templates for debugging
+	log.Printf("✅ Available templates: %v", tmpl.DefinedTemplates())
 }
 
 func GetMessages(w http.ResponseWriter, r *http.Request) {
@@ -94,19 +115,7 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 	threadID := r.URL.Query().Get("thread_id")
 	log.Printf("GetChat called with thread_id: %s", threadID)
 
-	query := `
-        SELECT 
-            m.id, m.client_id, m.page_id, m.platform, m.from_user,
-            m.content, m.timestamp, m.thread_id, m.read, m.source,
-            COALESCE(c.bot_enabled, true) as bot_enabled,
-            c.profile_picture_url
-        FROM messages m
-        LEFT JOIN conversations c ON m.thread_id = c.thread_id
-        WHERE m.thread_id = $1
-          AND (m.internal IS NULL OR m.internal = false)
-        ORDER BY m.timestamp ASC
-    `
-	messages, err := db.FetchMessages(query, threadID)
+	messages, err := db.FetchMessages(db.GetChatQuery, threadID)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching chat", http.StatusInternalServerError)
 		return
@@ -118,11 +127,12 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 		"Messages": messages,
 	}
 
-	tmpl := template.Must(template.ParseFiles("templates/components/chat-view.html"))
+	// Use the global tmpl variable instead of creating a new one
 	if err := tmpl.ExecuteTemplate(w, "chat-view", data); err != nil {
 		db.HandleError(w, err, "Error rendering chat", http.StatusInternalServerError)
 		return
 	}
+
 	log.Printf("Successfully rendered chat view for thread %s", threadID)
 }
 
@@ -307,11 +317,27 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🖼️ Profile Picture URL from DB: %v (Valid: %v)",
 		profilePicURL.String, profilePicURL.Valid)
 
-	// Insert the new message
+	// Get the values, handling NULL cases
+	clientIDStr := ""
+	if clientID.Valid {
+		clientIDStr = clientID.String
+	}
+
+	pageIDStr := ""
+	if pageID.Valid {
+		pageIDStr = pageID.String
+	}
+
+	platformStr := ""
+	if platform.Valid {
+		platformStr = platform.String
+	}
+
+	// Insert the message using the query from queries.go
 	result, err := db.DB.Exec(db.InsertMessageQuery,
-		clientID.String,
-		pageID.String,
-		platform.String,
+		clientIDStr,
+		pageIDStr,
+		platformStr,
 		content,
 		threadID,
 	)
@@ -336,93 +362,26 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🔄 Thread cache invalidated successfully for thread: %s", threadID)
 	}
 
-	// First, add the new message to the messages container
-	messageTmpl := template.Must(template.New("message-response").Parse(`
-        <div class="flex items-start max-w-[85%] justify-end ml-auto space-x-2">
-            <div class="bg-indigo-600 text-white rounded-lg px-4 py-2 order-1">
-                <p class="text-sm">{{.Content}}</p>
-            </div>
-            <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden order-2">
-                <img src="{{if ne .ProfilePicURL ""}}{{.ProfilePicURL}}{{else}}/static/default-avatar.png{{end}}"
-                     alt=""
-                     class="h-full w-full object-cover">
-            </div>
-        </div>
-    `))
-
-	// Execute the message template
-	err = messageTmpl.Execute(w, struct {
-		ThreadID      string
-		Content       string
-		ProfilePicURL string
+	// Render the message using the shared message-bubble template
+	messageData := struct {
+		Content           string
+		Source            string
+		ProfilePictureURL string
 	}{
-		ThreadID:      threadID,
-		Content:       content,
-		ProfilePicURL: profilePicURL.String,
-	})
-	if err != nil {
+		Content:           content,
+		Source:            "human",
+		ProfilePictureURL: "", // Empty for admin messages
+	}
+
+	if err := tmpl.ExecuteTemplate(w, "message-bubble.html", messageData); err != nil {
 		log.Printf("❌ Error rendering message: %v", err)
 		db.HandleError(w, err, "Error rendering message", http.StatusInternalServerError)
 		return
 	}
 
 	// Then, update the thread preview with out-of-band swap
-	previewTmpl := template.Must(template.New("preview-response").Parse(`
-        <div id="thread-preview-{{.ThreadID}}"
-             class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
-             hx-get="/chat?thread_id={{.ThreadID}}"
-             hx-target="#chat-view"
-             hx-trigger="click"
-             _="on htmx:afterOnLoad remove .hidden from #chat-view then remove .translate-x-full from #chat-view"
-             hx-swap-oob="true">
-            <div class="flex items-center justify-between mb-1">
-                <div class="flex items-center">
-                    <div class="w-2 h-2 {{if eq .Platform "facebook"}}bg-blue-500{{else}}bg-pink-500{{end}} rounded-full mr-2"></div>
-                    <span class="text-sm font-medium {{if eq .Platform "facebook"}}text-blue-600{{else}}text-pink-600{{end}}">
-                        {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
-                    </span>
-                </div>
-                <div class="flex items-center space-x-3">
-                    <button
-                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 {{if .BotEnabled}}bg-indigo-600{{else}}bg-gray-200{{end}}"
-                        role="switch"
-                        hx-post="/toggle-bot"
-                        hx-vals='{"thread_id": "{{.ThreadID}}", "enabled": "{{not .BotEnabled}}"}'
-                        hx-swap="none"
-                        _="on click
-                            halt the event
-                            preventDefault(event)
-                            stopPropagation(event)
-                            toggle .bg-indigo-600 .bg-gray-200 on me
-                            toggle .translate-x-5 .translate-x-0 on #toggle-button-{{.ThreadID}}"
-                        aria-checked="{{.BotEnabled}}">
-                        <span class="sr-only">Toggle bot</span>
-                        <span
-                            id="toggle-button-{{.ThreadID}}"
-                            aria-hidden="true"
-                            class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{if .BotEnabled}}translate-x-5{{else}}translate-x-0{{end}}">
-                        </span>
-                    </button>
-                    <span class="text-xs text-gray-500">{{.Timestamp.Format "15:04"}}</span>
-                </div>
-            </div>
-            <div class="flex items-center">
-                <div class="h-12 w-12 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
-                    <img src="{{if ne .ProfilePicURL ""}}{{.ProfilePicURL}}{{else}}/static/default-avatar.png{{end}}"
-                         alt=""
-                         class="h-full w-full object-cover">
-                </div>
-                <div class="ml-3 flex-1">
-                    <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>
-                    <div class="text-sm text-gray-500 truncate">{{.Content}}</div>
-                </div>
-            </div>
-        </div>
-    `))
-
-	// Execute the preview template
 	now := time.Now()
-	err = previewTmpl.Execute(w, struct {
+	previewData := struct {
 		ThreadID      string
 		Content       string
 		ProfilePicURL string
@@ -434,26 +393,25 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		ThreadID:      threadID,
 		Content:       content,
 		ProfilePicURL: profilePicURL.String,
-		Platform:      platform.String,
+		Platform:      platformStr,
 		FromUser:      "Admin", // You might want to get this from somewhere else
 		Timestamp:     now,
 		BotEnabled:    botEnabled,
-	})
-	if err != nil {
+	}
+
+	if err := tmpl.ExecuteTemplate(w, "thread-preview", previewData); err != nil {
 		log.Printf("❌ Error rendering preview: %v", err)
 		// Don't return error here as the message was already sent successfully
 	}
 
-	log.Printf("✅ Message response rendered successfully with profile picture: %v", profilePicURL.String)
-
 	// Update cache with new thread preview
 	newPreview := cache.ThreadPreview{
-		ID:                "", // You might want to get this from the DB
+		ID:                threadID,
 		ThreadID:          threadID,
 		FromUser:          "Admin",
 		Content:           content,
 		Timestamp:         now,
-		Platform:          platform.String,
+		Platform:          platformStr,
 		BotEnabled:        botEnabled,
 		ProfilePictureURL: profilePicURL.String,
 	}
