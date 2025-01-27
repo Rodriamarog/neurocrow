@@ -38,35 +38,26 @@
 
     <!-- Scrollable Messages -->
     <div id="messages-container" 
-         class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 overflow-x-hidden"
-         hx-swap="beforeend"
-         _="on load
+        class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 overflow-x-hidden"
+        hx-get="/chat-messages?thread_id={{if .Messages}}{{with index .Messages 0}}{{.ThreadID}}{{end}}{{end}}"
+        hx-trigger="refreshChat from:body"
+        hx-target="this"
+        hx-swap="innerHTML"
+        _="on load
             set my.scrollTop to my.scrollHeight
             on htmx:afterSwap 
             wait 10ms 
             set my.scrollTop to my.scrollHeight
             on scroll
             if (event.target.scrollHeight - event.target.scrollTop - event.target.clientHeight) > 500
-               remove .opacity-0 from #scroll-bottom-btn
-               remove .pointer-events-none from #scroll-bottom-btn
+            remove .opacity-0 from #scroll-bottom-btn
+            remove .pointer-events-none from #scroll-bottom-btn
             else
-               add .at-bottom to me
-               add .opacity-0 to #scroll-bottom-btn
-               add .pointer-events-none to #scroll-bottom-btn
+            add .at-bottom to me
+            add .opacity-0 to #scroll-bottom-btn
+            add .pointer-events-none to #scroll-bottom-btn
             end">
-        {{if .Messages}}
-            {{range .Messages}}
-                {{if ne .Source "system"}}
-                     {{template "message-bubble.html" .}}
-                {{end}}
-            {{end}}
-        {{else}}
-            <div class="flex items-center justify-center h-full">
-                <div class="text-gray-500 text-center">
-                    <p>No messages in this conversation yet</p>
-                </div>
-            </div>
-        {{end}}
+        {{template "chat-messages" .}}
     </div>
 
     <!-- Scroll to Bottom Button -->
@@ -87,6 +78,7 @@
           hx-post="/send-message" 
           hx-target="#messages-container"
           hx-swap="beforeend"
+          hx-on::after-request="if(event.detail.successful) { this.reset(); }"
           _="on keydown[key is 'Enter'] from #message-input
                halt the event
                if #message-input.value.trim() !== ''
@@ -95,12 +87,7 @@
              on submit
                if #message-input.value.trim() === ''
                  halt the event
-               end
-             on htmx:afterRequest
-               if event.detail.successful
-                 set #message-input.value to ''
-                 focus() on #message-input
-                 trigger refresh on #message-list-wrapper">
+               end">
         <input type="hidden" name="thread_id" value="{{if .Messages}}{{with index .Messages 0}}{{.ThreadID}}{{end}}{{end}}">
         <button type="button" class="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

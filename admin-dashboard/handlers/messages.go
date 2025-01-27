@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 )
 
 var tmpl *template.Template
@@ -38,6 +37,7 @@ func init() {
 		"templates/components/chat-view.html",
 		"templates/components/message-list.html",
 		"templates/components/thread-preview.html",
+		"templates/components/chat-messages.html", // Add this line
 	))
 
 	// Print ALL defined templates for debugging
@@ -362,65 +362,14 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🔄 Thread cache invalidated successfully for thread: %s", threadID)
 	}
 
-	// Render the message using the shared message-bubble template
-	messageData := struct {
-		Content           string
-		Source            string
-		ProfilePictureURL string
-	}{
-		Content:           content,
-		Source:            "human",
-		ProfilePictureURL: "", // Empty for admin messages
-	}
+	// Set headers for HTMX to trigger a refresh of the chat view
+	w.Header().Set("HX-Trigger", "refreshChat")
 
-	if err := tmpl.ExecuteTemplate(w, "message-bubble.html", messageData); err != nil {
-		log.Printf("❌ Error rendering message: %v", err)
-		db.HandleError(w, err, "Error rendering message", http.StatusInternalServerError)
-		return
-	}
+	// Also trigger a refresh of the message list to update the preview
+	w.Header().Set("HX-Trigger-After-Settle", "{\"refreshMessageList\": true}")
 
-	// Then, update the thread preview with out-of-band swap
-	now := time.Now()
-	previewData := struct {
-		ThreadID      string
-		Content       string
-		ProfilePicURL string
-		Platform      string
-		FromUser      string
-		Timestamp     time.Time
-		BotEnabled    bool
-	}{
-		ThreadID:      threadID,
-		Content:       content,
-		ProfilePicURL: profilePicURL.String,
-		Platform:      platformStr,
-		FromUser:      "Admin", // You might want to get this from somewhere else
-		Timestamp:     now,
-		BotEnabled:    botEnabled,
-	}
-
-	if err := tmpl.ExecuteTemplate(w, "thread-preview", previewData); err != nil {
-		log.Printf("❌ Error rendering preview: %v", err)
-		// Don't return error here as the message was already sent successfully
-	}
-
-	// Update cache with new thread preview
-	newPreview := cache.ThreadPreview{
-		ID:                threadID,
-		ThreadID:          threadID,
-		FromUser:          "Admin",
-		Content:           content,
-		Timestamp:         now,
-		Platform:          platformStr,
-		BotEnabled:        botEnabled,
-		ProfilePictureURL: profilePicURL.String,
-	}
-
-	if err := cache.CacheThreadPreview(threadID, newPreview); err != nil {
-		log.Printf("⚠️ Failed to update thread preview in cache: %v", err)
-	} else {
-		log.Printf("✅ Thread preview updated in cache successfully")
-	}
+	// Send a 200 OK status
+	w.WriteHeader(http.StatusOK)
 }
 
 func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
@@ -512,4 +461,28 @@ func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✅ Successfully toggled bot status for thread: %s", threadID)
 	w.WriteHeader(http.StatusOK)
+}
+
+func GetChatMessages(w http.ResponseWriter, r *http.Request) {
+	threadID := r.URL.Query().Get("thread_id")
+	log.Printf("GetChatMessages called with thread_id: %s", threadID)
+
+	messages, err := db.FetchMessages(db.GetChatQuery, threadID)
+	if err != nil {
+		db.HandleError(w, err, "Error fetching chat messages", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Found %d messages for thread %s", len(messages), threadID)
+
+	data := map[string]interface{}{
+		"Messages": messages,
+	}
+
+	if err := tmpl.ExecuteTemplate(w, "chat-messages", data); err != nil {
+		db.HandleError(w, err, "Error rendering chat messages", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Successfully rendered chat messages for thread %s", threadID)
 }

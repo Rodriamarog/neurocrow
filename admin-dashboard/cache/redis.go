@@ -104,8 +104,11 @@ func GetProfilePicture(userID string, dbFetch func(string) (string, error)) (str
 
 	// Attempt cache
 	if url, err := RedisClient.Get(ctx, key).Result(); err == nil {
+		log.Printf("✅ Cache HIT for profile picture: %s", userID)
 		return url, nil
 	}
+
+	log.Printf("❌ Cache MISS for profile picture: %s", userID)
 
 	// Cache miss - fetch from DB
 	url, err := dbFetch(userID)
@@ -117,6 +120,8 @@ func GetProfilePicture(userID string, dbFetch func(string) (string, error)) (str
 	go func() {
 		if err := CacheProfilePicture(userID, url); err != nil {
 			log.Printf("Failed to cache profile picture: %v", err)
+		} else {
+			log.Printf("✅ Successfully cached profile picture for: %s", userID)
 		}
 	}()
 
@@ -143,11 +148,14 @@ func GetThreadPreview(threadID string, dbFetch func(string) (ThreadPreview, erro
 	// Attempt cache
 	data, err := RedisClient.Get(ctx, key).Bytes()
 	if err == nil {
+		log.Printf("✅ Cache HIT for thread preview: %s", threadID)
 		var preview ThreadPreview
 		if err := json.Unmarshal(data, &preview); err == nil {
 			return preview, nil
 		}
 	}
+
+	log.Printf("❌ Cache MISS for thread preview: %s", threadID)
 
 	// Cache miss - fetch from DB
 	preview, err := dbFetch(threadID)

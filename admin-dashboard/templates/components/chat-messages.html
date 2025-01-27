@@ -1,0 +1,15 @@
+{{define "chat-messages"}}
+    {{if .Messages}}
+        {{range .Messages}}
+            {{if ne .Source "system"}}
+                 {{template "message-bubble.html" .}}
+            {{end}}
+        {{end}}
+    {{else}}
+        <div class="flex items-center justify-center h-full">
+            <div class="text-gray-500 text-center">
+                <p>No messages in this conversation yet</p>
+            </div>
+        </div>
+    {{end}}
+{{end}}
