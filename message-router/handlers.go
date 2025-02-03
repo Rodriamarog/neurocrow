@@ -298,7 +298,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 }
 
 func storeMessage(ctx context.Context, pageID, senderID, platform, content, fromUser, source string, requiresAttention bool) error {
-	// Get the UUID from social_pages instead of pages
+	// Get the UUID from social_pages
 	var pageUUID string
 	err := db.QueryRowContext(ctx, `
         SELECT id 
@@ -310,40 +310,138 @@ func storeMessage(ctx context.Context, pageID, senderID, platform, content, from
 		return fmt.Errorf("error finding page: %v", err)
 	}
 
-	// Now use this UUID to store the message
-	_, err = db.ExecContext(ctx, `
-        INSERT INTO messages (
-            id,           
-            client_id,    
-            page_id,      
-            platform,     
-            thread_id,    
-            from_user,    
-            content,      
-            timestamp,    
-            read,         
-            source,       
-            requires_attention  
-        ) VALUES (
-            gen_random_uuid(),  
-            (SELECT client_id FROM social_pages WHERE id = $1),
-            $1,                 
-            $2,                 
-            $3,                 
-            $4,                 
-            $5,                 
-            NOW(),             
-            false,             
-            $6,                
-            $7                 
-        )
-    `, pageUUID, platform, senderID, fromUser, content, source, requiresAttention)
+	// Start a transaction for consistency
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("error starting transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Check for duplicate messages in the last 5 seconds
+	var exists bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 
+			FROM messages 
+			WHERE page_id = $1 
+			AND content = $2
+			AND timestamp > NOW() - INTERVAL '5 seconds'
+			AND from_user = $3
+			AND source = $4
+		)
+	`, pageUUID, content, fromUser, source).Scan(&exists)
 
 	if err != nil {
-		return fmt.Errorf("error storing message: %v", err)
+		return fmt.Errorf("error checking for duplicate message: %v", err)
 	}
 
+	if exists {
+		log.Printf("📝 Skipping duplicate message storage (content: %q, from: %s, source: %s)",
+			truncateString(content, 50), fromUser, source)
+		return tx.Commit() // Commit the transaction even though we're not inserting
+	}
+
+	// Get client_id from social_pages
+	var clientID sql.NullString
+	err = tx.QueryRowContext(ctx, `
+		SELECT client_id 
+		FROM social_pages 
+		WHERE id = $1
+	`, pageUUID).Scan(&clientID)
+
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error getting client_id: %v", err)
+	}
+
+	// Prepare the insert statement based on whether we have a client_id
+	var insertErr error
+	if clientID.Valid {
+		_, insertErr = tx.ExecContext(ctx, `
+			INSERT INTO messages (
+				id,
+				client_id,
+				page_id,
+				platform,
+				thread_id,
+				from_user,
+				content,
+				timestamp,
+				read,
+				source,
+				requires_attention
+			) VALUES (
+				gen_random_uuid(),
+				$1,
+				$2,
+				$3,
+				$4,
+				$5,
+				$6,
+				NOW(),
+				false,
+				$7,
+				$8
+			)
+		`, clientID.String, pageUUID, platform, senderID, fromUser, content, source, requiresAttention)
+	} else {
+		_, insertErr = tx.ExecContext(ctx, `
+			INSERT INTO messages (
+				id,
+				page_id,
+				platform,
+				thread_id,
+				from_user,
+				content,
+				timestamp,
+				read,
+				source,
+				requires_attention
+			) VALUES (
+				gen_random_uuid(),
+				$1,
+				$2,
+				$3,
+				$4,
+				$5,
+				NOW(),
+				false,
+				$6,
+				$7
+			)
+		`, pageUUID, platform, senderID, fromUser, content, source, requiresAttention)
+	}
+
+	if insertErr != nil {
+		return fmt.Errorf("error inserting message: %v", insertErr)
+	}
+
+	// Update conversation message count
+	_, err = tx.ExecContext(ctx, `
+		UPDATE conversations 
+		SET message_count = message_count + 1,
+			latest_message_at = NOW()
+		WHERE page_id = $1 AND thread_id = $2
+	`, pageUUID, senderID)
+
+	if err != nil {
+		return fmt.Errorf("error updating conversation message count: %v", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %v", err)
+	}
+
+	log.Printf("✅ Message stored successfully (from: %s, source: %s)", fromUser, source)
 	return nil
+}
+
+// Helper function to truncate strings for logging
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
 
 func forwardToBotpress(ctx context.Context, pageID string, msg MessagingEntry, platform string) error {
