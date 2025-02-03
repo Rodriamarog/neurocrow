@@ -1,17 +1,20 @@
 package handlers
 
 import (
-	"admin-dashboard/cache"
 	"admin-dashboard/db"
 	"admin-dashboard/models"
 	"admin-dashboard/pkg/meta"
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 var tmpl *template.Template
@@ -183,6 +186,47 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func sendToMessageRouter(pageID, threadID, platform, message string) error {
+	messageRouterURL := os.Getenv("MESSAGE_ROUTER_URL") // e.g., "http://localhost:8080"
+	if messageRouterURL == "" {
+		return fmt.Errorf("MESSAGE_ROUTER_URL environment variable not set")
+	}
+
+	payload := map[string]interface{}{
+		"page_id":      pageID,
+		"recipient_id": threadID,
+		"platform":     platform,
+		"message":      message,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("error creating payload: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", messageRouterURL+"/send-message", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error sending message: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("message router error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// Update the SendMessage function to include the message routing
 func SendMessage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -207,46 +251,39 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("📤 Starting message send process for thread: %s", threadID)
 
-	// Check cache first for thread details
-	var threadPreview cache.ThreadPreview
-	threadPreview, err = cache.GetThreadPreview(threadID, func(id string) (cache.ThreadPreview, error) {
-		log.Printf("🔍 Cache miss for thread %s, fetching from database", id)
-		return cache.ThreadPreview{}, fmt.Errorf("no cache") // Force DB fetch on first try
-	})
-	if err != nil {
-		log.Printf("📁 Cache miss or error, fetching fresh data from DB")
-	} else {
-		log.Printf("📁 Found thread preview in cache: %+v", threadPreview)
-	}
-
 	// Get thread details from database
-	var clientID, pageID, platform, profilePicURL sql.NullString
+	var clientID, pageID, platform sql.NullString
 	var botEnabled bool
 	err = db.DB.QueryRow(`
         SELECT 
             m.client_id,
             m.page_id,
             m.platform,
-            c.profile_picture_url,
             COALESCE(c.bot_enabled, TRUE) as bot_enabled
         FROM messages m
         LEFT JOIN conversations c ON c.thread_id = m.thread_id
         WHERE m.thread_id = $1 
         ORDER BY m.timestamp DESC
         LIMIT 1
-    `, threadID).Scan(&clientID, &pageID, &platform, &profilePicURL, &botEnabled)
+    `, threadID).Scan(&clientID, &pageID, &platform, &botEnabled)
 	if err != nil {
 		log.Printf("❌ Error fetching thread details: %v", err)
 		db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("🔍 Thread details found - ClientID: %v, PageID: %v, Platform: %v, BotEnabled: %v",
-		clientID.String, pageID.String, platform.String, botEnabled)
-	log.Printf("🖼️ Profile Picture URL from DB: %v (Valid: %v)",
-		profilePicURL.String, profilePicURL.Valid)
+	// Send message through the message router
+	if pageID.Valid && platform.Valid {
+		err = sendToMessageRouter(pageID.String, threadID, platform.String, content)
+		if err != nil {
+			log.Printf("❌ Error sending message through router: %v", err)
+			db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("✅ Message sent through message router successfully")
+	}
 
-	// Get the values, handling NULL cases
+	// Store the message in the database
 	clientIDStr := ""
 	if clientID.Valid {
 		clientIDStr = clientID.String
@@ -262,7 +299,6 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		platformStr = platform.String
 	}
 
-	// Insert the message using the query from queries.go
 	result, err := db.DB.Exec(db.InsertMessageQuery,
 		clientIDStr,
 		pageIDStr,
@@ -284,20 +320,9 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		log.Printf("✅ Message stored successfully. Rows affected: %d", rowsAffected)
 	}
 
-	// Invalidate cache
-	if err := cache.InvalidateThreadCache(threadID); err != nil {
-		log.Printf("⚠️ Failed to invalidate thread cache: %v", err)
-	} else {
-		log.Printf("🔄 Thread cache invalidated successfully for thread: %s", threadID)
-	}
-
 	// Set headers for HTMX to trigger a refresh of the chat view
 	w.Header().Set("HX-Trigger", "refreshChat")
-
-	// Also trigger a refresh of the message list to update the preview
 	w.Header().Set("HX-Trigger-After-Settle", "{\"refreshMessageList\": true}")
-
-	// Send a 200 OK status
 	w.WriteHeader(http.StatusOK)
 }
 
