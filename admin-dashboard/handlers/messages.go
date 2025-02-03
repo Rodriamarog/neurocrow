@@ -275,30 +275,36 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("📤 Starting message send process for thread: %s", threadID)
 
-	// Get thread details from database
-	var clientID, pageID, platform sql.NullString
+	// Get thread details from database with the actual Facebook/Instagram page_id
+	var clientID sql.NullString
+	var pageUUID, metaPageID, platform sql.NullString
 	var botEnabled bool
 	err = db.DB.QueryRow(`
         SELECT 
             m.client_id,
             m.page_id,
+            sp.page_id as meta_page_id,  -- Get the actual Facebook/Instagram page ID
             m.platform,
             COALESCE(c.bot_enabled, TRUE) as bot_enabled
         FROM messages m
         LEFT JOIN conversations c ON c.thread_id = m.thread_id
+        LEFT JOIN social_pages sp ON sp.id = m.page_id  -- Join with social_pages to get meta_page_id
         WHERE m.thread_id = $1 
         ORDER BY m.timestamp DESC
         LIMIT 1
-    `, threadID).Scan(&clientID, &pageID, &platform, &botEnabled)
+    `, threadID).Scan(&clientID, &pageUUID, &metaPageID, &platform, &botEnabled)
 	if err != nil {
 		log.Printf("❌ Error fetching thread details: %v", err)
 		db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
 		return
 	}
 
-	// Send message through the message router
-	if pageID.Valid && platform.Valid {
-		err = sendToMessageRouter(pageID.String, threadID, platform.String, content)
+	log.Printf("📤 Retrieved details - Platform: %v, Meta Page ID: %v",
+		platform.String, metaPageID.String)
+
+	// Send message through the message router using the Meta page ID
+	if metaPageID.Valid && platform.Valid {
+		err = sendToMessageRouter(metaPageID.String, threadID, platform.String, content)
 		if err != nil {
 			log.Printf("❌ Error sending message through router: %v", err)
 			db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
@@ -307,15 +313,15 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		log.Printf("✅ Message sent through message router successfully")
 	}
 
-	// Store the message in the database
+	// Store the message in the database using our internal page UUID
 	clientIDStr := ""
 	if clientID.Valid {
 		clientIDStr = clientID.String
 	}
 
 	pageIDStr := ""
-	if pageID.Valid {
-		pageIDStr = pageID.String
+	if pageUUID.Valid {
+		pageIDStr = pageUUID.String
 	}
 
 	platformStr := ""
