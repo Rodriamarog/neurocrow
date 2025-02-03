@@ -179,6 +179,13 @@ var (
 	cacheDuration = 24 * time.Hour
 )
 
+type SendMessageRequest struct {
+	PageID      string `json:"page_id"`
+	RecipientID string `json:"recipient_id"`
+	Platform    string `json:"platform"`
+	Message     string `json:"message"`
+}
+
 func (c *UserCache) Get(userID string) (string, bool) {
 	c.RLock()
 	defer c.RUnlock()

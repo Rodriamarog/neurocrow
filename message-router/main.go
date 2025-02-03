@@ -206,6 +206,9 @@ func setupRouter() *http.ServeMux {
 	// New endpoint specifically for Botpress responses
 	router.HandleFunc("/botpress-response", logMiddleware(recoverMiddleware(handleBotpressResponse)))
 
+	// New endpoint for sending messages from the dashboard
+	router.HandleFunc("/send-message", logMiddleware(recoverMiddleware(handleSendMessage)))
+
 	// Log registered routes
 	log.Printf("📍 Registered routes:")
 	log.Printf("   - GET/POST/HEAD / (Health Check)")

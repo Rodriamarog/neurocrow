@@ -696,3 +696,45 @@ func makeAPIRequest(ctx context.Context, url string, result interface{}) error {
 
 	return nil
 }
+
+func handleSendMessage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SendMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("❌ Error parsing send message request: %v", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get page info for access token
+	pageInfo, err := getPageInfo(r.Context(), req.PageID)
+	if err != nil {
+		log.Printf("❌ Error getting page info: %v", err)
+		http.Error(w, "Error getting page info", http.StatusInternalServerError)
+		return
+	}
+
+	// Send message based on platform
+	var sendErr error
+	switch req.Platform {
+	case "facebook":
+		sendErr = sendFacebookMessage(r.Context(), req.PageID, pageInfo.AccessToken, req.RecipientID, req.Message)
+	case "instagram":
+		sendErr = sendInstagramMessage(r.Context(), req.PageID, pageInfo.AccessToken, req.RecipientID, req.Message)
+	default:
+		sendErr = fmt.Errorf("unsupported platform: %s", req.Platform)
+	}
+
+	if sendErr != nil {
+		log.Printf("❌ Error sending message: %v", sendErr)
+		http.Error(w, fmt.Sprintf("Error sending message: %v", sendErr), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
