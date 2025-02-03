@@ -1,12 +1,22 @@
 {{define "chat-view"}}
-<div class="flex flex-col h-full max-h-screen">
+<div class="flex flex-col h-full max-h-screen"
+     _="on load
+          if window.innerWidth < 1024
+            add .hidden to #search-container
+          end
+          on closeChat
+          if window.innerWidth < 1024
+            remove .hidden from #search-container
+          end">
     <!-- Fixed Header -->
     <div class="flex-none px-4 py-3 border-b flex items-center bg-white">
         <button class="mr-2 p-2 -ml-2 hover:bg-gray-100 rounded-full back-button"
                 _="on click 
                     add .translate-x-full to #chat-view 
                     wait 300ms 
-                    add .hidden to #chat-view">
+                    add .hidden to #chat-view
+                    if window.innerWidth < 1024
+                      remove .hidden from #search-container">
             <svg class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
             </svg>

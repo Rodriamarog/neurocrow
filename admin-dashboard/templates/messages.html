@@ -61,9 +61,10 @@
                    </div>
                </header>
 
-               <div class="flex-1 overflow-y-auto overflow-x-hidden">
-                   <!-- Search -->
-                   <div class="p-4 sticky top-0 bg-white border-b z-50">
+               <!-- Search - Sticky but hidden in mobile when chat is open -->
+               <div class="sticky top-0 bg-white border-b z-10 lg:block hidden lg:!block" 
+                    id="search-container">
+                   <div class="p-4">
                        <div class="relative">
                            <input type="text" 
                                   placeholder="Search messages..." 
@@ -78,8 +79,10 @@
                            </svg>
                        </div>
                    </div>
+               </div>
 
-                   <!-- Message List -->
+               <!-- Scrollable Message List -->
+               <div class="flex-1 overflow-y-auto overflow-x-hidden">
                    <div id="message-list-wrapper">
                        {{template "message-list" .}}
                    </div>
