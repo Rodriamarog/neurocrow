@@ -3,6 +3,8 @@ package handlers
 import (
 	"admin-dashboard/cache"
 	"admin-dashboard/db"
+	"admin-dashboard/models"
+	"admin-dashboard/pkg/meta"
 	"database/sql"
 	"fmt"
 	"html/template"
@@ -45,49 +47,7 @@ func init() {
 }
 
 func GetMessages(w http.ResponseWriter, r *http.Request) {
-	query := `
-        WITH thread_owner AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.thread_id, 
-                m.from_user as original_sender
-            FROM messages m
-            WHERE m.platform IN ('facebook', 'instagram')
-            ORDER BY m.thread_id, m.timestamp ASC
-        ),
-        latest_messages AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.id, 
-                COALESCE(m.client_id, '00000000-0000-0000-0000-000000000000') as client_id,
-                m.page_id, 
-                m.platform,
-                t.original_sender as thread_owner,
-                m.content, 
-                m.timestamp, 
-                m.thread_id, 
-                m.read,
-                m.source
-            FROM messages m
-            JOIN thread_owner t ON m.thread_id = t.thread_id
-            ORDER BY m.thread_id, m.timestamp DESC
-        )
-        SELECT 
-            lm.id, 
-            lm.client_id,
-            lm.page_id, 
-            lm.platform,
-            lm.thread_owner as from_user,  
-            lm.content, 
-            lm.timestamp, 
-            lm.thread_id, 
-            lm.read,
-            lm.source,
-            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            c.profile_picture_url
-        FROM latest_messages lm
-        LEFT JOIN conversations c ON c.thread_id = lm.thread_id
-        ORDER BY lm.timestamp DESC;
-    `
-	messages, err := db.FetchMessages(query)
+	messages, err := db.FetchMessages(db.GetMessagesQuery)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
 		return
@@ -144,100 +104,15 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔍 Raw URL: %s", r.URL.String())
 	log.Printf("🔍 Search query received: %q", searchQuery)
 
-	var query string
-	var args []interface{}
+	var messages []models.Message
+	var err error
 
 	if searchQuery != "" {
-		query = `
-            WITH thread_owner AS (
-                SELECT DISTINCT ON (m.thread_id)
-                    m.thread_id, 
-                    m.from_user as original_sender
-                FROM messages m
-                ORDER BY m.thread_id, m.timestamp ASC
-            ),
-            latest_messages AS (
-                SELECT DISTINCT ON (m.thread_id)
-                    m.id, 
-                    m.client_id, 
-                    m.page_id, 
-                    m.platform,
-                    t.original_sender as thread_owner,  
-                    m.content, 
-                    m.timestamp, 
-                    m.thread_id, 
-                    m.read,
-                    m.source
-                FROM messages m
-                JOIN thread_owner t ON m.thread_id = t.thread_id
-                ORDER BY m.thread_id, m.timestamp DESC
-            )
-            SELECT 
-                lm.id, 
-                lm.client_id, 
-                lm.page_id, 
-                lm.platform,
-                lm.thread_owner as from_user,  
-                lm.content, 
-                lm.timestamp, 
-                lm.thread_id, 
-                lm.read,
-                lm.source,
-                COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-                c.profile_picture_url
-            FROM latest_messages lm
-            LEFT JOIN conversations c ON c.thread_id = lm.thread_id
-            WHERE 
-                lm.content ILIKE $1 OR 
-                lm.thread_owner ILIKE $1
-            ORDER BY lm.timestamp DESC
-        `
-		args = []interface{}{fmt.Sprintf("%%%s%%", searchQuery)}
+		messages, err = db.FetchMessages(db.GetMessageListSearchQuery, fmt.Sprintf("%%%s%%", searchQuery))
 	} else {
-		query = `
-            WITH thread_owner AS (
-                SELECT DISTINCT ON (m.thread_id)
-                    m.thread_id, 
-                    m.from_user as original_sender
-                FROM messages m
-                ORDER BY m.thread_id, m.timestamp ASC
-            ),
-            latest_messages AS (
-                SELECT DISTINCT ON (m.thread_id)
-                    m.id, 
-                    m.client_id, 
-                    m.page_id, 
-                    m.platform,
-                    t.original_sender as thread_owner,  
-                    m.content, 
-                    m.timestamp, 
-                    m.thread_id, 
-                    m.read,
-                    m.source
-                FROM messages m
-                JOIN thread_owner t ON m.thread_id = t.thread_id
-                ORDER BY m.thread_id, m.timestamp DESC
-            )
-            SELECT 
-                lm.id, 
-                lm.client_id, 
-                lm.page_id, 
-                lm.platform,
-                lm.thread_owner as from_user,  
-                lm.content, 
-                lm.timestamp, 
-                lm.thread_id, 
-                lm.read,
-                lm.source,
-                COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-                c.profile_picture_url
-            FROM latest_messages lm
-            LEFT JOIN conversations c ON c.thread_id = lm.thread_id
-            ORDER BY lm.timestamp DESC
-        `
+		messages, err = db.FetchMessages(db.GetMessagesQuery)
 	}
 
-	messages, err := db.FetchMessages(query, args...)
 	if err != nil {
 		log.Printf("❌ Error executing query: %v", err)
 		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
@@ -375,30 +250,7 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
 	threadID := r.URL.Query().Get("thread_id")
 
-	query := `
-        WITH thread_owner AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.thread_id,
-                m.from_user AS original_sender
-            FROM messages m
-            WHERE m.thread_id = $1
-            ORDER BY m.thread_id, m.timestamp ASC
-        )
-        SELECT
-            m.id, m.client_id, m.page_id, m.platform,
-            t.original_sender AS from_user,
-            m.content, m.timestamp, m.thread_id, m.read,
-            m.source,
-            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            c.profile_picture_url
-        FROM messages m
-        JOIN thread_owner t ON m.thread_id = t.thread_id
-        LEFT JOIN conversations c ON m.thread_id = c.thread_id
-        WHERE m.thread_id = $1
-        ORDER BY m.timestamp DESC
-        LIMIT 1
-    `
-	messages, err := db.FetchMessages(query, threadID)
+	messages, err := db.FetchMessages(db.GetThreadPreviewQuery, threadID)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching thread preview", http.StatusInternalServerError)
 		return
@@ -485,4 +337,43 @@ func GetChatMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Successfully rendered chat messages for thread %s", threadID)
+}
+
+func RefreshProfilePictures(w http.ResponseWriter, r *http.Request) {
+	// Allow only POST requests
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Fetch unique thread IDs that aren't test threads
+	rows, err := db.DB.Query(`
+        SELECT DISTINCT thread_id
+        FROM messages
+        WHERE thread_id NOT LIKE 'thread_%'
+    `)
+	if err != nil {
+		db.HandleError(w, err, "Error fetching threads", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var threadIDs []string
+	for rows.Next() {
+		var threadID string
+		if err := rows.Scan(&threadID); err != nil {
+			continue
+		}
+		threadIDs = append(threadIDs, threadID)
+	}
+
+	// For each thread, refresh the profile picture
+	for _, id := range threadIDs {
+		err := meta.RefreshProfilePicture(db.DB, id)
+		if err != nil {
+			log.Printf("Failed to refresh profile picture for thread %s: %v", id, err)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

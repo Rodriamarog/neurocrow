@@ -11,25 +11,68 @@ import (
 )
 
 type MessengerProfileResponse struct {
-	Name       string `json:"name"`
-	ProfilePic string `json:"profile_pic"`
-	Error      struct {
+	Name          string `json:"name"`
+	ProfilePic    string `json:"profile_pic"`         // For Facebook
+	ProfilePicURL string `json:"profile_picture_url"` // For Instagram
+	ID            string `json:"id"`
+	Error         struct {
 		Message string `json:"message"`
 		Code    int    `json:"code"`
 	} `json:"error"`
 }
 
-// FetchProfilePicture gets the profile picture URL for a user from the Messenger Platform API
+// Updated RefreshProfilePicture to be smarter about when to refresh the profile picture.
+func RefreshProfilePicture(db *sql.DB, threadID string) error {
+	// First check if we need to refresh by looking at the current URL.
+	var currentURL string
+	err := db.QueryRow(`
+        SELECT profile_picture_url 
+        FROM conversations 
+        WHERE thread_id = $1
+    `, threadID).Scan(&currentURL)
+
+	// Refresh if no URL is found or if the URL contains an expired indicator.
+	needsRefresh := err == sql.ErrNoRows ||
+		strings.Contains(currentURL, "oe=") ||
+		strings.Contains(currentURL, "expired")
+
+	if !needsRefresh {
+		log.Printf("✅ Profile picture for thread %s doesn't need refresh", threadID)
+		return nil
+	}
+
+	// If refresh is needed, get the necessary details.
+	var platform string
+	var accessToken string
+	err = db.QueryRow(`
+        SELECT 
+            m.platform,
+            p.access_token
+        FROM messages m
+        JOIN social_pages p ON m.page_id = p.id
+        WHERE m.thread_id = $1
+        ORDER BY m.timestamp DESC
+        LIMIT 1
+    `, threadID).Scan(&platform, &accessToken)
+	if err != nil {
+		return fmt.Errorf("failed to get thread details: %v", err)
+	}
+
+	return UpdateProfilePictureInDB(db, threadID, accessToken, platform)
+}
+
+// Updated FetchProfilePicture to use the Messenger Platform API endpoint.
 func FetchProfilePicture(userID, accessToken, platform string) (string, error) {
-	// Skip test threads
 	if strings.HasPrefix(userID, "thread_") {
+		log.Printf("🔍 Skipping test thread: %s", userID)
 		return "", fmt.Errorf("test thread, skipping profile picture fetch")
 	}
 
-	log.Printf("🔍 Attempting to fetch profile picture for user ID %s on %s", userID, platform)
-
+	log.Printf("🔍 Fetching profile picture for user %s on %s", userID, platform)
+	// Use the Messenger Platform API endpoint which works for both Facebook and Instagram
 	url := fmt.Sprintf("https://graph.facebook.com/v18.0/%s?fields=name,profile_pic&access_token=%s",
 		userID, accessToken)
+
 	log.Printf("📡 Calling Messenger Platform API: %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -47,9 +90,11 @@ func FetchProfilePicture(userID, accessToken, platform string) (string, error) {
 	if err := json.Unmarshal(body, &mResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %v", err)
 	}
+
 	if mResp.Error.Message != "" {
 		return "", fmt.Errorf("API error: %s (code %d)", mResp.Error.Message, mResp.Error.Code)
 	}
+
 	if mResp.ProfilePic == "" {
 		return "", fmt.Errorf("no profile picture available")
 	}
@@ -57,7 +102,6 @@ func FetchProfilePicture(userID, accessToken, platform string) (string, error) {
 }
 
 func UpdateProfilePictureInDB(db *sql.DB, threadID, accessToken, platform string) error {
-	// thread_id is the Meta user ID for real conversations
 	pictureURL, err := FetchProfilePicture(threadID, accessToken, platform)
 	if err != nil {
 		if strings.HasPrefix(threadID, "thread_") {
@@ -73,7 +117,6 @@ func UpdateProfilePictureInDB(db *sql.DB, threadID, accessToken, platform string
             updated_at = CURRENT_TIMESTAMP
         WHERE thread_id = $2
     `, pictureURL, threadID)
-
 	if err != nil {
 		return fmt.Errorf("failed to update profile picture in DB: %v", err)
 	}

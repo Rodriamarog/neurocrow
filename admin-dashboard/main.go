@@ -44,6 +44,8 @@ func main() {
 	http.HandleFunc("/thread-preview", limiter.ViewLimit.RateLimit(handlers.GetThreadPreview))
 	http.HandleFunc("/toggle-bot", limiter.ViewLimit.RateLimit(handlers.ToggleBotStatus))
 	http.HandleFunc("/chat-messages", limiter.ViewLimit.RateLimit(handlers.GetChatMessages))
+	// New route to refresh all profile pictures
+	http.HandleFunc("/refresh-profile-pictures", limiter.ViewLimit.RateLimit(handlers.RefreshProfilePictures))
 
 	port := os.Getenv("PORT")
 	if port == "" {

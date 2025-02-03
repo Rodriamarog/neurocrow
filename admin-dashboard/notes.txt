@@ -1,0 +1,6 @@
+Use Facebook GRAPH API to fetch profile pictures for BOTH instagram and facbeook
+not a separate method for each one.
+
+
+Running this bitchass command refreshes the profile pictures:
+curl -X POST http://localhost:8080/refresh-profile-pictures

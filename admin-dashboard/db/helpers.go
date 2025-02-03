@@ -1,9 +1,9 @@
 package db
 
 import (
-	"admin-dashboard/cache"
 	"admin-dashboard/models"
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 )
@@ -20,7 +20,8 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 	defer rows.Close()
 
 	var messages []models.Message
-	var dbProfilePics = make(map[string]string) // Track profile URLs from DB
+	// Track unique users and their profile pictures
+	seenUsers := make(map[string]string)
 
 	for rows.Next() {
 		var msg models.Message
@@ -45,46 +46,20 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 			continue
 		}
 
-		if profilePicture.Valid {
-			dbProfilePics[msg.FromUser] = profilePicture.String
-			msg.ProfilePictureURL = profilePicture.String
+		if profileURL, seen := seenUsers[msg.FromUser]; seen {
+			msg.ProfilePictureURL = profileURL
 		} else {
-			msg.ProfilePictureURL = "/static/default-avatar.png"
+			if profilePicture.Valid {
+				msg.ProfilePictureURL = profilePicture.String
+				seenUsers[msg.FromUser] = profilePicture.String
+			} else {
+				msg.ProfilePictureURL = "/static/default-avatar.png"
+				seenUsers[msg.FromUser] = "/static/default-avatar.png"
+			}
 		}
 
 		messages = append(messages, msg)
 	}
-
-	// Collect user IDs for bulk cache lookup
-	userIDs := make([]string, 0, len(dbProfilePics))
-	for userID := range dbProfilePics {
-		userIDs = append(userIDs, userID)
-	}
-
-	// Fetch cached profile pictures in bulk
-	cachedProfiles, err := cache.BulkGetProfilePictures(userIDs)
-	if err != nil {
-		log.Printf("⚠️ Error bulk fetching profile pictures: %v", err)
-		cachedProfiles = make(map[string]string) // Initialize empty map on error
-	}
-
-	// Update messages with cached values where available
-	for i := range messages {
-		if url, exists := cachedProfiles[messages[i].FromUser]; exists {
-			messages[i].ProfilePictureURL = url
-		}
-	}
-
-	// Async cache population for missing entries
-	go func() {
-		for userID, url := range dbProfilePics {
-			if _, exists := cachedProfiles[userID]; !exists && url != "" {
-				if err := cache.CacheProfilePicture(userID, url); err != nil {
-					log.Printf("⚠️ Failed to cache %s: %v", userID, err)
-				}
-			}
-		}
-	}()
 
 	return messages, nil
 }
@@ -124,22 +99,24 @@ func LogThreadDetails(threadID string) {
 
 // UpdateBotStatus updates the bot_enabled status for a specific thread
 func UpdateBotStatus(threadID string, enabled bool) error {
-	log.Printf("🤖 Attempting to update bot status for thread %s to %v", threadID, enabled)
-
 	result, err := DB.Exec(`
         UPDATE conversations 
         SET bot_enabled = $2, 
             updated_at = CURRENT_TIMESTAMP
         WHERE thread_id = $1
     `, threadID, enabled)
-
 	if err != nil {
-		log.Printf("❌ Failed to update bot status: %v", err)
 		return err
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	log.Printf("✅ Bot status updated. Rows affected: %d", rowsAffected)
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("no conversation found with thread_id: %s", threadID)
+	}
 
 	return nil
 }
