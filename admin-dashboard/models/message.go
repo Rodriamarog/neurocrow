@@ -16,5 +16,5 @@ type Message struct {
 	Read              bool      `json:"read"`
 	Source            string    `json:"source"`
 	BotEnabled        bool      `json:"bot_enabled"`
-	ProfilePictureURL string    `json:"profile_picture_url"`
+	ProfilePictureURL string    `json:"profile_picture_url"` // Ensure this is a string
 }

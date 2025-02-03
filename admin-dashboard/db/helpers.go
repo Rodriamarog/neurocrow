@@ -6,7 +6,17 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 )
+
+// New helper function to validate profile picture URLs
+func isValidProfilePicture(url string) bool {
+	trimmed := strings.TrimSpace(url)
+	// Accept absolute URLs and our static default
+	return strings.HasPrefix(trimmed, "http://") ||
+		strings.HasPrefix(trimmed, "https://") ||
+		trimmed == "/static/default-avatar.png"
+}
 
 func FetchMessages(query string, args ...interface{}) ([]models.Message, error) {
 	if len(args) > 0 && args[0] == "" {
@@ -20,8 +30,6 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 	defer rows.Close()
 
 	var messages []models.Message
-	// Track unique users and their profile pictures
-	seenUsers := make(map[string]string)
 
 	for rows.Next() {
 		var msg models.Message
@@ -46,16 +54,23 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 			continue
 		}
 
-		if profileURL, seen := seenUsers[msg.FromUser]; seen {
-			msg.ProfilePictureURL = profileURL
-		} else {
-			if profilePicture.Valid {
-				msg.ProfilePictureURL = profilePicture.String
-				seenUsers[msg.FromUser] = profilePicture.String
+		// Set ClientID if valid
+		if clientID.Valid {
+			msg.ClientID = &clientID.String
+		}
+
+		// Simple profile picture check: if the trimmed value starts with "http://" or "https://", use it.
+		// Otherwise, default to the provided URL.
+		if profilePicture.Valid {
+			trimmed := strings.TrimSpace(profilePicture.String)
+			if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+				msg.ProfilePictureURL = trimmed
 			} else {
-				msg.ProfilePictureURL = "/static/default-avatar.png"
-				seenUsers[msg.FromUser] = "/static/default-avatar.png"
+				log.Printf("  - Invalid profile picture URL: %s", trimmed)
+				msg.ProfilePictureURL = "https://www.svgrepo.com/show/452030/avatar-default.svg"
 			}
+		} else {
+			msg.ProfilePictureURL = "https://www.svgrepo.com/show/452030/avatar-default.svg"
 		}
 
 		messages = append(messages, msg)

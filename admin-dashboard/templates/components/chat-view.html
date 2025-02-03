@@ -15,9 +15,7 @@
             {{with index .Messages 0}}
             <div class="flex items-center">
                 <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
-                    <img src="{{if ne .ProfilePictureURL ""}}{{.ProfilePictureURL}}{{else}}/static/default-avatar.png{{end}}"
-                         alt="Profile"
-                         class="h-full w-full object-cover">
+                    <img src="{{.ProfilePictureURL}}" alt="Profile Picture" onerror="this.onerror=null;this.src='/static/default-avatar.png';">
                 </div>
                 <div class="ml-2">
                     <div class="text-sm font-medium">{{.FromUser}}</div>

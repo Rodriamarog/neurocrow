@@ -4,7 +4,8 @@
     <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
         <img src="{{.ProfilePictureURL}}"
              alt="User Profile"
-             class="h-full w-full object-cover">
+             class="h-full w-full object-cover"
+             onerror="this.onerror=null;this.src='/static/default-avatar.png';">
     </div>
     {{end}}
     

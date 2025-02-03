@@ -40,11 +40,7 @@ const (
             lm.read,
             lm.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            CASE 
-                WHEN lm.source IN ('bot', 'admin', 'system') THEN '/static/default-avatar.png'
-                WHEN c.profile_picture_url IS NOT NULL THEN c.profile_picture_url
-                ELSE '/static/default-avatar.png'
-            END as profile_picture_url
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url
         FROM latest_messages lm
         LEFT JOIN conversations c ON c.thread_id = lm.thread_id
         ORDER BY lm.timestamp DESC`
@@ -86,11 +82,7 @@ const (
             lm.read,
             lm.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            CASE 
-                WHEN lm.source IN ('bot', 'admin', 'system') THEN '/static/default-avatar.png'
-                WHEN c.profile_picture_url IS NOT NULL THEN c.profile_picture_url
-                ELSE '/static/default-avatar.png'
-            END as profile_picture_url
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url
         FROM latest_messages lm
         LEFT JOIN conversations c ON c.thread_id = lm.thread_id
         WHERE 
@@ -138,11 +130,7 @@ const (
             m.read, 
             m.source,
             COALESCE(c.bot_enabled, true) as bot_enabled,
-            CASE 
-                WHEN m.source IN ('bot', 'admin', 'system') THEN '/static/default-avatar.png'
-                WHEN c.profile_picture_url IS NOT NULL THEN c.profile_picture_url
-                ELSE '/static/default-avatar.png'
-            END as profile_picture_url
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url
         FROM messages m
         LEFT JOIN conversations c ON m.thread_id = c.thread_id
         WHERE m.thread_id = $1
@@ -155,11 +143,7 @@ const (
             m.client_id,
             m.page_id,
             m.platform,
-            CASE 
-                WHEN m.source IN ('bot', 'admin', 'system') THEN '/static/default-avatar.png'
-                WHEN c.profile_picture_url IS NOT NULL THEN c.profile_picture_url
-                ELSE '/static/default-avatar.png'
-            END as profile_picture_url,
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url,
             COALESCE(c.bot_enabled, TRUE) as bot_enabled
         FROM messages m
         LEFT JOIN conversations c ON c.thread_id = m.thread_id
@@ -206,11 +190,7 @@ const (
             m.read,
             m.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            CASE 
-                WHEN m.source IN ('bot', 'admin', 'system') THEN '/static/default-avatar.png'
-                WHEN c.profile_picture_url IS NOT NULL THEN c.profile_picture_url
-                ELSE '/static/default-avatar.png'
-            END as profile_picture_url
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url
         FROM messages m
         JOIN thread_owner t ON m.thread_id = t.thread_id
         LEFT JOIN conversations c ON m.thread_id = c.thread_id

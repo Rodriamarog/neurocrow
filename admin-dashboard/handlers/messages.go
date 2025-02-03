@@ -107,10 +107,64 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 	var messages []models.Message
 	var err error
 
+	query := `
+        WITH thread_owner AS (
+            SELECT DISTINCT ON (m.thread_id)
+                m.thread_id, 
+                m.from_user as original_sender
+            FROM messages m
+            ORDER BY m.thread_id, m.timestamp ASC
+        ),
+        latest_messages AS (
+            SELECT DISTINCT ON (m.thread_id)
+                m.id, 
+                m.client_id, 
+                m.page_id, 
+                m.platform,
+                t.original_sender as thread_owner,  
+                m.content, 
+                m.timestamp, 
+                m.thread_id, 
+                m.read,
+                m.source
+            FROM messages m
+            JOIN thread_owner t ON m.thread_id = t.thread_id
+            ORDER BY m.thread_id, m.timestamp DESC
+        )
+        SELECT 
+            lm.id, 
+            lm.client_id, 
+            lm.page_id, 
+            lm.platform,
+            lm.thread_owner as from_user,  
+            lm.content, 
+            lm.timestamp, 
+            lm.thread_id, 
+            lm.read,
+            lm.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
+            CASE 
+                WHEN lm.source IN ('bot', 'admin', 'system') THEN '/static/default-avatar.png'
+                WHEN c.profile_picture_url IS NULL THEN '/static/default-avatar.png'
+                WHEN c.profile_picture_url = '' THEN '/static/default-avatar.png'
+                ELSE c.profile_picture_url
+            END as profile_picture_url
+        FROM latest_messages lm
+        LEFT JOIN conversations c ON c.thread_id = lm.thread_id
+        WHERE 
+            CASE 
+                WHEN $1 != '' THEN 
+                    lm.content ILIKE '%' || $1 || '%' 
+                    OR lm.thread_owner ILIKE '%' || $1 || '%'
+                ELSE TRUE
+            END
+        ORDER BY lm.timestamp DESC;
+    `
+
 	if searchQuery != "" {
-		messages, err = db.FetchMessages(db.GetMessageListSearchQuery, fmt.Sprintf("%%%s%%", searchQuery))
+		messages, err = db.FetchMessages(query, fmt.Sprintf("%%%s%%", searchQuery))
 	} else {
-		messages, err = db.FetchMessages(db.GetMessagesQuery)
+		messages, err = db.FetchMessages(query)
 	}
 
 	if err != nil {
