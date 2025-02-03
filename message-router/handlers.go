@@ -141,35 +141,32 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 			// Echo message handling
 			if msg.Message.IsEcho {
 				log.Printf("      📝 Processing echo message")
-				source := "bot"
-				fromUser := "bot"
+				platform := event.Object
+				if platform == "page" {
+					platform = "facebook"
+				}
 
-				// Only treat as human message if sender ID matches page ID AND there's no app_id
-				if msg.Sender.ID == entry.ID && msg.Message.AppId == 0 {
-					source = "human"
-					fromUser = "admin"
-					log.Printf("      🔍 Detected human agent message (sender ID matches page ID)")
-				} else if msg.Message.AppId > 0 {
-					// Skip storing bot echoes since we already stored them in handleBotpressResponse
-					log.Printf("      📝 Skipping storage of bot echo message (app_id: %d)", msg.Message.AppId)
+				// For Facebook, we can check the app_id
+				if platform == "facebook" && msg.Message.AppId > 0 {
+					log.Printf("      📝 Skipping storage of Facebook bot echo message (app_id: %d)", msg.Message.AppId)
 					continue
 				}
 
-				// Only store if it's a human message
-				if source == "human" {
-					// Normalize platform
-					msgPlatform := event.Object
-					if msgPlatform == "page" {
-						msgPlatform = "facebook"
-						log.Printf("      🔄 Normalized platform from 'page' to 'facebook'")
+				// For Instagram, check if sender matches page and it's not a human message
+				if platform == "instagram" && msg.Sender.ID == entry.ID {
+					// Additional check to ensure it's really a bot message
+					if _, err := getPageInfo(ctx, entry.ID); err == nil {
+						log.Printf("      📝 Skipping storage of Instagram bot echo message")
+						continue
 					}
+				}
 
-					log.Printf("      💾 Storing echo message from %s", source)
-					if err := storeMessage(ctx, entry.ID, msg.Recipient.ID, msgPlatform, msg.Message.Text, fromUser, source, false); err != nil {
-						log.Printf("❌ Error storing echo message: %v", err)
-					} else {
-						log.Printf("      ✅ Echo message stored successfully")
-					}
+				// If we get here, it's a human message
+				log.Printf("      🔍 Detected human agent message (sender ID: %s)", msg.Sender.ID)
+				if err := storeMessage(ctx, entry.ID, msg.Recipient.ID, platform, msg.Message.Text, "admin", "human", false); err != nil {
+					log.Printf("❌ Error storing echo message: %v", err)
+				} else {
+					log.Printf("      ✅ Echo message stored successfully")
 				}
 				continue
 			}
