@@ -38,6 +38,7 @@ type MessageData struct {
 	Mid    string `json:"mid"`
 	Text   string `json:"text"`
 	IsEcho bool   `json:"is_echo"`
+	AppId  int64  `json:"app_id"`
 }
 
 // DeliveryData represents a delivery receipt from Facebook
