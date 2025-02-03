@@ -5,6 +5,7 @@ import (
 	"admin-dashboard/models"
 	"admin-dashboard/pkg/meta"
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -187,10 +188,8 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 }
 
 func sendToMessageRouter(pageID, threadID, platform, message string) error {
-	messageRouterURL := os.Getenv("MESSAGE_ROUTER_URL") // e.g., "http://localhost:8080"
-	if messageRouterURL == "" {
-		return fmt.Errorf("MESSAGE_ROUTER_URL environment variable not set")
-	}
+	// Use the Render deployment URL
+	messageRouterURL := "https://neurocrow-message-router.onrender.com"
 
 	payload := map[string]interface{}{
 		"page_id":      pageID,
@@ -204,22 +203,47 @@ func sendToMessageRouter(pageID, threadID, platform, message string) error {
 		return fmt.Errorf("error creating payload: %v", err)
 	}
 
-	req, err := http.NewRequest("POST", messageRouterURL+"/send-message", bytes.NewBuffer(jsonData))
+	// Create request with context for timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // Longer timeout for Render's cold starts
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", messageRouterURL+"/send-message", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("error creating request: %v", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Use custom transport with longer timeouts
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+
+	log.Printf("📤 Sending message to router: %s", messageRouterURL)
 	resp, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("request timed out after 30 seconds")
+		}
 		return fmt.Errorf("error sending message: %v", err)
 	}
 	defer resp.Body.Close()
 
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading response: %v", err)
+	}
+
+	// Log response for debugging
+	log.Printf("📥 Message router response (status %d): %s", resp.StatusCode, string(body))
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("message router error (status %d): %s", resp.StatusCode, string(body))
 	}
 
