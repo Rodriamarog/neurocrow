@@ -350,10 +350,28 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		log.Printf("✅ Message stored successfully. Rows affected: %d", rowsAffected)
 	}
 
-	// Set headers for HTMX to trigger a refresh of the chat view
+	// --- New refresh logic ---
+	newMsgs, err := db.FetchMessages(`
+        SELECT id, client_id, page_id, platform, 
+               "from_user", content, timestamp, thread_id, 
+               "read", source, bot_enabled, profile_picture_url 
+        FROM messages
+        WHERE thread_id = $1
+        ORDER BY timestamp DESC LIMIT 1
+    `, threadID)
+	if err != nil || len(newMsgs) == 0 {
+		log.Printf("❌ Error fetching new message: %v", err)
+		db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("HX-Trigger", "refreshChat")
-	w.Header().Set("HX-Trigger-After-Settle", "{\"refreshMessageList\": true}")
 	w.WriteHeader(http.StatusOK)
+	if err := tmpl.ExecuteTemplate(w, "message-bubble.html", newMsgs[0]); err != nil {
+		db.HandleError(w, err, "Error rendering new message", http.StatusInternalServerError)
+		return
+	}
+	// --- End of refresh logic ---
 }
 
 func GetThreadPreview(w http.ResponseWriter, r *http.Request) {

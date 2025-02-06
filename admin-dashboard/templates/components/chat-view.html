@@ -86,7 +86,13 @@
           hx-post="/send-message" 
           hx-target="#messages-container"
           hx-swap="beforeend"
-          hx-on::after-request="if(event.detail.successful) { this.reset(); }"
+          hx-on::after-request="
+            if(event.detail.successful) { 
+              this.reset();
+              const container = document.getElementById('messages-container');
+              container.scrollTop = container.scrollHeight;
+            }
+          "
           _="on keydown[key is 'Enter'] from #message-input
                halt the event
                if #message-input.value.trim() !== ''
