@@ -191,11 +191,15 @@ func sendToMessageRouter(pageID, threadID, platform, message string) error {
 	// Use the Render deployment URL
 	messageRouterURL := "https://neurocrow-message-router.onrender.com"
 
+	// Updated payload with additional fields
 	payload := map[string]interface{}{
-		"page_id":      pageID,
-		"recipient_id": threadID,
-		"platform":     platform,
-		"message":      message,
+		"page_id":        pageID,
+		"recipient_id":   threadID,
+		"platform":       platform,
+		"message":        message,
+		"messaging_type": "MESSAGE_TAG",
+		"tag":            "HUMAN_AGENT",
+		"source":         "human", // This helps the message router distinguish human vs bot messages
 	}
 
 	jsonData, err := json.Marshal(payload)
