@@ -358,6 +358,9 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Right before template execution, add:
+	log.Printf("🔄 Rendering single message bubble for thread: %s", threadID)
+
 	// Return only the new message rendered with the message-bubble template
 	w.WriteHeader(http.StatusOK)
 	if err := tmpl.ExecuteTemplate(w, "message-bubble.html", newMsgs[0]); err != nil {
@@ -437,7 +440,8 @@ func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
 
 func GetChatMessages(w http.ResponseWriter, r *http.Request) {
 	threadID := r.URL.Query().Get("thread_id")
-	log.Printf("GetChatMessages called with thread_id: %s", threadID)
+	// At the start of GetChatMessages, add:
+	log.Printf("⚠️ Full chat refresh requested for thread: %s", threadID)
 
 	messages, err := db.FetchMessages(db.GetChatQuery, threadID)
 	if err != nil {
