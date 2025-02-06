@@ -112,6 +112,26 @@ const (
             true
         )
         RETURNING id`
+
+	// Query to fetch the last inserted message
+	GetLastMessageQuery = `
+        SELECT 
+            m.id, 
+            m.client_id, 
+            m.page_id, 
+            m.platform,
+            m.from_user, 
+            m.content, 
+            m.timestamp, 
+            m.thread_id, 
+            m.read,
+            m.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url
+        FROM messages m
+        LEFT JOIN conversations c ON c.thread_id = m.thread_id
+        WHERE m.thread_id = $1
+        ORDER BY m.timestamp DESC LIMIT 1`
 )
 
 // Chat related queries
