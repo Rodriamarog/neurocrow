@@ -358,7 +358,7 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("HX-Trigger", "refreshChat")
+	// Return only the new message rendered with the message-bubble template
 	w.WriteHeader(http.StatusOK)
 	if err := tmpl.ExecuteTemplate(w, "message-bubble.html", newMsgs[0]); err != nil {
 		db.HandleError(w, err, "Error rendering new message", http.StatusInternalServerError)

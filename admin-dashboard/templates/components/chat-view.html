@@ -47,24 +47,11 @@
     <!-- Scrollable Messages -->
     <div id="messages-container" 
         class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 overflow-x-hidden"
-        hx-get="/chat-messages?thread_id={{if .Messages}}{{with index .Messages 0}}{{.ThreadID}}{{end}}{{end}}"
-        hx-trigger="refreshChat from:body"
-        hx-target="this"
-        hx-swap="innerHTML"
         _="on load
             set my.scrollTop to my.scrollHeight
             on htmx:afterSwap 
             wait 10ms 
-            set my.scrollTop to my.scrollHeight
-            on scroll
-            if (event.target.scrollHeight - event.target.scrollTop - event.target.clientHeight) > 500
-            remove .opacity-0 from #scroll-bottom-btn
-            remove .pointer-events-none from #scroll-bottom-btn
-            else
-            add .at-bottom to me
-            add .opacity-0 to #scroll-bottom-btn
-            add .pointer-events-none to #scroll-bottom-btn
-            end">
+            set my.scrollTop to my.scrollHeight">
         {{template "chat-messages" .}}
     </div>
 
