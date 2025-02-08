@@ -306,16 +306,18 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 	log.Printf("📤 Retrieved details - Platform: %v, Meta Page ID: %v",
 		platform.String, metaPageID.String)
 
-	// Send message through the message router using the Meta page ID
-	if metaPageID.Valid && platform.Valid {
-		err = sendToMessageRouter(metaPageID.String, threadID, platform.String, content)
-		if err != nil {
-			log.Printf("❌ Error sending message through router: %v", err)
-			db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
-			return
+	// Remove synchronous call and launch message routing in a goroutine
+	go func() {
+		if metaPageID.Valid && platform.Valid {
+			err := sendToMessageRouter(metaPageID.String, threadID, platform.String, content)
+			if err != nil {
+				log.Printf("❌ Error sending message through router: %v", err)
+				// Cannot affect the response from here
+				return
+			}
+			log.Printf("✅ Message sent through message router successfully")
 		}
-		log.Printf("✅ Message sent through message router successfully")
-	}
+	}()
 
 	// Store the message in the database using our internal page UUID
 	clientIDStr := ""
