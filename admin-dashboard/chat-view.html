@@ -1,0 +1,15 @@
+<!-- ...existing code... -->
+<form id="message-form" hx-post="/send-message" hx-target="#messages-container" hx-swap="beforeend"
+      hx-trigger="submit"
+      hx-on:before-request="var input = document.getElementById('message-input'); if (!input.value.trim()) { event.preventDefault(); return; } var container = document.getElementById('messages-container'); var pending = document.createElement('div'); pending.setAttribute('data-pending-message', 'true'); pending.className = 'message-bubble flex opacity-70 relative'; pending.innerHTML = input.value + '<svg class=\'absolute top-0 right-0 animate-spin h-5 w-5 text-gray-500\' xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\'><circle class=\'opacity-25\' cx=\'12\' cy=\'12\' r=\'10\' stroke=\'currentColor\' stroke-width=\'4\'></circle><path class=\'opacity-75\' fill=\'currentColor\' d=\'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z\'/></svg>'; container.appendChild(pending); container.scrollTop = container.scrollHeight; input.value = '';"
+      hx-on:after-request="var pending = document.querySelector('[data-pending-message]'); if(pending){ pending.remove(); }"
+      hx-on:after-on-error="var pending = document.querySelector('[data-pending-message]'); if(pending){ pending remove(); } var errDiv = document.getElementById('error-message'); errDiv.style.display = 'block'; setTimeout(function(){ errDiv.style.display = 'none'; },3000);">
+    <!-- ...existing input and button elements... -->
+</form>
+<!-- ...existing code... -->
+
+<!-- Add error message div at the bottom of the view -->
+<div id="error-message" style="position: fixed; bottom: 0; left: 0; right: 0; background-color: red; color: white; text-align: center; padding: 10px; display: none;">
+    Failed to send message. Please try again.
+</div>
+<!-- ...existing code... -->
