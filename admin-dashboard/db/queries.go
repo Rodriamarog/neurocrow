@@ -60,7 +60,7 @@ const (
                 m.from_user as original_sender
             FROM messages m
             JOIN social_pages sp ON m.page_id = sp.id
-            WHERE sp.client_id = $1
+            WHERE sp.client_id = $1::uuid
             ORDER BY m.thread_id, m.timestamp ASC
         ),
         latest_messages AS (
@@ -95,9 +95,14 @@ const (
         FROM latest_messages lm
         LEFT JOIN conversations c ON c.thread_id = lm.thread_id
         WHERE 
-            lm.content ILIKE $2 OR 
-            lm.thread_owner ILIKE $2
-        ORDER BY lm.timestamp DESC`
+            CASE 
+                WHEN $2 != '' THEN 
+                    lm.content ILIKE '%' || $2 || '%' OR 
+                    lm.thread_owner ILIKE '%' || $2 || '%'
+                ELSE TRUE
+            END
+        ORDER BY lm.timestamp DESC;
+    `
 
 	// InsertMessageQuery remains unchanged.
 	InsertMessageQuery = `

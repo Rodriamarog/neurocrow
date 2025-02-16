@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"admin-dashboard/db"
-	"admin-dashboard/models"
 	"admin-dashboard/pkg/auth"
 	"admin-dashboard/pkg/meta"
 	"admin-dashboard/pkg/template" // new import
@@ -104,12 +103,11 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetMessageList(w http.ResponseWriter, r *http.Request) {
-	// Add explicit debugging for request
 	log.Printf("🔍 Request received at: %s", r.URL.Path)
 
-	// Retrieve the authenticated user from context.
 	user := r.Context().Value("user").(*auth.User)
 	if user == nil {
+		log.Printf("❌ No user found in context")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -118,69 +116,8 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔍 Raw URL: %s", r.URL.String())
 	log.Printf("🔍 Search query received: %q", searchQuery)
 
-	var messages []models.Message
-	var err error
-
-	query := `
-        WITH thread_owner AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.thread_id, 
-                m.from_user as original_sender
-            FROM messages m
-            ORDER BY m.thread_id, m.timestamp ASC
-        ),
-        latest_messages AS (
-            SELECT DISTINCT ON (m.thread_id)
-                m.id, 
-                m.client_id, 
-                m.page_id, 
-                m.platform,
-                t.original_sender as thread_owner,  
-                m.content, 
-                m.timestamp, 
-                m.thread_id, 
-                m.read,
-                m.source
-            FROM messages m
-            JOIN thread_owner t ON m.thread_id = t.thread_id
-            ORDER BY m.thread_id, m.timestamp DESC
-        )
-        SELECT 
-            lm.id, 
-            lm.client_id, 
-            lm.page_id, 
-            lm.platform,
-            lm.thread_owner as from_user,  
-            lm.content, 
-            lm.timestamp, 
-            lm.thread_id, 
-            lm.read,
-            lm.source,
-            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            CASE 
-                WHEN lm.source IN ('bot', 'admin', 'system') THEN '/static/default-avatar.png'
-                WHEN c.profile_picture_url IS NULL THEN '/static/default-avatar.png'
-                WHEN c.profile_picture_url = '' THEN '/static/default-avatar.png'
-                ELSE c.profile_picture_url
-            END as profile_picture_url
-        FROM latest_messages lm
-        LEFT JOIN conversations c ON c.thread_id = lm.thread_id
-        WHERE 
-            CASE 
-                WHEN $1 != '' THEN 
-                    lm.content ILIKE '%' || $1 || '%' 
-                    OR lm.thread_owner ILIKE '%' || $1 || '%'
-                ELSE TRUE
-            END
-        ORDER BY lm.timestamp DESC;
-    `
-
-	if searchQuery != "" {
-		messages, err = db.FetchMessages(user.ClientID, query, fmt.Sprintf("%%%s%%", searchQuery))
-	} else {
-		messages, err = db.FetchMessages(user.ClientID, query)
-	}
-
+	// Pass the search term as-is so that the query handles it.
+	messages, err := db.FetchMessages(user.ClientID, db.GetMessageListSearchQuery, searchQuery)
 	if err != nil {
 		log.Printf("❌ Error executing query: %v", err)
 		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
@@ -191,7 +128,6 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 
 	if err := template.RenderTemplate(w, "message-list", map[string]interface{}{
 		"Messages": messages,
-		"User":     user,
 	}); err != nil {
 		db.HandleError(w, err, "Error rendering message list", http.StatusInternalServerError)
 	}

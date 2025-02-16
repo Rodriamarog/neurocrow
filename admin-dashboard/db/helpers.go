@@ -27,22 +27,25 @@ func FetchMessages(clientID string, query string, args ...interface{}) ([]models
 	log.Printf("  - Query: %s", query)
 	log.Printf("  - Additional args: %+v", args)
 
-	// Prepend clientID to args
-	newArgs := append([]interface{}{clientID}, args...)
-	log.Printf("  - Final args for query: %+v", newArgs)
-
-	// Try to validate UUID format
+	// Validate UUID
 	_, err := uuid.Parse(clientID)
 	if err != nil {
 		log.Printf("❌ Invalid UUID format for clientID: %v", err)
 		return nil, fmt.Errorf("invalid UUID format: %v", err)
 	}
 
-	rows, err := DB.Query(query, newArgs...)
+	// Create final args array with clientID first
+	queryArgs := make([]interface{}, 0, len(args)+1)
+	queryArgs = append(queryArgs, clientID)
+	queryArgs = append(queryArgs, args...)
+
+	log.Printf("  - Final args for query: %+v", queryArgs)
+
+	rows, err := DB.Query(query, queryArgs...)
 	if err != nil {
 		log.Printf("❌ Database query error: %v", err)
 		log.Printf("  - Query that failed: %s", query)
-		log.Printf("  - Args that failed: %+v", newArgs)
+		log.Printf("  - Args that failed: %+v", queryArgs)
 		return nil, err
 	}
 	defer rows.Close()
