@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/google/uuid" // added for UUID validation
 )
 
 // New helper function to validate profile picture URLs
@@ -18,19 +20,34 @@ func isValidProfilePicture(url string) bool {
 		trimmed == "/static/default-avatar.png"
 }
 
-func FetchMessages(query string, args ...interface{}) ([]models.Message, error) {
-	if len(args) > 0 && args[0] == "" {
-		args = []interface{}{}
+// Updated FetchMessages with extensive logging and UUID validation
+func FetchMessages(clientID string, query string, args ...interface{}) ([]models.Message, error) {
+	log.Printf("🔍 FetchMessages called with:")
+	log.Printf("  - ClientID: %s", clientID)
+	log.Printf("  - Query: %s", query)
+	log.Printf("  - Additional args: %+v", args)
+
+	// Prepend clientID to args
+	newArgs := append([]interface{}{clientID}, args...)
+	log.Printf("  - Final args for query: %+v", newArgs)
+
+	// Try to validate UUID format
+	_, err := uuid.Parse(clientID)
+	if err != nil {
+		log.Printf("❌ Invalid UUID format for clientID: %v", err)
+		return nil, fmt.Errorf("invalid UUID format: %v", err)
 	}
 
-	rows, err := DB.Query(query, args...)
+	rows, err := DB.Query(query, newArgs...)
 	if err != nil {
+		log.Printf("❌ Database query error: %v", err)
+		log.Printf("  - Query that failed: %s", query)
+		log.Printf("  - Args that failed: %+v", newArgs)
 		return nil, err
 	}
 	defer rows.Close()
 
 	var messages []models.Message
-
 	for rows.Next() {
 		var msg models.Message
 		var clientID, profilePicture sql.NullString
@@ -50,9 +67,15 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 			&profilePicture,
 		)
 		if err != nil {
-			log.Printf("Error scanning message: %v", err)
+			log.Printf("❌ Error scanning row: %v", err)
 			continue
 		}
+
+		log.Printf("✅ Successfully scanned message:")
+		log.Printf("  - ID: %s", msg.ID)
+		log.Printf("  - ThreadID: %s", msg.ThreadID)
+		log.Printf("  - Platform: %s", msg.Platform)
+		log.Printf("  - FromUser: %s", msg.FromUser)
 
 		// Set ClientID if valid
 		if clientID.Valid {
@@ -76,6 +99,7 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 		messages = append(messages, msg)
 	}
 
+	log.Printf("✅ FetchMessages completed. Found %d messages", len(messages))
 	return messages, nil
 }
 

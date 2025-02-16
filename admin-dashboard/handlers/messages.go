@@ -3,72 +3,68 @@ package handlers
 import (
 	"admin-dashboard/db"
 	"admin-dashboard/models"
+	"admin-dashboard/pkg/auth"
 	"admin-dashboard/pkg/meta"
+	"admin-dashboard/pkg/template" // new import
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
 
-var tmpl *template.Template
-
-func init() {
-	// Create a new template with NO name first
-	t := template.New("")
-
-	// Read message-bubble.html content first
-	messageBubbleContent, err := os.ReadFile("templates/components/message-bubble.html")
-	if err != nil {
-		log.Fatalf("Could not read message-bubble.html: %v", err)
-	}
-
-	// Parse it first to make sure it's available
-	t, err = t.Parse(string(messageBubbleContent))
-	if err != nil {
-		log.Fatalf("Could not parse message-bubble.html: %v", err)
-	}
-
-	// Then parse everything else
-	tmpl = template.Must(t.ParseFiles(
-		"templates/layout.html",
-		"templates/messages.html",
-		"templates/components/chat-view.html",
-		"templates/components/message-list.html",
-		"templates/components/thread-preview.html",
-		"templates/components/chat-messages.html", // Add this line
-	))
-
-	// Print ALL defined templates for debugging
-	log.Printf("✅ Available templates: %v", tmpl.DefinedTemplates())
-}
-
+// Updated GetMessages with extensive logging for debugging UUID issues
 func GetMessages(w http.ResponseWriter, r *http.Request) {
-	messages, err := db.FetchMessages(db.GetMessagesQuery)
+	if r.URL.Path != "/" {
+		log.Printf("❌ Wrong path requested: %s", r.URL.Path)
+		http.NotFound(w, r)
+		return
+	}
+
+	user := r.Context().Value("user").(*auth.User)
+	if user == nil {
+		log.Printf("❌ No user found in context")
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	log.Printf("🔍 GetMessages called for user:")
+	log.Printf("  - UserID: %s", user.ID)
+	log.Printf("  - ClientID: %s", user.ClientID)
+	log.Printf("  - Role: %s", user.Role)
+
+	messages, err := db.FetchMessages(user.ClientID, db.GetMessagesQuery)
 	if err != nil {
+		log.Printf("❌ Error in GetMessages: %v", err)
 		db.HandleError(w, err, "Error fetching messages", http.StatusInternalServerError)
 		return
 	}
 
+	log.Printf("✅ Successfully fetched messages for user %s", user.ID)
+	log.Printf("  - Number of messages: %d", len(messages))
+
+	// Include the user in template data.
 	if r.Header.Get("HX-Request") == "true" {
-		tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
+		if err := template.RenderTemplate(w, "message-list", map[string]interface{}{
 			"Messages": messages,
-		})
+			"User":     user,
+		}); err != nil {
+			db.HandleError(w, err, "Error rendering message list", http.StatusInternalServerError)
+		}
 		return
 	}
 
 	data := map[string]interface{}{
 		"Messages": messages,
+		"User":     user,
 	}
 
-	if err := tmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
+	if err := template.RenderTemplate(w, "layout.html", data); err != nil {
 		if !strings.Contains(err.Error(), "write: broken pipe") {
 			log.Printf("Error executing template: %v", err)
 		}
@@ -76,10 +72,17 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetChat(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value("user").(*auth.User)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
 	threadID := r.URL.Query().Get("thread_id")
 	log.Printf("GetChat called with thread_id: %s", threadID)
 
-	messages, err := db.FetchMessages(db.GetChatQuery, threadID)
+	// Pass user.ClientID for client filtering.
+	messages, err := db.FetchMessages(user.ClientID, db.GetChatQuery, threadID)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching chat", http.StatusInternalServerError)
 		return
@@ -89,10 +92,10 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]interface{}{
 		"Messages": messages,
+		"User":     user,
 	}
 
-	// Use the global tmpl variable instead of creating a new one
-	if err := tmpl.ExecuteTemplate(w, "chat-view", data); err != nil {
+	if err := template.RenderTemplate(w, "chat-view", data); err != nil {
 		db.HandleError(w, err, "Error rendering chat", http.StatusInternalServerError)
 		return
 	}
@@ -103,6 +106,13 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 func GetMessageList(w http.ResponseWriter, r *http.Request) {
 	// Add explicit debugging for request
 	log.Printf("🔍 Request received at: %s", r.URL.Path)
+
+	// Retrieve the authenticated user from context.
+	user := r.Context().Value("user").(*auth.User)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
 
 	searchQuery := r.URL.Query().Get("search")
 	log.Printf("🔍 Raw URL: %s", r.URL.String())
@@ -166,9 +176,9 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
     `
 
 	if searchQuery != "" {
-		messages, err = db.FetchMessages(query, fmt.Sprintf("%%%s%%", searchQuery))
+		messages, err = db.FetchMessages(user.ClientID, query, fmt.Sprintf("%%%s%%", searchQuery))
 	} else {
-		messages, err = db.FetchMessages(query)
+		messages, err = db.FetchMessages(user.ClientID, query)
 	}
 
 	if err != nil {
@@ -179,9 +189,9 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✨ Found %d messages matching search: %q", len(messages), searchQuery)
 
-	tmpl := template.Must(template.ParseFiles("templates/components/message-list.html"))
-	if err := tmpl.ExecuteTemplate(w, "message-list", map[string]interface{}{
+	if err := template.RenderTemplate(w, "message-list", map[string]interface{}{
 		"Messages": messages,
+		"User":     user,
 	}); err != nil {
 		db.HandleError(w, err, "Error rendering message list", http.StatusInternalServerError)
 	}
@@ -255,9 +265,17 @@ func sendToMessageRouter(pageID, threadID, platform, message string) error {
 }
 
 // Update the SendMessage function to include the message routing
+// Updated SendMessage signature: change *Request to *http.Request
 func SendMessage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Retrieve the authenticated user from context.
+	user := r.Context().Value("user").(*auth.User)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
@@ -367,7 +385,7 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Return only the new message rendered with the message-bubble template
 	w.WriteHeader(http.StatusOK)
-	if err := tmpl.ExecuteTemplate(w, "message-bubble.html", newMsgs[0]); err != nil {
+	if err := template.RenderTemplate(w, "message-bubble.html", newMsgs[0]); err != nil {
 		db.HandleError(w, err, "Error rendering new message", http.StatusInternalServerError)
 		return
 	}
@@ -375,51 +393,42 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔍 GetThreadPreview called for thread_id: %s", r.URL.Query().Get("thread_id"))
 	threadID := r.URL.Query().Get("thread_id")
 
-	messages, err := db.FetchMessages(db.GetThreadPreviewQuery, threadID)
+	// Retrieve the authenticated user from context.
+	user := r.Context().Value("user").(*auth.User)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	messages, err := db.FetchMessages(user.ClientID, db.GetThreadPreviewQuery, threadID)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching thread preview", http.StatusInternalServerError)
 		return
 	}
 
 	if len(messages) == 0 {
+		log.Printf("❌ No messages found for thread_id: %s", threadID)
 		http.Error(w, "No messages found", http.StatusNotFound)
 		return
 	}
 
-	msg := messages[0]
-
-	tmpl := template.Must(template.New("thread-preview").Parse(`
-    <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
-         id="thread-preview-{{.ThreadID}}"
-         hx-get="/chat?thread_id={{.ThreadID}}"
-         hx-target="#chat-view"
-         hx-trigger="click"
-         _="on htmx:afterOnLoad remove .hidden from #chat-view then remove .translate-x-full from #chat-view">
-        <div class="flex items-center justify-between mb-1">
-            <div class="flex items-center">
-                <div class="w-2 h-2 {{if eq .Platform "facebook"}}bg-blue-500{{else}}bg-pink-500{{end}} rounded-full mr-2"></div>
-                <span class="text-sm font-medium {{if eq .Platform "facebook"}}text-blue-600{{else}}text-pink-600{{end}}">
-                    {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
-                </span>
-            </div>
-            <span class="text-xs text-gray-500">{{.Timestamp.Format "15:04"}}</span>
-        </div>
-        <div class="flex items-center">
-            <div class="h-12 w-12 rounded-full bg-gray-200"></div>
-            <div class="ml-3 flex-1">
-                <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>
-                <div class="text-sm text-gray-500 truncate">{{.Content}}</div>
-            </div>
-        </div>
-    </div>
-    `))
-
-	tmpl.Execute(w, msg)
+	log.Printf("✅ Rendering thread preview for thread_id: %s", threadID)
+	if err := template.RenderTemplate(w, "thread-preview", messages[0]); err != nil {
+		db.HandleError(w, err, "Error rendering thread preview", http.StatusInternalServerError)
+		return
+	}
 }
 
 func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value("user").(*auth.User)
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	log.Printf("🔄 Received toggle request")
 	if r.Method != http.MethodPost {
 		log.Printf("❌ Wrong method for toggle bot status, got: %s", r.Method)
@@ -431,6 +440,7 @@ func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
 	enabled := r.FormValue("enabled") == "true"
 	log.Printf("🔄 Toggling bot status -> threadID: %s, enabled: %v", threadID, enabled)
 
+	// Updated call: removed the user parameter
 	err := db.UpdateBotStatus(threadID, enabled)
 	if err != nil {
 		log.Printf("❌ Error toggling bot status, threadID: %s, %v", threadID, err)
@@ -443,11 +453,18 @@ func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetChatMessages(w http.ResponseWriter, r *http.Request) {
+	// Retrieve the authenticated user from context.
+	user := r.Context().Value("user").(*auth.User)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
 	threadID := r.URL.Query().Get("thread_id")
 	// At the start of GetChatMessages, add:
 	log.Printf("⚠️ Full chat refresh requested for thread: %s", threadID)
 
-	messages, err := db.FetchMessages(db.GetChatQuery, threadID)
+	messages, err := db.FetchMessages(user.ClientID, db.GetChatQuery, threadID)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching chat messages", http.StatusInternalServerError)
 		return
@@ -457,9 +474,10 @@ func GetChatMessages(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]interface{}{
 		"Messages": messages,
+		"User":     user,
 	}
 
-	if err := tmpl.ExecuteTemplate(w, "chat-messages", data); err != nil {
+	if err := template.RenderTemplate(w, "chat-messages", data); err != nil {
 		db.HandleError(w, err, "Error rendering chat messages", http.StatusInternalServerError)
 		return
 	}

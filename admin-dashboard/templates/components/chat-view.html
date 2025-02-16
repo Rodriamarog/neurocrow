@@ -73,22 +73,33 @@
           hx-post="/send-message" 
           hx-target="#messages-container"
           hx-swap="beforeend"
-          hx-on::after-request="
-            if(event.detail.successful) { 
-              this.reset();
-              const container = document.getElementById('messages-container');
-              container.scrollTop = container.scrollHeight;
-            }
-          "
+          hx-trigger="submit"
           _="on keydown[key is 'Enter'] from #message-input
                halt the event
                if #message-input.value.trim() !== ''
                  trigger submit
                end
+             
              on submit
                if #message-input.value.trim() === ''
                  halt the event
-               end">
+               else
+                 set msgInput to #message-input
+                 set msgContainer to #messages-container
+                 
+                 -- Clear input immediately
+                 set oldValue to msgInput.value
+                 set msgInput.value to ''
+                 
+                 -- Keep focus on input
+                 call msgInput.focus()
+                 
+                 -- Let form submission continue
+               end
+             
+             on htmx:afterRequest from #message-form
+               set msgContainer to #messages-container
+               set msgContainer.scrollTop to msgContainer.scrollHeight">
         <input type="hidden" name="thread_id" value="{{if .Messages}}{{with index .Messages 0}}{{.ThreadID}}{{end}}{{end}}">
         <button type="button" class="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -100,12 +111,22 @@
                name="message"
                autocomplete="off"
                class="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:border-indigo-500" 
-               placeholder="Type your message...">
+               placeholder="Type your message..."
+               _="on keydown[key is 'Enter']
+                    halt the event
+                    if my.value.trim() !== ''
+                      trigger submit on closest <form/>
+                    end">
         <button type="submit" class="p-2 text-white bg-indigo-600 rounded-full hover:bg-indigo-700">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
             </svg>
         </button>
     </form>
+
+    <!-- Add this error message div after the form -->
+    <div class="error-message fixed bottom-20 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg hidden">
+        Failed to send message. Please try again.
+    </div>
 </div>
 {{end}}
