@@ -9,7 +9,7 @@
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Custom scrollbar styles */
+        /* Custom scrollbar styles remain the same */
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -26,6 +26,130 @@
     </style>
 </head>
 <body class="bg-gray-50">
+    <!-- Updated WebSocket Connection Manager -->
+    <div id="ws-connection"
+         hx-ext="ws" 
+         ws-connect="/ws-connect"
+         _="on load
+            log 'Initializing WebSocket'
+            set window.currentThreadId to null
+            set window.lastMessageId to null
+            
+          on htmx:wsOpen
+            log 'WebSocket Connected'
+            set window.wsConnected to true
+            trigger wsConnectionChanged
+            
+          on htmx:wsClose
+            log 'WebSocket Closed'
+            set window.wsConnected to false
+            trigger wsConnectionChanged
+            
+          on htmx:wsError
+            log 'WebSocket Error'
+            log event.detail
+            
+          on htmx:wsAfterMessage
+            call handleWebSocketMessage(event.detail.message)">
+    </div>
+
+    <!-- Main Content -->
     {{template "content" .}}
+
+    <!-- Updated WebSocket and Utility Scripts -->
+    <script>
+        // Global state
+        window.wsState = {
+            connected: false,
+            currentThreadId: null,
+            lastMessageId: null
+        };
+
+        // WebSocket message handler
+        function handleWebSocketMessage(message) {
+            console.log('Received websocket message:', message);
+            
+            switch(message.type) {
+                case 'new_message':
+                    handleNewMessage(message);
+                    break;
+                    
+                case 'thread_updated':
+                    handleThreadUpdate(message);
+                    break;
+                    
+                case 'chat_opened':
+                    handleChatOpened(message);
+                    break;
+                    
+                case 'error':
+                    handleError(message);
+                    break;
+                    
+                default:
+                    console.log('Unhandled message type:', message.type);
+            }
+        }
+
+        // Message type handlers
+        function handleNewMessage(message) {
+            // Update message list if it exists
+            const messageList = document.getElementById('message-list-wrapper');
+            if (messageList) {
+                htmx.ajax('GET', '/message-list', { target: '#message-list-wrapper' });
+            }
+            
+            // Update chat view if it's the current thread
+            const chatView = document.getElementById('messages-container');
+            if (chatView && window.wsState.currentThreadId === message.thread_id) {
+                htmx.ajax('GET', `/chat-messages?thread_id=${message.thread_id}`, 
+                         { target: '#messages-container' });
+            }
+        }
+
+        function handleThreadUpdate(message) {
+            const threadPreview = document.getElementById(`thread-preview-${message.thread_id}`);
+            if (threadPreview) {
+                htmx.ajax('GET', `/thread-preview?thread_id=${message.thread_id}`, 
+                         { target: `#thread-preview-${message.thread_id}` });
+            }
+        }
+
+        function handleChatOpened(message) {
+            window.wsState.currentThreadId = message.thread_id;
+            console.log('Chat opened:', message.thread_id);
+        }
+
+        function handleError(message) {
+            console.error('WebSocket error:', message.content);
+            // You could show a toast notification here
+        }
+
+        // Connection state handler
+        document.body.addEventListener('wsConnectionChanged', function(evt) {
+            const connected = window.wsConnected;
+            console.log('WebSocket connection state changed:', connected);
+            
+            // You could update UI elements to show connection state
+            const connectionIndicator = document.getElementById('connection-status');
+            if (connectionIndicator) {
+                connectionIndicator.classList.toggle('bg-green-500', connected);
+                connectionIndicator.classList.toggle('bg-red-500', !connected);
+            }
+        });
+
+        // HTMX error handler
+        document.body.addEventListener('htmx:error', function(evt) {
+            console.error('HTMX Error:', evt.detail.error);
+            // You could show a toast notification here
+        });
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Initializing application state');
+            window.wsState.currentThreadId = null;
+            window.wsState.lastMessageId = null;
+        });
+    </script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+// main.go
 package main
 
 import (
@@ -5,11 +6,14 @@ import (
 	"admin-dashboard/db"
 	"admin-dashboard/handlers"
 	"admin-dashboard/pkg/auth"
-	"admin-dashboard/pkg/template" // new import
+	"admin-dashboard/pkg/template"
+	"admin-dashboard/ws"
 	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -17,12 +21,16 @@ func main() {
 	log.Printf("🚀 Starting server initialization...")
 
 	// Initialize templates first
+	log.Printf("📝 Initializing templates...")
 	template.InitTemplates()
 
 	// Initialize database
 	log.Printf("🗄️ Initializing database...")
 	db.Init()
-	defer db.DB.Close()
+	defer func() {
+		log.Printf("🔌 Closing database connection...")
+		db.Close()
+	}()
 
 	// Initialize Redis
 	log.Printf("📦 Initializing Redis...")
@@ -42,18 +50,27 @@ func main() {
 		}
 	}
 
-	// Create rate limiters with higher limits for development
+	// Start WebSocket hub
+	log.Printf("🔌 Starting WebSocket hub...")
+	go ws.GlobalHub.Run()
+
+	// Create rate limiters
 	log.Printf("⚙️ Setting up rate limiters...")
 	limiter := handlers.NewRateLimiter()
 
 	// Set up routes
 	log.Printf("🛣️ Setting up routes...")
+
+	// WebSocket route with logging
+	log.Printf("🔌 Setting up WebSocket route...")
+	http.HandleFunc("/ws-connect", auth.AuthMiddleware(ws.HandleWebSocket))
+
 	// Auth routes
 	log.Printf("🔐 Setting up auth routes...")
 	http.HandleFunc("/login", handlers.Login)
 	http.HandleFunc("/logout", handlers.Logout)
 
-	// Protected routes with consistent handler types
+	// Protected routes with rate limiting
 	log.Printf("🔒 Setting up protected routes...")
 	http.HandleFunc("/", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetMessages)))
 	http.HandleFunc("/message-list", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetMessageList)))
@@ -62,13 +79,50 @@ func main() {
 	http.HandleFunc("/thread-preview", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetThreadPreview)))
 	http.HandleFunc("/toggle-bot", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.ToggleBotStatus)))
 	http.HandleFunc("/chat-messages", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetChatMessages)))
-	http.HandleFunc("/refresh-profile-pictures", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.RefreshProfilePictures)))
 
+	// Serve static files
+	log.Printf("📁 Setting up static file server...")
+	fs := http.FileServer(http.Dir("static"))
+	http.Handle("/static/", http.StripPrefix("/static/", fs))
+
+	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("✅ Server initialization complete")
-	log.Printf("🌐 Server starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+
+	// Create server with timeouts
+	srv := &http.Server{
+		Addr:         ":" + port,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in a goroutine
+	go func() {
+		log.Printf("✅ Server initialization complete")
+		log.Printf("🌐 Server starting on port %s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("❌ Server failed: %v", err)
+		}
+	}()
+
+	// Set up graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Printf("🛑 Server is shutting down...")
+
+	// Create shutdown context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Attempt graceful shutdown
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("❌ Server forced to shutdown: %v", err)
+	}
+
+	log.Printf("✅ Server exited gracefully")
 }

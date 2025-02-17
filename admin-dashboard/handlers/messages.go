@@ -1,10 +1,11 @@
+// handlers/messages.go
 package handlers
 
 import (
 	"admin-dashboard/db"
 	"admin-dashboard/pkg/auth"
-	"admin-dashboard/pkg/meta"
-	"admin-dashboard/pkg/template" // new import
+	"admin-dashboard/pkg/template"
+	"admin-dashboard/ws"
 	"bytes"
 	"context"
 	"database/sql"
@@ -17,7 +18,6 @@ import (
 	"time"
 )
 
-// Updated GetMessages with extensive logging for debugging UUID issues
 func GetMessages(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		log.Printf("❌ Wrong path requested: %s", r.URL.Path)
@@ -47,7 +47,6 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 	log.Printf("✅ Successfully fetched messages for user %s", user.ID)
 	log.Printf("  - Number of messages: %d", len(messages))
 
-	// Include the user in template data.
 	if r.Header.Get("HX-Request") == "true" {
 		if err := template.RenderTemplate(w, "message-list", map[string]interface{}{
 			"Messages": messages,
@@ -80,7 +79,6 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 	threadID := r.URL.Query().Get("thread_id")
 	log.Printf("GetChat called with thread_id: %s", threadID)
 
-	// Pass user.ClientID for client filtering.
 	messages, err := db.FetchMessages(user.ClientID, db.GetChatQuery, threadID)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching chat", http.StatusInternalServerError)
@@ -116,7 +114,6 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔍 Raw URL: %s", r.URL.String())
 	log.Printf("🔍 Search query received: %q", searchQuery)
 
-	// Pass the search term as-is so that the query handles it.
 	messages, err := db.FetchMessages(user.ClientID, db.GetMessageListSearchQuery, searchQuery)
 	if err != nil {
 		log.Printf("❌ Error executing query: %v", err)
@@ -134,10 +131,8 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 }
 
 func sendToMessageRouter(pageID, threadID, platform, message string) error {
-	// Use the Render deployment URL
 	messageRouterURL := "https://neurocrow-message-router.onrender.com"
 
-	// Updated payload with additional fields
 	payload := map[string]interface{}{
 		"page_id":        pageID,
 		"recipient_id":   threadID,
@@ -145,7 +140,7 @@ func sendToMessageRouter(pageID, threadID, platform, message string) error {
 		"message":        message,
 		"messaging_type": "MESSAGE_TAG",
 		"tag":            "HUMAN_AGENT",
-		"source":         "human", // This helps the message router distinguish human vs bot messages
+		"source":         "human",
 	}
 
 	jsonData, err := json.Marshal(payload)
@@ -153,8 +148,7 @@ func sendToMessageRouter(pageID, threadID, platform, message string) error {
 		return fmt.Errorf("error creating payload: %v", err)
 	}
 
-	// Create request with context for timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // Longer timeout for Render's cold starts
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", messageRouterURL+"/send-message", bytes.NewBuffer(jsonData))
@@ -164,7 +158,6 @@ func sendToMessageRouter(pageID, threadID, platform, message string) error {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// Use custom transport with longer timeouts
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
@@ -184,13 +177,11 @@ func sendToMessageRouter(pageID, threadID, platform, message string) error {
 	}
 	defer resp.Body.Close()
 
-	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("error reading response: %v", err)
 	}
 
-	// Log response for debugging
 	log.Printf("📥 Message router response (status %d): %s", resp.StatusCode, string(body))
 
 	if resp.StatusCode != http.StatusOK {
@@ -200,15 +191,12 @@ func sendToMessageRouter(pageID, threadID, platform, message string) error {
 	return nil
 }
 
-// Update the SendMessage function to include the message routing
-// Updated SendMessage signature: change *Request to *http.Request
 func SendMessage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Retrieve the authenticated user from context.
 	user := r.Context().Value("user").(*auth.User)
 	if user == nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -233,7 +221,6 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("📤 Starting message send process for thread: %s", threadID)
 
-	// Get thread details from database with the actual Facebook/Instagram page_id
 	var clientID sql.NullString
 	var pageUUID, metaPageID, platform sql.NullString
 	var botEnabled bool
@@ -241,12 +228,12 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
         SELECT 
             m.client_id,
             m.page_id,
-            sp.page_id as meta_page_id,  -- Get the actual Facebook/Instagram page ID
+            sp.page_id as meta_page_id,
             m.platform,
             COALESCE(c.bot_enabled, TRUE) as bot_enabled
         FROM messages m
         LEFT JOIN conversations c ON c.thread_id = m.thread_id
-        LEFT JOIN social_pages sp ON sp.id = m.page_id  -- Join with social_pages to get meta_page_id
+        LEFT JOIN social_pages sp ON sp.id = m.page_id
         WHERE m.thread_id = $1 
         ORDER BY m.timestamp DESC
         LIMIT 1
@@ -260,7 +247,6 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 	log.Printf("📤 Retrieved details - Platform: %v, Meta Page ID: %v",
 		platform.String, metaPageID.String)
 
-	// Send message through the message router using the Meta page ID
 	if metaPageID.Valid && platform.Valid {
 		err = sendToMessageRouter(metaPageID.String, threadID, platform.String, content)
 		if err != nil {
@@ -271,7 +257,6 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		log.Printf("✅ Message sent through message router successfully")
 	}
 
-	// Store the message in the database using our internal page UUID
 	clientIDStr := ""
 	if clientID.Valid {
 		clientIDStr = clientID.String
@@ -308,31 +293,37 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		log.Printf("✅ Message stored successfully. Rows affected: %d", rowsAffected)
 	}
 
-	// --- New refresh logic ---
-	newMsgs, err := db.FetchMessages(db.GetLastMessageQuery, threadID)
-	if err != nil || len(newMsgs) == 0 {
+	messages, err := db.FetchMessages(user.ClientID, db.GetLastMessageQuery, threadID)
+	if err != nil {
 		log.Printf("❌ Error fetching new message: %v", err)
 		db.HandleError(w, err, "Error sending message", http.StatusInternalServerError)
 		return
 	}
 
-	// Right before template execution, add:
-	log.Printf("🔄 Rendering single message bubble for thread: %s", threadID)
+	if len(messages) == 0 {
+		log.Printf("❌ No messages found after insertion")
+		http.Error(w, "Message not found after sending", http.StatusInternalServerError)
+		return
+	}
 
-	// Return only the new message rendered with the message-bubble template
+	// Broadcast the new message via WebSocket
+	if clientID.Valid {
+		log.Printf("📢 Broadcasting new message to WebSocket clients")
+		ws.SendNewMessage(clientID.String, threadID, messages[0])
+		log.Printf("✅ Message broadcast complete")
+	}
+
 	w.WriteHeader(http.StatusOK)
-	if err := template.RenderTemplate(w, "message-bubble.html", newMsgs[0]); err != nil {
+	if err := template.RenderTemplate(w, "message-bubble.html", messages[0]); err != nil {
 		db.HandleError(w, err, "Error rendering new message", http.StatusInternalServerError)
 		return
 	}
-	// --- End of refresh logic ---
 }
 
 func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔍 GetThreadPreview called for thread_id: %s", r.URL.Query().Get("thread_id"))
 	threadID := r.URL.Query().Get("thread_id")
 
-	// Retrieve the authenticated user from context.
 	user := r.Context().Value("user").(*auth.User)
 	if user == nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -376,13 +367,16 @@ func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
 	enabled := r.FormValue("enabled") == "true"
 	log.Printf("🔄 Toggling bot status -> threadID: %s, enabled: %v", threadID, enabled)
 
-	// Updated call: removed the user parameter
-	err := db.UpdateBotStatus(threadID, enabled)
-	if err != nil {
+	if err := db.UpdateBotStatus(threadID, enabled); err != nil {
 		log.Printf("❌ Error toggling bot status, threadID: %s, %v", threadID, err)
 		http.Error(w, "Failed to update bot status", http.StatusInternalServerError)
 		return
 	}
+
+	// Broadcast the status change via WebSocket
+	ws.SendThreadUpdate(threadID, map[string]interface{}{
+		"bot_enabled": enabled,
+	})
 
 	log.Printf("✅ Successfully toggled bot status for thread: %s", threadID)
 	w.WriteHeader(http.StatusOK)
@@ -392,16 +386,17 @@ func GetChatMessages(w http.ResponseWriter, r *http.Request) {
 	// Retrieve the authenticated user from context.
 	user := r.Context().Value("user").(*auth.User)
 	if user == nil {
+		log.Printf("❌ No user found in context")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
 	threadID := r.URL.Query().Get("thread_id")
-	// At the start of GetChatMessages, add:
 	log.Printf("⚠️ Full chat refresh requested for thread: %s", threadID)
 
 	messages, err := db.FetchMessages(user.ClientID, db.GetChatQuery, threadID)
 	if err != nil {
+		log.Printf("❌ Error fetching chat messages: %v", err)
 		db.HandleError(w, err, "Error fetching chat messages", http.StatusInternalServerError)
 		return
 	}
@@ -414,48 +409,23 @@ func GetChatMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := template.RenderTemplate(w, "chat-messages", data); err != nil {
+		log.Printf("❌ Error rendering chat messages: %v", err)
 		db.HandleError(w, err, "Error rendering chat messages", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Successfully rendered chat messages for thread %s", threadID)
-}
-
-func RefreshProfilePictures(w http.ResponseWriter, r *http.Request) {
-	// Allow only POST requests
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+	// Notify WebSocket clients about updated messages
+	if len(messages) > 0 {
+		ws.SendThreadUpdate(threadID, map[string]interface{}{
+			"messages_updated": true,
+			"message_count":    len(messages),
+			"last_message":     messages[len(messages)-1],
+			"timestamp":        time.Now(),
+		})
 	}
 
-	// Fetch unique thread IDs that aren't test threads
-	rows, err := db.DB.Query(`
-        SELECT DISTINCT thread_id
-        FROM messages
-        WHERE thread_id NOT LIKE 'thread_%'
-    `)
-	if err != nil {
-		db.HandleError(w, err, "Error fetching threads", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	var threadIDs []string
-	for rows.Next() {
-		var threadID string
-		if err := rows.Scan(&threadID); err != nil {
-			continue
-		}
-		threadIDs = append(threadIDs, threadID)
-	}
-
-	// For each thread, refresh the profile picture
-	for _, id := range threadIDs {
-		err := meta.RefreshProfilePicture(db.DB, id)
-		if err != nil {
-			log.Printf("Failed to refresh profile picture for thread %s: %v", id, err)
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
+	log.Printf("✅ Successfully rendered chat messages for thread %s", threadID)
+	log.Printf("  - Message count: %d", len(messages))
+	log.Printf("  - User ID: %s", user.ID)
+	log.Printf("  - Client ID: %s", user.ClientID)
 }

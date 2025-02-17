@@ -1,13 +1,28 @@
 {{define "chat-view"}}
 <div class="flex flex-col h-full max-h-screen"
      _="on load
-          if window.innerWidth < 1024
-            add .hidden to #search-container
-          end
-          on closeChat
-          if window.innerWidth < 1024
-            remove .hidden from #search-container
-          end">
+            if window.innerWidth < 1024
+              add .hidden to #search-container
+            end
+            init
+              set window.wsState.currentThreadId to '{{with index .Messages 0}}{{.ThreadID}}{{end}}'
+              send message to #ws-connection with {
+                type: 'chat_opened',
+                thread_id: '{{with index .Messages 0}}{{.ThreadID}}{{end}}'
+              }
+              log 'Chat view loaded for thread: ' + window.wsState.currentThreadId
+            end
+         on closeChat
+            if window.innerWidth < 1024
+              remove .hidden from #search-container
+            end
+            send message to #ws-connection with {
+                type: 'chat_closed',
+                thread_id: window.wsState.currentThreadId
+            }
+            set window.wsState.currentThreadId to null
+            log 'Chat view closed'">
+    
     <!-- Fixed Header -->
     <div class="flex-none px-4 py-3 border-b flex items-center bg-white">
         <button class="mr-2 p-2 -ml-2 hover:bg-gray-100 rounded-full back-button"
@@ -16,7 +31,12 @@
                     wait 300ms 
                     add .hidden to #chat-view
                     if window.innerWidth < 1024
-                      remove .hidden from #search-container">
+                      remove .hidden from #search-container
+                    end
+                    send message to #ws-connection with {
+                        type: 'chat_closed',
+                        thread_id: window.wsState.currentThreadId
+                    }">
             <svg class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
             </svg>
@@ -25,7 +45,10 @@
             {{with index .Messages 0}}
             <div class="flex items-center">
                 <div class="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
-                    <img src="{{.ProfilePictureURL}}" alt="Profile Picture" onerror="this.onerror=null;this.src='/static/default-avatar.png';">
+                    <img src="{{.ProfilePictureURL}}" 
+                         alt="Profile Picture" 
+                         class="h-full w-full object-cover"
+                         onerror="this.onerror=null;this.src='/static/default-avatar.png';">
                 </div>
                 <div class="ml-2">
                     <div class="text-sm font-medium">{{.FromUser}}</div>
@@ -46,12 +69,15 @@
 
     <!-- Scrollable Messages -->
     <div id="messages-container" 
-        class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 overflow-x-hidden"
-        _="on load
+         class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 overflow-x-hidden"
+         _="on load
             set my.scrollTop to my.scrollHeight
             on htmx:afterSwap 
-            wait 10ms 
-            set my.scrollTop to my.scrollHeight">
+              wait 10ms 
+              set my.scrollTop to my.scrollHeight
+            on newMessage
+              if event.detail.threadId === window.wsState.currentThreadId
+                call refreshMessages()">
         {{template "chat-messages" .}}
     </div>
 
@@ -87,19 +113,25 @@
                  set msgInput to #message-input
                  set msgContainer to #messages-container
                  
-                 -- Clear input immediately
+                 -- Keep old value for potential error recovery
                  set oldValue to msgInput.value
+                 
+                 -- Clear input immediately
                  set msgInput.value to ''
                  
                  -- Keep focus on input
                  call msgInput.focus()
-                 
-                 -- Let form submission continue
                end
              
-             on htmx:afterRequest from #message-form
+             on htmx:afterRequest
                set msgContainer to #messages-container
-               set msgContainer.scrollTop to msgContainer.scrollHeight">
+               set msgContainer.scrollTop to msgContainer.scrollHeight
+             
+             on htmx:error
+               -- Show error message
+               remove .hidden from .error-message
+               wait 3s
+               add .hidden to .error-message">
         <input type="hidden" name="thread_id" value="{{if .Messages}}{{with index .Messages 0}}{{.ThreadID}}{{end}}{{end}}">
         <button type="button" class="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,16 +149,25 @@
                     if my.value.trim() !== ''
                       trigger submit on closest <form/>
                     end">
-        <button type="submit" class="p-2 text-white bg-indigo-600 rounded-full hover:bg-indigo-700">
+        <button type="submit" 
+                class="p-2 text-white bg-indigo-600 rounded-full hover:bg-indigo-700 transition-colors duration-200">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
             </svg>
         </button>
     </form>
 
-    <!-- Add this error message div after the form -->
-    <div class="error-message fixed bottom-20 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg hidden">
+    <!-- Error Message -->
+    <div class="error-message fixed bottom-20 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg hidden transition-opacity duration-200">
         Failed to send message. Please try again.
     </div>
 </div>
+
+<!-- Hyperscript Functions -->
+<script type="text/hyperscript">
+    def refreshMessages()
+        fetch `/chat-messages?thread_id=${window.wsState.currentThreadId}`
+            then put it into #messages-container
+end
+</script>
 {{end}}
