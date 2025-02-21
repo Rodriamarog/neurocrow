@@ -1,37 +1,17 @@
 package main
 
 import (
-	"admin-dashboard/cache"
 	"admin-dashboard/db"
 	"admin-dashboard/handlers"
-	"context"
 	"log"
 	"net/http"
 	"os"
-	"time"
 )
 
 func main() {
 	// Initialize database
 	db.Init()
 	defer db.DB.Close()
-
-	// Initialize Redis
-	cache.InitRedis()
-	log.Println("🔍 Testing Redis connection...")
-
-	// Simple Redis test
-	err := cache.RedisClient.Set(context.Background(), "test_key", "test_value", time.Minute).Err()
-	if err != nil {
-		log.Printf("❌ Redis test failed: %v", err)
-	} else {
-		value, err := cache.RedisClient.Get(context.Background(), "test_key").Result()
-		if err != nil {
-			log.Printf("❌ Redis test failed: %v", err)
-		} else {
-			log.Printf("✅ Redis test successful! Retrieved value: %s", value)
-		}
-	}
 
 	// Create rate limiters with higher limits for development
 	limiter := handlers.NewRateLimiter()
