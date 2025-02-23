@@ -2,7 +2,9 @@
     {{if .Messages}}
         {{range .Messages}}
             {{if ne .Source "system"}}
-                 {{template "message-bubble.html" .}}
+                <div class="mb-1">  <!-- Add margin to each message wrapper -->
+                    {{template "message-bubble.html" .}}
+                </div>
             {{end}}
         {{end}}
     {{else}}

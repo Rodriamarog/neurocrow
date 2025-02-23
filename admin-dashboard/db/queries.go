@@ -155,6 +155,8 @@ const (
 const (
 	// Updated GetChatQuery: now joins with social_pages and filters by client_id.
 	// Expected parameters: $1 = client_id, $2 = thread_id.
+	// In db/queries.go, modify GetChatQuery to:
+
 	GetChatQuery = `
         SELECT 
             m.id, 
@@ -173,9 +175,10 @@ const (
         JOIN social_pages sp ON m.page_id = sp.id
         LEFT JOIN conversations c ON m.thread_id = c.thread_id
         WHERE sp.client_id = $1
-          AND m.thread_id = $2
-          AND (m.internal IS NULL OR m.internal = false)
-        ORDER BY m.timestamp ASC`
+        AND m.thread_id = $2
+        AND (m.internal IS NULL OR m.internal = false)
+        ORDER BY m.timestamp DESC  
+        LIMIT $3 OFFSET $4`
 
 	// Query to get thread details
 	GetThreadDetailsQuery = `
