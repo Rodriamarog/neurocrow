@@ -33,7 +33,12 @@ func setupServices(cfg *config.Config) (*Services, error) {
 	authenticator := auth.NewAuthenticator(cfg)
 	metaClient := meta.NewClient(cfg.Meta.APIKey)
 
-	messageService := services.NewMessageService(database.DB, templateRenderer.Templates, cache)
+	messageService := services.NewMessageService(
+		database.DB,
+		templateRenderer.GetTemplates(),
+		cache,
+		&cfg.Messages,
+	)
 	profileService := services.NewProfileService(database.DB, metaClient, cache)
 
 	return &Services{

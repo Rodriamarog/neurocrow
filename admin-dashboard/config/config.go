@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"time"
 )
 
 type Config struct {
@@ -9,6 +10,7 @@ type Config struct {
 	Auth     AuthConfig
 	Meta     MetaConfig
 	Server   ServerConfig
+	Messages MessagesConfig
 }
 
 type ServerConfig struct {
@@ -27,8 +29,20 @@ type AuthConfig struct {
 	Secret string
 }
 
+type MessagesConfig struct {
+	DefaultPageSize int
+	MaxPageSize     int
+	CacheTimeout    time.Duration
+}
+
 func Load() (*Config, error) {
-	cfg := &Config{}
+	cfg := &Config{
+		Messages: MessagesConfig{
+			DefaultPageSize: 30,
+			MaxPageSize:     100,
+			CacheTimeout:    5 * time.Minute,
+		},
+	}
 
 	// Load from environment variables
 	cfg.Database.URL = os.Getenv("DATABASE_URL")
