@@ -208,11 +208,15 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 			if err != nil {
 				log.Printf("⚠️ Could not get user name, using 'user': %v", err)
 				userName = "user"
+			} else {
+				// Update the conversation with the user name
+				if err := updateConversationUsername(ctx, msg.Sender.ID, userName); err != nil {
+					log.Printf("⚠️ Could not update conversation user name: %v", err)
+				}
 			}
 			log.Printf("      📝 Using name '%s' for message storage", userName)
 
-			// Always store the incoming message first
-			log.Printf("      💾 Storing message in database")
+			// Store the incoming message
 			if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, userName, "user", true); err != nil {
 				log.Printf("❌ Error storing message: %v", err)
 			} else {
@@ -734,4 +738,30 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func updateConversationUsername(ctx context.Context, threadID string, userName string) error {
+	var pageUUID string
+	err := db.QueryRowContext(ctx, `
+        SELECT page_id 
+        FROM conversations 
+        WHERE thread_id = $1
+    `, threadID).Scan(&pageUUID)
+	if err != nil {
+		return fmt.Errorf("error finding conversation: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx, `
+        UPDATE conversations 
+        SET social_user_name = $1,
+            updated_at = NOW()
+        WHERE thread_id = $2 AND page_id = $3
+    `, userName, threadID, pageUUID)
+
+	if err != nil {
+		return fmt.Errorf("error updating conversation user name: %v", err)
+	}
+
+	log.Printf("✅ Updated conversation user name to: %s", userName)
+	return nil
 }
