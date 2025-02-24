@@ -1,14 +1,41 @@
 package main
 
 import (
+	"admin-dashboard/config"
 	"admin-dashboard/db"
 	"admin-dashboard/handlers"
 	"admin-dashboard/pkg/auth"
 	"admin-dashboard/pkg/template" // new import
+	"admin-dashboard/services"
 	"log"
 	"net/http"
 	"os"
 )
+
+type Services struct {
+	DB       *db.Database
+	Template *template.Renderer
+	Auth     *auth.Authenticator
+	Messages *services.MessageService
+}
+
+func setupServices(cfg *config.Config) (*Services, error) {
+	database, err := db.New(cfg.Database.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	templateRenderer := template.NewRenderer()
+	authenticator := auth.NewAuthenticator(cfg)
+	messageService := services.NewMessageService(database)
+
+	return &Services{
+		DB:       database,
+		Template: templateRenderer,
+		Auth:     authenticator,
+		Messages: messageService,
+	}, nil
+}
 
 func main() {
 	log.Printf("🚀 Starting server initialization...")

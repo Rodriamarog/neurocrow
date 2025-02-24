@@ -1,0 +1,8 @@
+{{define "user-avatar"}}
+<div class="{{.Size}} rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
+    <img src="{{.URL}}" 
+         alt="Profile Picture" 
+         class="h-full w-full object-cover"
+         onerror="this.onerror=null;this.src='/static/default-avatar.png';">
+</div>
+{{end}} 
