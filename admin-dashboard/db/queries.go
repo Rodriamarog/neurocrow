@@ -179,7 +179,7 @@ const (
         WHERE sp.client_id = $1
         AND m.thread_id = $2
         AND (m.internal IS NULL OR m.internal = false)
-        ORDER BY m.timestamp DESC  
+        ORDER BY m.timestamp DESC
         LIMIT $3 OFFSET $4`
 
 	// Query to get thread details
@@ -271,7 +271,7 @@ const (
         WHERE sp.client_id = $1
         AND m.thread_id = $2
         AND (m.internal IS NULL OR m.internal = false)
-        ORDER BY m.timestamp DESC
+        ORDER BY m.timestamp ASC
         LIMIT $3
     `
 

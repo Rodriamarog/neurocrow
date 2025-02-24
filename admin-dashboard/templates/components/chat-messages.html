@@ -1,6 +1,6 @@
 {{define "chat-messages"}}
     {{if .Messages}}
-        {{range .Messages}}
+        {{range (reverse .Messages)}}
             {{if ne .Source "system"}}
                 <div class="message-bubble mb-2" data-timestamp="{{.Timestamp.Format "2006-01-02T15:04:05Z07:00"}}">
                     <div class="flex items-start max-w-[85%] {{if or (eq .Source "human") (eq .Source "bot")}}justify-end ml-auto{{else}}justify-start{{end}} space-x-2">

@@ -1,6 +1,7 @@
 package template
 
 import (
+	"admin-dashboard/models"
 	"html/template"
 	"log"
 	"net/http"
@@ -14,8 +15,19 @@ var Templates *template.Template
 func InitTemplates() {
 	log.Printf("🚀 Initializing templates...")
 
-	// Create base template
-	t := template.New("")
+	// Create base template with functions
+	funcMap := template.FuncMap{
+		"reverse": func(messages []models.Message) []models.Message {
+			// Create a new slice with reversed order
+			reversed := make([]models.Message, len(messages))
+			for i, msg := range messages {
+				reversed[len(messages)-1-i] = msg
+			}
+			return reversed
+		},
+	}
+
+	t := template.New("").Funcs(funcMap)
 
 	// Read message-bubble.html first
 	messageBubbleContent, err := os.ReadFile("templates/components/message-bubble.html")

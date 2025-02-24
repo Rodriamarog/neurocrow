@@ -94,4 +94,12 @@
         </button>
     </form>
 </div>
+<script>
+    document.addEventListener('htmx:afterOnLoad', function() {
+        const messagesContainer = document.getElementById('messages-container');
+        if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    });
+</script>
 {{end}}
