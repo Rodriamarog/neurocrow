@@ -1,10 +1,10 @@
 package auth
 
 type User struct {
-	ID       string `json:"id"`
-	Email    string `json:"email"`
-	ClientID string `json:"client_id"`
-	Role     string `json:"role"`
+	ID       string
+	ClientID string
+	Role     string
+	Email    string
 }
 
 type LoginRequest struct {

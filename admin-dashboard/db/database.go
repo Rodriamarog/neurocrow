@@ -7,22 +7,19 @@ import (
 )
 
 type Database struct {
-	db *sql.DB
+	DB *sql.DB
 }
 
-func New(connStr string) (*Database, error) {
-	db, err := sql.Open("postgres", connStr)
+func New(url string) (*Database, error) {
+	db, err := sql.Open("postgres", url)
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Ping(); err != nil {
-		return nil, err
-	}
-	return &Database{db: db}, nil
+	return &Database{DB: db}, nil
 }
 
 func (d *Database) Close() error {
-	return d.db.Close()
+	return d.DB.Close()
 }
 
 // Add database methods here

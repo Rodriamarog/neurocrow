@@ -5,18 +5,26 @@ import (
 )
 
 type Config struct {
-	Database struct {
-		URL      string
-		MaxConns int
-	}
-	Server struct {
-		Port    string
-		BaseURL string
-	}
-	Auth struct {
-		JWTSecret string
-		TokenTTL  int
-	}
+	Database DatabaseConfig
+	Auth     AuthConfig
+	Meta     MetaConfig
+	Server   ServerConfig
+}
+
+type ServerConfig struct {
+	Port string
+}
+
+type MetaConfig struct {
+	APIKey string
+}
+
+type DatabaseConfig struct {
+	URL string
+}
+
+type AuthConfig struct {
+	Secret string
 }
 
 func Load() (*Config, error) {
@@ -28,7 +36,8 @@ func Load() (*Config, error) {
 	if cfg.Server.Port == "" {
 		cfg.Server.Port = "8080"
 	}
-	cfg.Auth.JWTSecret = os.Getenv("JWT_SECRET")
+	cfg.Auth.Secret = os.Getenv("JWT_SECRET")
+	cfg.Meta.APIKey = os.Getenv("META_API_KEY")
 
 	return cfg, nil
 }

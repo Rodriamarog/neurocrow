@@ -4,7 +4,9 @@ import (
 	"admin-dashboard/db"
 	"admin-dashboard/pkg/auth"
 	"admin-dashboard/pkg/meta"
-	"admin-dashboard/pkg/template" // new import
+	"admin-dashboard/pkg/template"
+	"admin-dashboard/pkg/views"
+	"admin-dashboard/services"
 	"bytes"
 	"context"
 	"database/sql"
@@ -16,6 +18,11 @@ import (
 	"strings"
 	"time"
 )
+
+type Services struct {
+	Messages *services.MessageService
+	// Add other services as needed
+}
 
 // Updated GetMessages with extensive logging for debugging UUID issues
 func GetMessages(w http.ResponseWriter, r *http.Request) {
@@ -401,36 +408,35 @@ func ToggleBotStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetChatMessages(w http.ResponseWriter, r *http.Request) {
-	// Retrieve the authenticated user from context.
-	user := r.Context().Value("user").(*auth.User)
+	user := auth.UserFromContext(r.Context())
 	if user == nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
 	threadID := r.URL.Query().Get("thread_id")
-	// At the start of GetChatMessages, add:
 	log.Printf("⚠️ Full chat refresh requested for thread: %s", threadID)
 
-	messages, err := db.FetchMessages(user.ClientID, db.GetChatQuery, threadID)
+	opts := services.MessageOptions{
+		Limit: 50,
+		Order: "DESC",
+	}
+
+	svc := r.Context().Value("services").(*Services)
+	messages, err := svc.Messages.GetThreadMessages(r.Context(), threadID, opts)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching chat messages", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Found %d messages for thread %s", len(messages), threadID)
-
-	data := map[string]interface{}{
-		"Messages": messages,
-		"User":     user,
+	view := &views.MessageListView{
+		Messages: views.ToMessageViews(messages),
+		User:     views.ToUserView(user),
 	}
 
-	if err := template.RenderTemplate(w, "chat-messages", data); err != nil {
+	if err := template.RenderTemplate(w, "chat-messages", view); err != nil {
 		db.HandleError(w, err, "Error rendering chat messages", http.StatusInternalServerError)
-		return
 	}
-
-	log.Printf("Successfully rendered chat messages for thread %s", threadID)
 }
 
 func RefreshProfilePictures(w http.ResponseWriter, r *http.Request) {

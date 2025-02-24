@@ -329,3 +329,37 @@ const (
         LIMIT $4
     `
 )
+
+// Consolidate common query parts
+const (
+	baseMessageSelect = `
+        SELECT 
+            m.id, m.client_id, m.page_id, m.platform, m.from_user,
+            m.content, m.timestamp, m.thread_id, m.read, m.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
+            COALESCE(NULLIF(c.profile_picture_url, ''), '/static/default-avatar.png') as profile_picture_url,
+            c.social_user_name
+        FROM messages m
+        JOIN social_pages sp ON m.page_id = sp.id
+        LEFT JOIN conversations c ON m.thread_id = c.thread_id
+    `
+
+	messageFilters = `
+        WHERE sp.client_id = $1::uuid
+        AND (m.internal IS NULL OR m.internal = false)
+    `
+)
+
+// Use builder pattern for queries
+type QueryBuilder struct {
+	base    string
+	filters []string
+	orderBy string
+	limit   int
+}
+
+func NewQueryBuilder() *QueryBuilder {
+	return &QueryBuilder{
+		base: baseMessageSelect,
+	}
+}

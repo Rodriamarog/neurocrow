@@ -5,6 +5,8 @@ import (
 	"admin-dashboard/db"
 	"admin-dashboard/handlers"
 	"admin-dashboard/pkg/auth"
+	"admin-dashboard/pkg/cache"
+	"admin-dashboard/pkg/meta"
 	"admin-dashboard/pkg/template" // new import
 	"admin-dashboard/services"
 	"log"
@@ -17,6 +19,7 @@ type Services struct {
 	Template *template.Renderer
 	Auth     *auth.Authenticator
 	Messages *services.MessageService
+	Profiles *services.ProfileService
 }
 
 func setupServices(cfg *config.Config) (*Services, error) {
@@ -25,15 +28,20 @@ func setupServices(cfg *config.Config) (*Services, error) {
 		return nil, err
 	}
 
+	cache := cache.New()
 	templateRenderer := template.NewRenderer()
 	authenticator := auth.NewAuthenticator(cfg)
-	messageService := services.NewMessageService(database)
+	metaClient := meta.NewClient(cfg.Meta.APIKey)
+
+	messageService := services.NewMessageService(database.DB, templateRenderer.Templates, cache)
+	profileService := services.NewProfileService(database.DB, metaClient, cache)
 
 	return &Services{
 		DB:       database,
 		Template: templateRenderer,
 		Auth:     authenticator,
 		Messages: messageService,
+		Profiles: profileService,
 	}, nil
 }
 
