@@ -19,7 +19,7 @@
             <img src="{{.ProfilePictureURL}}" alt="Profile Picture" onerror="this.onerror=null;this.src='/static/default-avatar.png';">
         </div>
         <div class="ml-3 flex-1">
-            <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>
+            <div class="text-sm font-medium text-gray-900">{{if .SocialUserName}}{{.SocialUserName}}{{else}}{{.FromUser}}{{end}}</div>
             <div class="text-sm text-gray-500 truncate">{{.Content}}</div>
         </div>
     </div>

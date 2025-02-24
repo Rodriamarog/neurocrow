@@ -20,7 +20,7 @@ func isValidProfilePicture(url string) bool {
 		trimmed == "/static/default-avatar.png"
 }
 
-// Updated FetchMessages with extensive logging and UUID validation
+// FetchMessages is now more flexible to handle different query types
 func FetchMessages(clientID string, query string, args ...interface{}) ([]models.Message, error) {
 	log.Printf("🔍 FetchMessages called with:")
 	log.Printf("  - ClientID: %s", clientID)
@@ -68,35 +68,21 @@ func FetchMessages(clientID string, query string, args ...interface{}) ([]models
 			&msg.Source,
 			&msg.BotEnabled,
 			&profilePicture,
+			&msg.SocialUserName,
 		)
 		if err != nil {
 			log.Printf("❌ Error scanning row: %v", err)
 			continue
 		}
 
-		log.Printf("✅ Successfully scanned message:")
-		log.Printf("  - ID: %s", msg.ID)
-		log.Printf("  - ThreadID: %s", msg.ThreadID)
-		log.Printf("  - Platform: %s", msg.Platform)
-		log.Printf("  - FromUser: %s", msg.FromUser)
-
-		// Set ClientID if valid
 		if clientID.Valid {
 			msg.ClientID = &clientID.String
 		}
 
-		// Simple profile picture check: if the trimmed value starts with "http://" or "https://", use it.
-		// Otherwise, default to the provided URL.
-		if profilePicture.Valid {
-			trimmed := strings.TrimSpace(profilePicture.String)
-			if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
-				msg.ProfilePictureURL = trimmed
-			} else {
-				log.Printf("  - Invalid profile picture URL: %s", trimmed)
-				msg.ProfilePictureURL = "https://www.svgrepo.com/show/452030/avatar-default.svg"
-			}
+		if profilePicture.Valid && profilePicture.String != "" {
+			msg.ProfilePictureURL = profilePicture.String
 		} else {
-			msg.ProfilePictureURL = "https://www.svgrepo.com/show/452030/avatar-default.svg"
+			msg.ProfilePictureURL = "/static/default-avatar.png"
 		}
 
 		messages = append(messages, msg)

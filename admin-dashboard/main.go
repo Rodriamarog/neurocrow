@@ -43,6 +43,10 @@ func main() {
 	http.HandleFunc("/chat-messages", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetChatMessages)))
 	http.HandleFunc("/refresh-profile-pictures", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.RefreshProfilePictures)))
 
+	// Serve static files
+	fs := http.FileServer(http.Dir("static"))
+	http.Handle("/static/", http.StripPrefix("/static/", fs))
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

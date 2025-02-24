@@ -13,7 +13,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -79,52 +78,32 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	threadID := r.URL.Query().Get("thread_id")
-	pageStr := r.URL.Query().Get("page")
-	page := 0
-	if pageStr != "" {
-		page, _ = strconv.Atoi(pageStr)
+	if threadID == "" {
+		http.Error(w, "Thread ID is required", http.StatusBadRequest)
+		return
 	}
 
-	// Get total count first for correct offset calculation
-	var totalCount int
-	err := db.DB.QueryRow("SELECT COUNT(*) FROM messages WHERE thread_id = $1", threadID).Scan(&totalCount)
-	if err != nil {
-		log.Printf("Error getting message count: %v", err)
-		totalCount = 0
-	}
-
-	limit := 30
-	// Calculate offset from the end when paginating
+	const messagesPerPage = 30
+	page := r.URL.Query().Get("page")
 	offset := 0
-	if page > 0 {
-		offset = totalCount - ((page + 1) * limit)
-		if offset < 0 {
-			offset = 0
-		}
+	if page != "" {
+		// Add pagination logic here
 	}
 
-	log.Printf("GetChat called for thread %s with page %d (offset %d, total %d)",
-		threadID, page, offset, totalCount)
+	messages, err := db.FetchMessages(
+		user.ClientID,
+		db.GetChatQuery,
+		threadID,
+		messagesPerPage,
+		offset,
+	)
 
-	messages, err := db.FetchMessages(user.ClientID, db.GetChatQuery, threadID, limit, offset)
 	if err != nil {
+		log.Printf("❌ Error fetching chat messages: %v", err)
 		db.HandleError(w, err, "Error fetching chat", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Found %d messages for thread %s", len(messages), threadID)
-
-	// If this is a pagination request, only return messages
-	if r.URL.Query().Get("page") != "" {
-		if err := template.RenderTemplate(w, "chat-messages", map[string]interface{}{
-			"Messages": messages,
-		}); err != nil {
-			db.HandleError(w, err, "Error rendering chat messages", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// For initial load, return full chat view
 	data := map[string]interface{}{
 		"Messages": messages,
 		"User":     user,
@@ -133,8 +112,6 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 	if err := template.RenderTemplate(w, "chat-view", data); err != nil {
 		db.HandleError(w, err, "Error rendering chat", http.StatusInternalServerError)
 	}
-
-	log.Printf("Successfully rendered chat view for thread %s", threadID)
 }
 
 func GetMessageList(w http.ResponseWriter, r *http.Request) {

@@ -10,6 +10,7 @@ type Message struct {
 	PageID            string    `json:"page_id"`
 	Platform          string    `json:"platform"`
 	FromUser          string    `json:"from_user"`
+	SocialUserName    *string   `json:"social_user_name"`
 	Content           string    `json:"content"`
 	Timestamp         time.Time `json:"timestamp"`
 	ThreadID          string    `json:"thread_id"`

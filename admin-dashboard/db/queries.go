@@ -45,7 +45,8 @@ const (
             WHEN c.profile_picture_url IS NULL THEN '/static/default-avatar.png'
             WHEN c.profile_picture_url = '' THEN '/static/default-avatar.png'
             ELSE c.profile_picture_url
-        END as profile_picture_url
+        END as profile_picture_url,
+        c.social_user_name
     FROM latest_messages lm
     LEFT JOIN conversations c ON c.thread_id = lm.thread_id
     ORDER BY lm.timestamp DESC
@@ -170,7 +171,8 @@ const (
             m.read, 
             m.source,
             COALESCE(c.bot_enabled, true) as bot_enabled,
-            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url,
+            c.social_user_name
         FROM messages m
         JOIN social_pages sp ON m.page_id = sp.id
         LEFT JOIN conversations c ON m.thread_id = c.thread_id
@@ -243,4 +245,87 @@ const (
         WHERE m.thread_id = $2
         ORDER BY m.timestamp DESC
         LIMIT 1`
+)
+
+// Chat related queries
+const (
+	// GetInitialChatMessagesQuery gets the most recent messages
+	GetInitialChatMessagesQuery = `
+        SELECT 
+            m.id, 
+            m.client_id, 
+            m.page_id, 
+            m.platform, 
+            m.from_user,
+            m.content, 
+            m.timestamp, 
+            m.thread_id, 
+            m.read, 
+            m.source,
+            COALESCE(c.bot_enabled, true) as bot_enabled,
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url,
+            c.social_user_name
+        FROM messages m
+        JOIN social_pages sp ON m.page_id = sp.id
+        LEFT JOIN conversations c ON m.thread_id = c.thread_id
+        WHERE sp.client_id = $1
+        AND m.thread_id = $2
+        AND (m.internal IS NULL OR m.internal = false)
+        ORDER BY m.timestamp DESC
+        LIMIT $3
+    `
+
+	// GetOlderMessagesQuery gets messages older than a specific timestamp
+	GetOlderMessagesQuery = `
+        SELECT 
+            m.id, 
+            m.client_id, 
+            m.page_id, 
+            m.platform, 
+            m.from_user,
+            m.content, 
+            m.timestamp, 
+            m.thread_id, 
+            m.read, 
+            m.source,
+            COALESCE(c.bot_enabled, true) as bot_enabled,
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url,
+            c.social_user_name
+        FROM messages m
+        JOIN social_pages sp ON m.page_id = sp.id
+        LEFT JOIN conversations c ON m.thread_id = c.thread_id
+        WHERE sp.client_id = $1
+        AND m.thread_id = $2
+        AND m.timestamp < $3::timestamp
+        AND (m.internal IS NULL OR m.internal = false)
+        ORDER BY m.timestamp DESC
+        LIMIT $4
+    `
+
+	// GetNewerMessagesQuery gets messages newer than a specific timestamp
+	GetNewerMessagesQuery = `
+        SELECT 
+            m.id, 
+            m.client_id, 
+            m.page_id, 
+            m.platform, 
+            m.from_user,
+            m.content, 
+            m.timestamp, 
+            m.thread_id, 
+            m.read, 
+            m.source,
+            COALESCE(c.bot_enabled, true) as bot_enabled,
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url,
+            c.social_user_name
+        FROM messages m
+        JOIN social_pages sp ON m.page_id = sp.id
+        LEFT JOIN conversations c ON m.thread_id = c.thread_id
+        WHERE sp.client_id = $1
+        AND m.thread_id = $2
+        AND m.timestamp > $3::timestamp
+        AND (m.internal IS NULL OR m.internal = false)
+        ORDER BY m.timestamp ASC
+        LIMIT $4
+    `
 )
