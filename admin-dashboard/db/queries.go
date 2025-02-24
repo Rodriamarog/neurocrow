@@ -92,14 +92,14 @@ const (
             lm.read,
             lm.source,
             COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
-            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url,
+            c.social_user_name
         FROM latest_messages lm
         LEFT JOIN conversations c ON c.thread_id = lm.thread_id
         WHERE 
             CASE 
                 WHEN $2 != '' THEN 
-                    lm.content ILIKE '%' || $2 || '%' OR 
-                    lm.thread_owner ILIKE '%' || $2 || '%'
+                    COALESCE(c.social_user_name, '') ILIKE '%' || $2 || '%'
                 ELSE TRUE
             END
         ORDER BY lm.timestamp DESC;

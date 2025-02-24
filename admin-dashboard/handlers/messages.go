@@ -135,7 +135,7 @@ func GetMessageList(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔍 Raw URL: %s", r.URL.String())
 	log.Printf("🔍 Search query received: %q", searchQuery)
 
-	// Pass the search term as-is so that the query handles it.
+	// Pass both the client ID and search query
 	messages, err := db.FetchMessages(user.ClientID, db.GetMessageListSearchQuery, searchQuery)
 	if err != nil {
 		log.Printf("❌ Error executing query: %v", err)
