@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"admin-dashboard/db"
+	"admin-dashboard/models"
 	"admin-dashboard/pkg/auth"
 	"admin-dashboard/pkg/meta"
 	"admin-dashboard/pkg/template"
@@ -43,6 +44,12 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 	log.Printf("  - UserID: %s", user.ID)
 	log.Printf("  - ClientID: %s", user.ClientID)
 	log.Printf("  - Role: %s", user.Role)
+
+	// Log Supabase configuration
+	supabaseURL := r.Context().Value("supabase_url")
+	supabaseAPIKey := r.Context().Value("supabase_api_key")
+	log.Printf("🔍 Supabase config in handler: URL=%v, API Key exists=%v",
+		supabaseURL, supabaseAPIKey != nil)
 
 	messages, err := db.FetchMessages(user.ClientID, db.GetMessagesQuery)
 	if err != nil {
@@ -358,6 +365,24 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if this is a test thread ID from the realtime.js
+	if strings.HasPrefix(threadID, "test-") {
+		// Return a test thread preview for test IDs
+		log.Printf("🧪 Creating test thread preview for: %s", threadID)
+		testMessage := models.Message{
+			ID:        threadID,
+			ThreadID:  threadID,
+			Content:   "Test message thread",
+			Source:    "user",
+			Timestamp: time.Now(),
+		}
+
+		if err := template.RenderTemplate(w, "thread-preview", testMessage); err != nil {
+			db.HandleError(w, err, "Error rendering test thread preview", http.StatusInternalServerError)
+		}
+		return
+	}
+
 	messages, err := db.FetchMessages(user.ClientID, db.GetThreadPreviewQuery, threadID)
 	if err != nil {
 		db.HandleError(w, err, "Error fetching thread preview", http.StatusInternalServerError)
@@ -373,7 +398,6 @@ func GetThreadPreview(w http.ResponseWriter, r *http.Request) {
 	log.Printf("✅ Rendering thread preview for thread_id: %s", threadID)
 	if err := template.RenderTemplate(w, "thread-preview", messages[0]); err != nil {
 		db.HandleError(w, err, "Error rendering thread preview", http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -476,4 +500,30 @@ func RefreshProfilePictures(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// GetMessageBubble returns HTML for a single message bubble
+func GetMessageBubble(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value("user").(*auth.User)
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	messageID := r.URL.Query().Get("id")
+	if messageID == "" {
+		http.Error(w, "Message ID is required", http.StatusBadRequest)
+		return
+	}
+
+	message, err := db.FetchSingleMessage(messageID, user.ClientID)
+	if err != nil {
+		log.Printf("❌ Error fetching message: %v", err)
+		db.HandleError(w, err, "Error fetching message", http.StatusInternalServerError)
+		return
+	}
+
+	if err := template.RenderTemplate(w, "message-bubble.html", message); err != nil {
+		db.HandleError(w, err, "Error rendering message bubble", http.StatusInternalServerError)
+	}
 }

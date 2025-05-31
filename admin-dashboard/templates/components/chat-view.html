@@ -93,6 +93,22 @@
             </svg>
         </button>
     </form>
+
+    <!-- Add this somewhere in your chat view -->
+    <button 
+      type="button" 
+      class="p-2 bg-gray-200 rounded text-sm" 
+      onclick="messageRealtime.testRealtime()">
+      Test Realtime
+    </button>
+
+    <!-- Add this next to your existing Test Realtime button -->
+    <button 
+      type="button" 
+      class="p-2 bg-green-200 rounded text-sm ml-2" 
+      onclick="messageRealtime.testDirectUpdate()">
+      Test Direct Update
+    </button>
 </div>
 <script>
     document.addEventListener('htmx:afterOnLoad', function() {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -255,10 +256,9 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	fbUser, err := getFacebookUser(data.UserToken)
 	if err != nil {
 		log.Printf("❌ Error getting Facebook user details: %v", err)
-		http.Error(w, "Could not verify Facebook user", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Could not verify Facebook user: %v", err), http.StatusInternalServerError)
 		return
 	}
-	log.Printf("✅ Got Facebook user: %s (%s)", fbUser.Name, fbUser.Email)
 
 	// 2. Get connected pages
 	pages, err := getConnectedPages(data.UserToken)
@@ -360,29 +360,68 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("✅ Successfully completed Facebook token request")
+	log.Printf("✅ Successfully completed Facebook token request, changes committed to social_pages.")
 	w.WriteHeader(http.StatusOK)
 }
 
-// Add this new function
+// Enhanced getFacebookUser function
 func getFacebookUser(token string) (*FacebookUser, error) {
 	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=%s", token)
+	log.Printf("Attempting to get Facebook user details from: %s", url)
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching user info: %w", err)
+		log.Printf("Error making HTTP request to Facebook: %v", err)
+		return nil, fmt.Errorf("error fetching user info from Facebook: %w", err)
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		log.Printf("Error reading response body from Facebook: %v", readErr)
+		return nil, fmt.Errorf("error reading Facebook response body: %w", readErr)
+	}
+	// Log the raw response body for debugging, regardless of status code.
+	// Be mindful if this token or body contains highly sensitive info not already expected.
+	log.Printf("Facebook get user response status: %s, body: %s", resp.Status, string(bodyBytes))
+
+	if resp.StatusCode != http.StatusOK {
+		var fbError struct {
+			Error struct {
+				Message   string `json:"message"`
+				Type      string `json:"type"`
+				Code      int    `json:"code"`
+				FbtraceID string `json:"fbtrace_id"`
+			} `json:"error"`
+		}
+		// Try to unmarshal the bodyBytes we already read
+		if unmarshalErr := json.Unmarshal(bodyBytes, &fbError); unmarshalErr == nil {
+			log.Printf("Facebook API error (parsed from body). Message: %s, Type: %s, Code: %d, Trace: %s",
+				fbError.Error.Message, fbError.Error.Type, fbError.Error.Code, fbError.Error.FbtraceID)
+		} else {
+			// Log if parsing the error structure itself failed
+			log.Printf("Facebook API error (could not parse error JSON from body). Body was: %s", string(bodyBytes))
+		}
+		// Return a generic error message to the caller, specific details are logged.
+		return nil, fmt.Errorf("Facebook API error (%s)", resp.Status)
+	}
+
 	var user FacebookUser
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
-		return nil, fmt.Errorf("error parsing user info: %w", err)
+	// Try to unmarshal the bodyBytes into the User struct
+	if err := json.Unmarshal(bodyBytes, &user); err != nil {
+		log.Printf("Error parsing Facebook user info from successful (200 OK) response body: %v. Body was: %s", err, string(bodyBytes))
+		return nil, fmt.Errorf("error parsing user info from Facebook response: %w", err)
 	}
 
 	if user.Email == "" {
+		// This case means Facebook API call was 200 OK, response parsed, but the email field is empty.
+		// This is the specific "no email provided" scenario.
+		log.Printf("Facebook user details fetched successfully (User ID: %s, Name: %s), but no email was provided by Facebook.", user.ID, user.Name)
 		return nil, fmt.Errorf("no email provided by Facebook")
 	}
 
+	// If everything is successful, log the details.
+	log.Printf("Successfully fetched Facebook user: ID %s, Name %s, Email %s", user.ID, user.Name, user.Email)
 	return &user, nil
 }
 

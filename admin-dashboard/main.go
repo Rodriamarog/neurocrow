@@ -7,8 +7,9 @@ import (
 	"admin-dashboard/pkg/auth"
 	"admin-dashboard/pkg/cache"
 	"admin-dashboard/pkg/meta"
-	"admin-dashboard/pkg/template" // new import
+	"admin-dashboard/pkg/template"
 	"admin-dashboard/services"
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -50,6 +51,22 @@ func setupServices(cfg *config.Config) (*Services, error) {
 	}, nil
 }
 
+// Define the supabaseMiddleware function
+func supabaseMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get Supabase config from environment
+		supabaseURL := os.Getenv("SUPABASE_URL")
+		supabaseAPIKey := os.Getenv("SUPABASE_API_KEY")
+
+		// Add to context
+		ctx := context.WithValue(r.Context(), "supabase_url", supabaseURL)
+		ctx = context.WithValue(ctx, "supabase_api_key", supabaseAPIKey)
+
+		// Call the next handler with the updated context
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func main() {
 	log.Printf("🚀 Starting server initialization...")
 
@@ -72,8 +89,20 @@ func main() {
 	http.HandleFunc("/login", handlers.Login)
 	http.HandleFunc("/logout", handlers.Logout)
 
+	// Get Supabase config
+	supabaseURL := os.Getenv("SUPABASE_URL")
+	supabaseAPIKey := os.Getenv("SUPABASE_API_KEY")
+
+	// Set global template data with Supabase config
+	template.SetGlobalTemplateData(map[string]interface{}{
+		"SupabaseURL":    supabaseURL,
+		"SupabaseAPIKey": supabaseAPIKey,
+	})
+
 	// Protected routes with consistent handler types
 	log.Printf("🔒 Setting up protected routes...")
+
+	// Since we're having type issues with the middleware chain, let's go back to the simpler approach
 	http.HandleFunc("/", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetMessages)))
 	http.HandleFunc("/message-list", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetMessageList)))
 	http.HandleFunc("/chat", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetChat)))
@@ -82,6 +111,7 @@ func main() {
 	http.HandleFunc("/toggle-bot", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.ToggleBotStatus)))
 	http.HandleFunc("/chat-messages", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetChatMessages)))
 	http.HandleFunc("/refresh-profile-pictures", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.RefreshProfilePictures)))
+	http.HandleFunc("/message-bubble", auth.AuthMiddleware(limiter.ViewLimit.RateLimit(handlers.GetMessageBubble)))
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("static"))
@@ -91,6 +121,7 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+
 	log.Printf("✅ Server initialization complete")
 	log.Printf("🌐 Server starting on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))

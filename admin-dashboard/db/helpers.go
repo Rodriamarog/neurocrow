@@ -148,3 +148,43 @@ func UpdateBotStatus(threadID string, enabled bool) error {
 
 	return nil
 }
+
+// FetchSingleMessage gets a single message by ID
+func FetchSingleMessage(messageID string, clientID string) (models.Message, error) {
+	query := `
+        SELECT 
+            m.id, m.client_id, m.page_id, m.platform,
+            m.from_user, m.content, m.timestamp, m.thread_id,
+            m.read, m.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url,
+            c.social_user_name
+        FROM messages m
+        JOIN social_pages sp ON m.page_id = sp.id
+        LEFT JOIN conversations c ON c.thread_id = m.thread_id
+        WHERE m.id = $1 AND sp.client_id = $2::uuid
+    `
+
+	var message models.Message
+	var dbClientID, socialUserName sql.NullString
+
+	err := DB.QueryRow(query, messageID, clientID).Scan(
+		&message.ID, &dbClientID, &message.PageID, &message.Platform,
+		&message.FromUser, &message.Content, &message.Timestamp, &message.ThreadID,
+		&message.Read, &message.Source, &message.BotEnabled, &message.ProfilePictureURL,
+		&socialUserName,
+	)
+
+	if err != nil {
+		return message, err
+	}
+
+	if dbClientID.Valid {
+		message.ClientID = &dbClientID.String
+	}
+	if socialUserName.Valid {
+		message.SocialUserName = &socialUserName.String
+	}
+
+	return message, nil
+}

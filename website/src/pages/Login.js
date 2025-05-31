@@ -57,6 +57,7 @@ function Login() {
       }
     }, {
       scope: [
+        'email',
         'pages_show_list',
         'pages_manage_metadata',
         'pages_messaging',
