@@ -23,8 +23,12 @@ function Footer() {
             <a href="https://www.facebook.com/profile.php?id=61568595868220" target="_blank" rel="noopener noreferrer">
               <i className="fab fa-facebook"></i>
             </a>
-            <a href="#"><i className="fab fa-instagram"></i></a>
-            <a href="#"><i className="fab fa-linkedin"></i></a>
+            <a href="https://instagram.com/neurocrow" target="_blank" rel="noopener noreferrer">
+              <i className="fab fa-instagram"></i>
+            </a>
+            <a href="https://linkedin.com/company/neurocrow" target="_blank" rel="noopener noreferrer">
+              <i className="fab fa-linkedin"></i>
+            </a>
           </div>
         </div>
       </div>
