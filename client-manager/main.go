@@ -281,12 +281,12 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	// 4. Create or update client
 	var clientID string
 	err = tx.QueryRow(`
-        INSERT INTO clients (name, email)
+        INSERT INTO clients (name, facebook_user_id)
         VALUES ($1, $2)
-        ON CONFLICT (email) DO UPDATE
+        ON CONFLICT (facebook_user_id) DO UPDATE
         SET name = EXCLUDED.name
         RETURNING id
-    `, fbUser.Name, fbUser.Email).Scan(&clientID)
+    `, fbUser.Name, fbUser.ID).Scan(&clientID)
 	if err != nil {
 		log.Printf("❌ Error upserting client: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -366,7 +366,7 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 
 // Enhanced getFacebookUser function
 func getFacebookUser(token string) (*FacebookUser, error) {
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=%s", token)
+	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name&access_token=%s", token)
 	log.Printf("Attempting to get Facebook user details from: %s", url)
 
 	resp, err := http.Get(url)
@@ -382,7 +382,6 @@ func getFacebookUser(token string) (*FacebookUser, error) {
 		return nil, fmt.Errorf("error reading Facebook response body: %w", readErr)
 	}
 	// Log the raw response body for debugging, regardless of status code.
-	// Be mindful if this token or body contains highly sensitive info not already expected.
 	log.Printf("Facebook get user response status: %s, body: %s", resp.Status, string(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
@@ -413,15 +412,14 @@ func getFacebookUser(token string) (*FacebookUser, error) {
 		return nil, fmt.Errorf("error parsing user info from Facebook response: %w", err)
 	}
 
-	if user.Email == "" {
-		// This case means Facebook API call was 200 OK, response parsed, but the email field is empty.
-		// This is the specific "no email provided" scenario.
-		log.Printf("Facebook user details fetched successfully (User ID: %s, Name: %s), but no email was provided by Facebook.", user.ID, user.Name)
-		return nil, fmt.Errorf("no email provided by Facebook")
+	// Basic validation that we got the essential fields
+	if user.ID == "" || user.Name == "" {
+		log.Printf("Facebook user details incomplete - ID: %s, Name: %s", user.ID, user.Name)
+		return nil, fmt.Errorf("incomplete user data from Facebook")
 	}
 
 	// If everything is successful, log the details.
-	log.Printf("Successfully fetched Facebook user: ID %s, Name %s, Email %s", user.ID, user.Name, user.Email)
+	log.Printf("Successfully fetched Facebook user: ID %s, Name %s", user.ID, user.Name)
 	return &user, nil
 }
 
