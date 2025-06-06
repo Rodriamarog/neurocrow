@@ -67,13 +67,8 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle Botpress responses
-	if isBotpressRequest(r) {
-		handleBotpressResponse(w, r)
-		return
-	}
-
-	// Unknown request type
+	// Unknown request type - no Dify responses needed since they're handled directly
+	log.Printf("ℹ️ Unknown POST request to webhook endpoint")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -284,20 +279,20 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					continue
 				}
 
-				// If sentiment is "general" and bot is enabled, forward to Botpress
-				log.Printf("      🤖 Forwarding message to Botpress")
-				if err := forwardToBotpress(ctx, entry.ID, msg, platform); err != nil {
-					log.Printf("❌ Error forwarding to Botpress: %v", err)
+				// If sentiment is "general" and bot is enabled, forward to Dify
+				log.Printf("      🤖 Forwarding message to Dify")
+				if err := forwardToDify(ctx, entry.ID, msg, platform); err != nil {
+					log.Printf("❌ Error forwarding to Dify: %v", err)
 
-					// If Botpress fails, mark for human attention
-					log.Printf("      ⚠️ Botpress error, marking for human attention")
-					if err := updateConversationState(ctx, conv, false, "Error al procesar con Botpress"); err != nil {
+					// If Dify fails, mark for human attention
+					log.Printf("      ⚠️ Dify error, marking for human attention")
+					if err := updateConversationState(ctx, conv, false, "Error al procesar con Dify"); err != nil {
 						log.Printf("❌ Error updating conversation state: %v", err)
 					} else {
 						log.Printf("      ✅ Conversation marked for human attention")
 					}
 				} else {
-					log.Printf("      ✅ Message successfully forwarded to Botpress")
+					log.Printf("      ✅ Message successfully forwarded to Dify")
 				}
 			} else {
 				log.Printf("      ℹ️ Bot is disabled, message stored for human review")
@@ -589,6 +584,212 @@ func getBotpressURL(ctx context.Context, pageID string) (string, error) {
 
 	log.Printf("✅ Found Botpress URL for page %s", pageID)
 	return botpressURL, nil
+}
+
+// =============================================================================
+// DIFY API INTEGRATION - New functions replacing Botpress
+// =============================================================================
+
+// getDifyApiKey retrieves the Dify API key for a specific page from database
+// Each client/page has their own Dify app with unique API key (multi-tenant)
+func getDifyApiKey(ctx context.Context, pageID string) (string, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var difyAPIKey string
+	err := db.QueryRowContext(queryCtx,
+		"SELECT dify_api_key FROM social_pages WHERE page_id = $1 AND status = 'active'",
+		pageID,
+	).Scan(&difyAPIKey)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("❌ No active Dify API key found for page %s", pageID)
+			return "", fmt.Errorf("no active Dify API key found for page %s", pageID)
+		}
+		log.Printf("❌ Database error querying Dify API key: %v", err)
+		return "", fmt.Errorf("database error: %v", err)
+	}
+
+	if difyAPIKey == "" {
+		log.Printf("❌ Empty Dify API key for page %s", pageID)
+		return "", fmt.Errorf("empty Dify API key for page %s", pageID)
+	}
+
+	log.Printf("✅ Found Dify API key for page %s (key: app-...%s)", pageID, difyAPIKey[len(difyAPIKey)-8:])
+	return difyAPIKey, nil
+}
+
+// forwardToDify sends a message to Dify API (replaces forwardToBotpress)
+func forwardToDify(ctx context.Context, pageID string, msg MessagingEntry, platform string) error {
+	// Create Dify request
+	difyReq := DifyRequest{
+		Inputs:         map[string]interface{}{}, // Empty for simple chat
+		Query:          msg.Message.Text,
+		ResponseMode:   "blocking",                                  // Get immediate response
+		User:           fmt.Sprintf("%s-%s", pageID, msg.Sender.ID), // Unique user ID
+		ConversationId: "",                                          // Will be managed by Dify automatically
+		Files:          []interface{}{},                             // No files for now
+	}
+
+	// Get Dify API key
+	apiKey, err := getDifyApiKey(ctx, pageID)
+	if err != nil {
+		return fmt.Errorf("error getting Dify API key: %v", err)
+	}
+
+	// Send to Dify with retries
+	response, err := sendToDifyWithRetry(ctx, apiKey, difyReq)
+	if err != nil {
+		return err
+	}
+
+	// Handle the response immediately (unlike Botpress webhooks)
+	return handleDifyResponseDirect(ctx, pageID, msg.Sender.ID, platform, response)
+}
+
+// sendToDifyWithRetry sends request to Dify with retry logic (replaces sendToBotpressWithRetry)
+func sendToDifyWithRetry(ctx context.Context, apiKey string, payload DifyRequest) (*DifyResponse, error) {
+	maxRetries := 3
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if response, err := sendToDify(ctx, apiKey, payload); err != nil {
+			lastErr = err
+			log.Printf("⚠️ Dify attempt %d failed: %v", attempt+1, err)
+			time.Sleep(time.Second * time.Duration(attempt+1))
+			continue
+		} else {
+			return response, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed after %d attempts: %v", maxRetries, lastErr)
+}
+
+// sendToDify sends the actual request to Dify API (replaces sendToBotpress)
+func sendToDify(ctx context.Context, apiKey string, payload DifyRequest) (*DifyResponse, error) {
+	// Dify API endpoint
+	apiURL := "https://api.dify.ai/v1/chat-messages"
+
+	// Convert payload to JSON
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling Dify payload: %v", err)
+	}
+
+	// Pretty print the payload for logging
+	var prettyJSON bytes.Buffer
+	if err := json.Indent(&prettyJSON, jsonData, "", "  "); err != nil {
+		log.Printf("⚠️ Warning: Could not pretty print JSON: %v", err)
+	}
+
+	log.Printf("🤖 Preparing Dify request:")
+	log.Printf("   URL: %s", apiURL)
+	log.Printf("   Payload:\n%s", prettyJSON.String())
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("error creating Dify request: %v", err)
+	}
+
+	// Add required headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	log.Printf("📤 Request headers:")
+	for key, values := range req.Header {
+		log.Printf("   %s: %s", key, values)
+	}
+
+	// Send the request
+	start := time.Now()
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request to Dify: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading Dify response: %v", err)
+	}
+
+	// Try to pretty print the response if it's JSON
+	var prettyResp bytes.Buffer
+	if json.Valid(respBody) {
+		if err := json.Indent(&prettyResp, respBody, "", "  "); err != nil {
+			log.Printf("⚠️ Warning: Could not pretty print response: %v", err)
+		}
+	}
+
+	log.Printf("📥 Dify response after %v:", time.Since(start))
+	log.Printf("   Status: %d %s", resp.StatusCode, resp.Status)
+	if prettyResp.Len() > 0 {
+		log.Printf("   Body:\n%s", prettyResp.String())
+	} else {
+		log.Printf("   Body: %s", string(respBody))
+	}
+
+	// Handle different response scenarios
+	if resp.StatusCode != http.StatusOK {
+		// Try to parse as error response
+		var errorResp DifyErrorResponse
+		if err := json.Unmarshal(respBody, &errorResp); err == nil {
+			return nil, fmt.Errorf("dify error: %s (code: %s)", errorResp.Message, errorResp.Code)
+		}
+		return nil, fmt.Errorf("unexpected status code from Dify: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse successful response
+	var difyResp DifyResponse
+	if err := json.Unmarshal(respBody, &difyResp); err != nil {
+		return nil, fmt.Errorf("error parsing Dify response: %v", err)
+	}
+
+	log.Printf("✅ Successfully received response from Dify")
+	return &difyResp, nil
+}
+
+// handleDifyResponseDirect processes Dify response immediately (replaces webhook-based handleBotpressResponse)
+func handleDifyResponseDirect(ctx context.Context, pageID, senderID, platform string, response *DifyResponse) error {
+	log.Printf("📥 Processing Dify response for conversation")
+
+	// Validate response
+	if response.Answer == "" {
+		return fmt.Errorf("empty answer from Dify")
+	}
+
+	// Get page info to determine platform details
+	pageInfo, err := getPageInfo(ctx, pageID)
+	if err != nil {
+		return fmt.Errorf("error getting page info: %v", err)
+	}
+
+	// Send response to the user via appropriate platform
+	if err := sendPlatformResponse(ctx, pageInfo, senderID, response.Answer); err != nil {
+		return fmt.Errorf("error sending platform response: %v", err)
+	}
+
+	log.Printf("✅ Platform response sent successfully, storing bot response")
+
+	// Store the bot response in database
+	if err := storeMessage(ctx, pageID, senderID, platform, response.Answer, "bot", "dify", false); err != nil {
+		return fmt.Errorf("error storing bot response: %v", err)
+	}
+
+	log.Printf("✅ Stored Dify bot response in database")
+	return nil
+}
+
+// isDifyRequest checks if an incoming request is from Dify (replaces isBotpressRequest)
+// Note: This might not be needed since Dify responses are handled directly, not via webhook
+func isDifyRequest(r *http.Request) bool {
+	userAgent := r.Header.Get("User-Agent")
+	// Dify doesn't send webhooks back, so this is mainly for future compatibility
+	return strings.Contains(strings.ToLower(userAgent), "dify")
 }
 
 func getPageInfo(ctx context.Context, pageID string) (*PageInfo, error) {

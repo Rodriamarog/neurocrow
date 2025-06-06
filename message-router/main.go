@@ -45,6 +45,9 @@ func loadConfig() {
 		VerifyToken:       getEnvOrDie("VERIFY_TOKEN"),
 		Port:              getEnvOrDefault("PORT", "8080"),
 		FireworksKey:      getEnvOrDie("FIREWORKS_API_KEY"),
+		// Botpress integration (legacy - temporary during migration)
+		BotpressToken: os.Getenv("BOTPRESS_TOKEN"), // Optional during migration
+		// Note: Dify API keys are now stored per-page in database (multi-tenant)
 	}
 
 	// Log configuration (safely)
@@ -53,6 +56,12 @@ func loadConfig() {
 	log.Printf("   Facebook App Secret length: %d", len(config.FacebookAppSecret))
 	log.Printf("   Verify Token length: %d", len(config.VerifyToken))
 	log.Printf("   Fireworks API Key length: %d", len(config.FireworksKey))
+	log.Printf("   Dify API keys: stored per-page in database (multi-tenant)")
+	if config.BotpressToken != "" {
+		log.Printf("   Botpress Token length: %d (legacy)", len(config.BotpressToken))
+	} else {
+		log.Printf("   Botpress Token: not set (migration mode)")
+	}
 	log.Printf("   Port: %s", config.Port)
 }
 
@@ -177,22 +186,11 @@ func setupRouter() *http.ServeMux {
 	// Register routes with middleware
 	router.HandleFunc("/", logMiddleware(healthCheckHandler))
 
-	// Main webhook endpoint for Facebook
+	// Main webhook endpoint for Facebook/Instagram
 	router.HandleFunc("/webhook", logMiddleware(recoverMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		// Check if it's a Botpress request
-		if isBotpressRequest(r) {
-			log.Printf("✅ Botpress request detected")
-			w.WriteHeader(http.StatusOK)
-			if r.Method == http.MethodPost {
-				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprintf(w, `{"status":"ok","message":"Webhook received"}`)
-			}
-			return
-		}
-
 		// If it has Facebook signature headers, treat as Facebook webhook
 		if r.Header.Get("X-Hub-Signature-256") != "" {
-			log.Printf("✅ Facebook webhook request detected")
+			log.Printf("✅ Facebook/Instagram webhook request detected")
 			validateFacebookRequest(handleWebhook)(w, r)
 			return
 		}
@@ -203,17 +201,16 @@ func setupRouter() *http.ServeMux {
 		fmt.Fprintf(w, `{"status":"ok"}`)
 	})))
 
-	// New endpoint specifically for Botpress responses
-	router.HandleFunc("/botpress-response", logMiddleware(recoverMiddleware(handleBotpressResponse)))
-
 	// New endpoint for sending messages from the dashboard
 	router.HandleFunc("/send-message", logMiddleware(recoverMiddleware(handleSendMessage)))
 
 	// Log registered routes
 	log.Printf("📍 Registered routes:")
 	log.Printf("   - GET/POST/HEAD / (Health Check)")
-	log.Printf("   - GET/POST /webhook (Multi-purpose Webhook)")
-	log.Printf("   - POST /botpress-response (Botpress Response Handler)")
+	log.Printf("   - GET/POST /webhook (Facebook/Instagram Webhook)")
+	log.Printf("   - POST /send-message (Dashboard Message Sender)")
+	log.Printf("🤖 AI Integration: Dify (per-page API keys)")
+	log.Printf("📊 Database: Multi-tenant client support")
 
 	return router
 }
