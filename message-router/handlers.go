@@ -622,14 +622,27 @@ func getDifyApiKey(ctx context.Context, pageID string) (string, error) {
 
 // forwardToDify sends a message to Dify API (replaces forwardToBotpress)
 func forwardToDify(ctx context.Context, pageID string, msg MessagingEntry, platform string) error {
-	// Create Dify request
+	// Get existing conversation state to retrieve any existing Dify conversation ID
+	conv, err := getOrCreateConversation(ctx, pageID, msg.Sender.ID, platform)
+	if err != nil {
+		return fmt.Errorf("error getting conversation state: %v", err)
+	}
+
+	// Create Dify request with existing conversation ID if available
 	difyReq := DifyRequest{
 		Inputs:         map[string]interface{}{}, // Empty for simple chat
 		Query:          msg.Message.Text,
 		ResponseMode:   "blocking",                                  // Get immediate response
 		User:           fmt.Sprintf("%s-%s", pageID, msg.Sender.ID), // Unique user ID
-		ConversationId: "",                                          // Will be managed by Dify automatically
+		ConversationId: conv.DifyConversationID,                     // Use existing conversation ID or empty for new
 		Files:          []interface{}{},                             // No files for now
+	}
+
+	// Log conversation continuation
+	if conv.DifyConversationID != "" {
+		log.Printf("🔄 Continuing existing Dify conversation: %s", conv.DifyConversationID)
+	} else {
+		log.Printf("🆕 Starting new Dify conversation for thread: %s", msg.Sender.ID)
 	}
 
 	// Get Dify API key
@@ -760,6 +773,15 @@ func handleDifyResponseDirect(ctx context.Context, pageID, senderID, platform st
 	// Validate response
 	if response.Answer == "" {
 		return fmt.Errorf("empty answer from Dify")
+	}
+
+	// Store/update the Dify conversation ID for future context
+	if response.ConversationId != "" {
+		if err := updateDifyConversationID(ctx, senderID, response.ConversationId); err != nil {
+			log.Printf("⚠️ Could not store Dify conversation ID: %v", err)
+		} else {
+			log.Printf("💾 Stored Dify conversation ID: %s for thread: %s", response.ConversationId, senderID)
+		}
 	}
 
 	// Get page info to determine platform details
@@ -964,5 +986,21 @@ func updateConversationUsername(ctx context.Context, threadID string, userName s
 	}
 
 	log.Printf("✅ Updated conversation user name to: %s", userName)
+	return nil
+}
+
+// updateDifyConversationID stores the Dify conversation ID for maintaining context
+func updateDifyConversationID(ctx context.Context, threadID string, difyConversationID string) error {
+	_, err := db.ExecContext(ctx, `
+        UPDATE conversations 
+        SET dify_conversation_id = $1,
+            updated_at = NOW()
+        WHERE thread_id = $2
+    `, difyConversationID, threadID)
+
+	if err != nil {
+		return fmt.Errorf("error updating Dify conversation ID: %v", err)
+	}
+
 	return nil
 }

@@ -109,14 +109,15 @@ type InstagramChanges struct {
 }
 
 type ConversationState struct {
-	ThreadID         string
-	PageID           string
-	Platform         string
-	BotEnabled       bool
-	LastBotMessage   time.Time
-	LastHumanMessage time.Time
-	LastUserMessage  time.Time
-	MessageCount     int
+	ThreadID           string
+	PageID             string
+	Platform           string
+	BotEnabled         bool
+	LastBotMessage     time.Time
+	LastHumanMessage   time.Time
+	LastUserMessage    time.Time
+	MessageCount       int
+	DifyConversationID string // Dify conversation ID for maintaining context
 }
 
 type Config struct {

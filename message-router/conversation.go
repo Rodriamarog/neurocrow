@@ -26,7 +26,8 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
                COALESCE(c.last_bot_message_at, '1970-01-01'::timestamp),
                COALESCE(c.last_human_message_at, '1970-01-01'::timestamp),
                COALESCE(c.last_user_message_at, '1970-01-01'::timestamp),
-               c.message_count
+               c.message_count,
+               COALESCE(c.dify_conversation_id, '')
         FROM conversations c
         JOIN social_pages sp ON sp.id = c.page_id
         WHERE c.thread_id = $1 AND c.page_id = $2
@@ -39,6 +40,7 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 		&conv.LastHumanMessage,
 		&conv.LastUserMessage,
 		&conv.MessageCount,
+		&conv.DifyConversationID,
 	)
 
 	if err == sql.ErrNoRows {
