@@ -776,7 +776,7 @@ func handleDifyResponseDirect(ctx context.Context, pageID, senderID, platform st
 	log.Printf("✅ Platform response sent successfully, storing bot response")
 
 	// Store the bot response in database
-	if err := storeMessage(ctx, pageID, senderID, platform, response.Answer, "bot", "dify", false); err != nil {
+	if err := storeMessage(ctx, pageID, senderID, platform, response.Answer, "bot", "bot", false); err != nil {
 		return fmt.Errorf("error storing bot response: %v", err)
 	}
 
