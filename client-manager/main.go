@@ -2,6 +2,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -269,14 +270,25 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("✅ Found %d connected pages/accounts", len(pages))
 
-	// 3. Start transaction
+	// 3. Start transactions for both databases
 	tx, err := DB.Begin()
 	if err != nil {
-		log.Printf("❌ Error starting transaction: %v", err)
+		log.Printf("❌ Error starting client-manager transaction: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
+
+	var socialTx *sql.Tx
+	if SocialDB != nil {
+		socialTx, err = SocialDB.Begin()
+		if err != nil {
+			log.Printf("❌ Error starting social dashboard transaction: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer socialTx.Rollback()
+	}
 
 	// 4. Create or update client
 	var clientID string
@@ -309,10 +321,11 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 	rowsAffected, _ := result.RowsAffected()
 	log.Printf("✅ Disabled %d previous pages", rowsAffected)
 
-	// 6. Insert/update new pages
+	// 6. Insert/update new pages in BOTH tables
 	for _, page := range pages {
 		log.Printf("📝 Processing page %s (ID: %s)", page.Name, page.ID)
 
+		// Insert/update in pages table (for client-manager)
 		result, err := tx.Exec(`
             INSERT INTO pages (
                 client_id,
@@ -345,22 +358,64 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
         `, clientID, page.ID, page.Name, page.AccessToken, page.Platform)
 
 		if err != nil {
-			log.Printf("❌ Error processing page %s: %v", page.Name, err)
+			log.Printf("❌ Error processing page in pages table %s: %v", page.Name, err)
 			continue
 		}
 
 		rowsAffected, _ := result.RowsAffected()
-		log.Printf("✅ Successfully processed page %s (rows affected: %d)", page.Name, rowsAffected)
+		log.Printf("✅ Successfully processed page in pages table %s (rows affected: %d)", page.Name, rowsAffected)
+
+		// Also insert/update in social_pages table (for message-router) if social database is available
+		if socialTx != nil {
+			socialResult, err := socialTx.Exec(`
+                INSERT INTO social_pages (
+                    client_id,
+                    platform,
+                    page_id, 
+                    page_name, 
+                    access_token,
+                    created_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, NOW()
+                )
+                ON CONFLICT (platform, page_id) 
+                DO UPDATE SET 
+                    client_id = EXCLUDED.client_id,
+                    page_name = EXCLUDED.page_name,
+                    access_token = EXCLUDED.access_token
+            `, clientID, page.Platform, page.ID, page.Name, page.AccessToken)
+
+			if err != nil {
+				log.Printf("❌ Error processing page in social_pages table %s: %v", page.Name, err)
+				continue
+			}
+
+			socialRowsAffected, _ := socialResult.RowsAffected()
+			log.Printf("✅ Successfully processed page in social_pages table %s (rows affected: %d)", page.Name, socialRowsAffected)
+		} else {
+			log.Printf("⚠️ Social database not available, skipping social_pages update for %s", page.Name)
+		}
 	}
 
-	// 7. Commit transaction
+	// 7. Commit both transactions
 	if err = tx.Commit(); err != nil {
-		log.Printf("❌ Error committing transaction: %v", err)
+		log.Printf("❌ Error committing client-manager transaction: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("✅ Client-manager transaction committed successfully")
 
-	log.Printf("✅ Successfully completed Facebook token request, changes committed to social_pages.")
+	if socialTx != nil {
+		if err = socialTx.Commit(); err != nil {
+			log.Printf("❌ Error committing social dashboard transaction: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("✅ Social dashboard transaction committed successfully")
+		log.Printf("✅ Successfully completed Facebook token request, changes committed to both pages and social_pages tables.")
+	} else {
+		log.Printf("✅ Successfully completed Facebook token request, changes committed to pages table only.")
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
