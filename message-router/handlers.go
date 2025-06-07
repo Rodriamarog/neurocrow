@@ -158,11 +158,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 				// If we get here, it's a human message
 				log.Printf("      🔍 Detected human agent message (sender ID: %s)", msg.Sender.ID)
-				if err := storeMessage(ctx, entry.ID, msg.Recipient.ID, platform, msg.Message.Text, "admin", "human", false); err != nil {
-					log.Printf("❌ Error storing echo message: %v", err)
-				} else {
-					log.Printf("      ✅ Echo message stored successfully")
-				}
+				log.Printf("      ✅ Human agent message detected and processed")
 				continue
 			}
 
@@ -209,14 +205,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					log.Printf("⚠️ Could not update conversation user name: %v", err)
 				}
 			}
-			log.Printf("      📝 Using name '%s' for message storage", userName)
-
-			// Store the incoming message
-			if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, msg.Message.Text, userName, "user", true); err != nil {
-				log.Printf("❌ Error storing message: %v", err)
-			} else {
-				log.Printf("      ✅ Message stored successfully")
-			}
+			log.Printf("      📝 User message processed - no storage needed")
 
 			// Only proceed with bot processing if enabled
 			if conv.BotEnabled {
@@ -268,13 +257,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 						log.Printf("      ✅ Handoff message sent successfully")
 					}
 
-					// Store the handoff message
-					log.Printf("      💾 Storing handoff message")
-					if err := storeMessage(ctx, entry.ID, msg.Sender.ID, platform, handoffMsg, "system", "system", false); err != nil {
-						log.Printf("❌ Error storing handoff message: %v", err)
-					} else {
-						log.Printf("      ✅ Handoff message stored successfully")
-					}
+					log.Printf("      ✅ Handoff completed - no storage needed")
 
 					continue
 				}
@@ -295,62 +278,14 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					log.Printf("      ✅ Message successfully forwarded to Dify")
 				}
 			} else {
-				log.Printf("      ℹ️ Bot is disabled, message stored for human review")
+				log.Printf("      ℹ️ Bot is disabled, message noted for human review")
 			}
 		}
 	}
 	log.Printf("✅ Async message processing complete")
 }
 
-func storeMessage(ctx context.Context, pageID, senderID, platform, content, fromUser, source string, requiresAttention bool) error {
-	// Get the UUID from social_pages instead of pages
-	var pageUUID string
-	err := db.QueryRowContext(ctx, `
-        SELECT id 
-        FROM social_pages 
-        WHERE page_id = $1
-    `, pageID).Scan(&pageUUID)
-
-	if err != nil {
-		return fmt.Errorf("error finding page: %v", err)
-	}
-
-	// Now use this UUID to store the message
-	_, err = db.ExecContext(ctx, `
-        INSERT INTO messages (
-            id,           
-            client_id,    
-            page_id,      
-            platform,     
-            thread_id,    
-            from_user,    
-            content,      
-            timestamp,    
-            read,         
-            source,       
-            requires_attention  
-        ) VALUES (
-            gen_random_uuid(),  
-            (SELECT client_id FROM social_pages WHERE id = $1),
-            $1,                 
-            $2,                 
-            $3,                 
-            $4,                 
-            $5,                 
-            NOW(),             
-            false,             
-            $6,                
-            $7                 
-        )
-    `, pageUUID, platform, senderID, fromUser, content, source, requiresAttention)
-
-	if err != nil {
-		return fmt.Errorf("error storing message: %v", err)
-	}
-
-	log.Printf("✅ Message stored successfully (from: %s, source: %s)", fromUser, source)
-	return nil
-}
+// storeMessage function removed - no longer storing messages
 
 func forwardToBotpress(ctx context.Context, pageID string, msg MessagingEntry, platform string) error {
 	// Create Botpress request
@@ -428,12 +363,7 @@ func handleBotpressResponse(w http.ResponseWriter, r *http.Request) {
 		if err := sendPlatformResponse(ctx, pageInfo, senderID, response.Payload.Text); err != nil {
 			log.Printf("❌ Error sending platform response: %v", err)
 		} else {
-			log.Printf("✅ Platform response sent successfully, storing bot response")
-			if err := storeMessage(ctx, pageID, senderID, pageInfo.Platform, response.Payload.Text, "bot", "bot", false); err != nil {
-				log.Printf("❌ Error storing bot response: %v", err)
-			} else {
-				log.Printf("✅ Stored bot response in database")
-			}
+			log.Printf("✅ Platform response sent successfully - no storage needed")
 		}
 	}
 
@@ -795,14 +725,7 @@ func handleDifyResponseDirect(ctx context.Context, pageID, senderID, platform st
 		return fmt.Errorf("error sending platform response: %v", err)
 	}
 
-	log.Printf("✅ Platform response sent successfully, storing bot response")
-
-	// Store the bot response in database
-	if err := storeMessage(ctx, pageID, senderID, platform, response.Answer, "bot", "bot", false); err != nil {
-		return fmt.Errorf("error storing bot response: %v", err)
-	}
-
-	log.Printf("✅ Stored Dify bot response in database")
+	log.Printf("✅ Platform response sent successfully - no storage needed")
 	return nil
 }
 
