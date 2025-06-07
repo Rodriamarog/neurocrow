@@ -156,15 +156,31 @@ Message to analyse:`
 	}
 
 	// Clean and validate the response
-	status := strings.TrimSpace(result.Choices[0].Message.Content)
+	rawStatus := strings.TrimSpace(result.Choices[0].Message.Content)
 	log.Printf("Raw LLM response: %q (Tokens used - Prompt: %d, Completion: %d, Total: %d)",
-		status, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens)
+		rawStatus, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens)
 
+	// Normalize the status - convert to lowercase and clean up
+	status := strings.ToLower(rawStatus)
+	status = strings.ReplaceAll(status, "\"", "") // Remove quotes
+	status = strings.ReplaceAll(status, "'", "")  // Remove single quotes
+	status = strings.ReplaceAll(status, ".", "")  // Remove periods
+	status = strings.Split(status, " ")[0]        // Take only the first word
+	status = strings.Split(status, "\n")[0]       // Take only the first line
+
+	log.Printf("Normalized status: %q", status)
+
+	// Map variations to standard values (all lowercase now)
 	switch status {
-	case "general", "need_human", "frustrated":
-		// Valid status
+	case "general", "normal", "neutral", "regular":
+		status = "general"
+	case "need_human", "needhuman", "human", "agent", "need-human", "need_human_help":
+		status = "need_human"
+	case "frustrated", "angry", "upset", "mad", "annoyed", "irritated":
+		status = "frustrated"
 	default:
-		return nil, fmt.Errorf("invalid status received: %q", status)
+		log.Printf("⚠️ Unexpected status received: %q (raw: %q), defaulting to 'general'", status, rawStatus)
+		status = "general" // Default to general instead of erroring out
 	}
 
 	return &Analysis{
