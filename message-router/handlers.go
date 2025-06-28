@@ -213,13 +213,6 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 			}
 			log.Printf("      ✅ Conversation state retrieved, bot enabled: %v", conv.BotEnabled)
 
-			// Check if bot should be disabled due to recent human agent activity
-			if conv.BotEnabled && isRecentHumanActivity(conv) {
-				log.Printf("      ⏰ Bot disabled due to recent human agent activity (within 6 hours)")
-				log.Printf("      ℹ️ Message noted for human review")
-				continue
-			}
-
 			// Get page info for access token
 			log.Printf("      🔑 Fetching page info for ID: %s", entry.ID)
 			pageInfo, err := getPageInfo(ctx, entry.ID)
