@@ -43,7 +43,7 @@ func loadConfig() {
 	}
 
 	config = Config{
-		DatabaseURL:       getEnvOrDie("SOCIAL_DASHBOARD_DATABASE_URL"), // Use DATABASE_URL for the single database
+		DatabaseURL:       getEnvOrDie("DATABASE_URL"), // Use DATABASE_URL for the single database
 		FacebookAppSecret: getEnvOrDie("FACEBOOK_APP_SECRET"),
 		VerifyToken:       getEnvOrDie("VERIFY_TOKEN"),
 		Port:              getEnvOrDefault("PORT", "8080"),
