@@ -176,8 +176,12 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				// If we get here, it's a human message
 				log.Printf("      🔍 Detected human agent message (sender ID: %s)", msg.Sender.ID)
 
+				// For human agent messages, the thread_id should be the recipient (customer), not the sender (page)
+				customerThreadID := msg.Recipient.ID
+				log.Printf("      🔍 Using customer thread ID: %s for human agent message", customerThreadID)
+
 				// Update conversation to track human agent activity and disable bot for 6 hours
-				if err := updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform); err != nil {
+				if err := updateConversationForHumanMessage(ctx, entry.ID, customerThreadID, platform); err != nil {
 					log.Printf("❌ Error updating conversation for human message: %v", err)
 				} else {
 					log.Printf("      ✅ Bot disabled for 6 hours due to human agent activity")
