@@ -256,16 +256,16 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					log.Printf("      ⚡ Human assistance specifically requested")
 
 					// Prepare handoff message
-					reason := "Usuario solicitó asistencia humana"
 					handoffMsg := "Claro, te conectaré con un agente humano para ayudarte mejor."
 					log.Printf("      👋 Human assistance requested")
 
-					// Update conversation state to disable bot
-					log.Printf("      🔄 Updating conversation state to disable bot")
-					if err := updateConversationState(ctx, conv, false, reason); err != nil {
-						log.Printf("❌ Error updating conversation state: %v", err)
+					// Update conversation to disable bot AND set human message timestamp
+					// This prevents immediate reactivation by setting last_human_message_at = NOW()
+					log.Printf("      🔄 Updating conversation for human handoff (sets 6-hour timer)")
+					if err := updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform); err != nil {
+						log.Printf("❌ Error updating conversation for human handoff: %v", err)
 					} else {
-						log.Printf("      ✅ Conversation state updated successfully")
+						log.Printf("      ✅ Conversation updated for human handoff (bot disabled for 6 hours)")
 					}
 
 					// Send handoff message to user
