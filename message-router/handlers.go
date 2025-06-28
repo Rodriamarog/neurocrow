@@ -144,22 +144,24 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 				// For Facebook, we need to distinguish between bot and human agent messages
 				if platform == "facebook" && msg.Message.AppId > 0 {
-					// Check if this is a known bot app_id (Dify or other automated systems)
-					// Common bot app_ids that should be skipped:
-					// - Dify apps typically have specific app_ids
-					// - Page admin messages from Facebook interface have different app_ids
-
 					// Log the app_id to help identify patterns
 					log.Printf("      📝 Echo message with app_id: %d", msg.Message.AppId)
 
-					// For now, let's check if the sender is the page itself (indicating a human agent)
-					// If sender ID matches the page ID (entry.ID), it's likely a human agent
+					// Check if this is a known bot app_id that should be skipped
+					// Bot app_id: 1195277397801905 (Dify/automated responses)
+					// Human agent app_id: 263902037430900 (Facebook Page admin interface)
+					if msg.Message.AppId == 1195277397801905 {
+						log.Printf("      🤖 Detected bot echo message (app_id: %d)", msg.Message.AppId)
+						log.Printf("      📝 Skipping bot echo message - no action needed")
+						continue
+					}
+
+					// If sender ID matches the page ID and it's not a bot app_id, it's a human agent
 					if msg.Sender.ID == entry.ID {
-						log.Printf("      👤 Detected human agent message (sender matches page ID)")
+						log.Printf("      👤 Detected human agent message (app_id: %d)", msg.Message.AppId)
 						// This is a human agent message - proceed to disable bot
 					} else {
-						log.Printf("      🤖 Detected bot echo message (sender differs from page ID)")
-						log.Printf("      📝 Skipping storage of Facebook bot echo message (app_id: %d)", msg.Message.AppId)
+						log.Printf("      ⚠️ Unknown echo message pattern: sender=%s, page=%s, app_id=%d", msg.Sender.ID, entry.ID, msg.Message.AppId)
 						continue
 					}
 				}
