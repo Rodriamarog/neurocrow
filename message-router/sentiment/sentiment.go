@@ -78,11 +78,13 @@ type FireworksResponse struct {
 func (a *Analyzer) Analyze(ctx context.Context, message string) (*Analysis, error) {
 	systemPrompt := `You're a sentiment analysis agent. Respond with exactly one word:
 
-"general" - for normal questions, requests, or neutral messages
+"general" - for normal questions, requests, complaints, or any messages that don't EXPLICITLY ask for human help
 
-"need_human" - ONLY if they specifically ask for human help or agent
+"need_human" - ONLY if they EXPLICITLY and DIRECTLY ask to speak to a human, agent, representative, or person. Examples: "I want to talk to a human", "Can I speak to a person?", "Transfer me to an agent", "I need human help"
 
 "frustrated" - ONLY if they explicitly express anger, frustration, or complaints
+
+IMPORTANT: Be very conservative with "need_human". Most complaints, problems, or even expressions of frustration should be "general" or "frustrated", NOT "need_human" unless they specifically ask to talk to a person.
 
 Most of the time, the message will be "general". If you are not sure, respond with "general".
 

@@ -158,7 +158,13 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 				// If we get here, it's a human message
 				log.Printf("      🔍 Detected human agent message (sender ID: %s)", msg.Sender.ID)
-				log.Printf("      ✅ Human agent message detected and processed")
+
+				// Update conversation to track human agent activity and disable bot for 6 hours
+				if err := updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform); err != nil {
+					log.Printf("❌ Error updating conversation for human message: %v", err)
+				} else {
+					log.Printf("      ✅ Bot disabled for 6 hours due to human agent activity")
+				}
 				continue
 			}
 
@@ -183,6 +189,13 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				continue
 			}
 			log.Printf("      ✅ Conversation state retrieved, bot enabled: %v", conv.BotEnabled)
+
+			// Check if bot should be disabled due to recent human agent activity
+			if conv.BotEnabled && isRecentHumanActivity(conv) {
+				log.Printf("      ⏰ Bot disabled due to recent human agent activity (within 6 hours)")
+				log.Printf("      ℹ️ Message noted for human review")
+				continue
+			}
 
 			// Get page info for access token
 			log.Printf("      🔑 Fetching page info for ID: %s", entry.ID)
@@ -223,23 +236,13 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				log.Printf("         Estimated cost: $%.5f", float64(analysis.TokensUsed)*0.20/1_000_000)
 
 				// Update conversation state based on analysis
-				if analysis.Status != "general" {
-					log.Printf("      ⚡ Non-general status detected: %s", analysis.Status)
+				if analysis.Status == "need_human" {
+					log.Printf("      ⚡ Human assistance specifically requested")
 
-					// Prepare handoff message based on analysis
-					handoffMsg := ""
-					reason := ""
-
-					switch analysis.Status {
-					case "need_human":
-						reason = "Usuario solicitó asistencia humana"
-						handoffMsg = "Claro, te conectaré con un agente humano para ayudarte mejor."
-						log.Printf("      👋 Human assistance requested")
-					case "frustrated":
-						reason = "Usuario muestra señales de frustración"
-						handoffMsg = "Lamento la confusión. Te conectaré con un agente especializado inmediatamente."
-						log.Printf("      😤 User frustration detected")
-					}
+					// Prepare handoff message
+					reason := "Usuario solicitó asistencia humana"
+					handoffMsg := "Claro, te conectaré con un agente humano para ayudarte mejor."
+					log.Printf("      👋 Human assistance requested")
 
 					// Update conversation state to disable bot
 					log.Printf("      🔄 Updating conversation state to disable bot")
@@ -258,24 +261,40 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					}
 
 					log.Printf("      ✅ Handoff completed - no storage needed")
-
 					continue
 				}
 
-				// If sentiment is "general" and bot is enabled, forward to Dify
-				log.Printf("      🤖 Forwarding message to Dify")
-				if err := forwardToDify(ctx, entry.ID, msg, platform); err != nil {
-					log.Printf("❌ Error forwarding to Dify: %v", err)
+				// For frustrated users, acknowledge their frustration but keep bot enabled
+				if analysis.Status == "frustrated" {
+					log.Printf("      😤 User frustration detected - sending empathy message but keeping bot enabled")
 
-					// If Dify fails, mark for human attention
-					log.Printf("      ⚠️ Dify error, marking for human attention")
-					if err := updateConversationState(ctx, conv, false, "Error al procesar con Dify"); err != nil {
-						log.Printf("❌ Error updating conversation state: %v", err)
+					empathyMsg := "Entiendo tu frustración. Permíteme ayudarte de la mejor manera posible."
+					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, empathyMsg); err != nil {
+						log.Printf("❌ Error sending empathy message: %v", err)
 					} else {
-						log.Printf("      ✅ Conversation marked for human attention")
+						log.Printf("      ✅ Empathy message sent successfully")
 					}
-				} else {
-					log.Printf("      ✅ Message successfully forwarded to Dify")
+
+					// Continue processing with Dify instead of handing off to human
+					log.Printf("      🤖 Continuing with bot processing despite frustration")
+				}
+
+				// If sentiment is "general" or "frustrated" and bot is enabled, forward to Dify
+				if analysis.Status == "general" || analysis.Status == "frustrated" {
+					log.Printf("      🤖 Forwarding message to Dify")
+					if err := forwardToDify(ctx, entry.ID, msg, platform); err != nil {
+						log.Printf("❌ Error forwarding to Dify: %v", err)
+
+						// If Dify fails, mark for human attention
+						log.Printf("      ⚠️ Dify error, marking for human attention")
+						if err := updateConversationState(ctx, conv, false, "Error al procesar con Dify"); err != nil {
+							log.Printf("❌ Error updating conversation state: %v", err)
+						} else {
+							log.Printf("      ✅ Conversation marked for human attention")
+						}
+					} else {
+						log.Printf("      ✅ Message successfully forwarded to Dify")
+					}
 				}
 			} else {
 				log.Printf("      ℹ️ Bot is disabled, message noted for human review")

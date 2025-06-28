@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 )
 
 func getOrCreateConversation(ctx context.Context, pageID, threadID, platform string) (*ConversationState, error) {
@@ -228,4 +229,141 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 
 	log.Printf("✅ Successfully updated conversation state")
 	return nil
+}
+
+// updateConversationForHumanMessage updates the conversation when a human agent sends a message
+// This disables the bot for 6 hours to prevent double responses
+func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, platform string) error {
+	log.Printf("🔍 Updating conversation for human agent message: pageID=%s, threadID=%s, platform=%s", pageID, threadID, platform)
+
+	// Get UUID for database operations
+	var pageUUID string
+	err := db.QueryRowContext(ctx, `
+        SELECT id 
+        FROM social_pages 
+        WHERE page_id = $1
+    `, pageID).Scan(&pageUUID)
+	if err != nil {
+		return fmt.Errorf("error finding page: %v", err)
+	}
+
+	// Start a transaction
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("error starting transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Update the conversation to record human message and disable bot
+	// This refreshes the 6-hour timer every time a human agent sends a message
+	_, err = tx.ExecContext(ctx, `
+        UPDATE conversations 
+        SET last_human_message_at = NOW(),
+            bot_enabled = false,
+            latest_message_at = NOW(),
+            message_count = message_count + 1
+        WHERE thread_id = $1 AND page_id = $2
+    `, threadID, pageUUID)
+	if err != nil {
+		return fmt.Errorf("error updating conversation for human message: %v", err)
+	}
+
+	// Get client_id for system message
+	var clientID sql.NullString
+	err = tx.QueryRowContext(ctx, `
+        SELECT client_id
+        FROM social_pages 
+        WHERE page_id = $1 AND platform = $2
+    `, pageID, platform).Scan(&clientID)
+	if err != nil {
+		return fmt.Errorf("error getting client_id: %v", err)
+	}
+
+	// Insert system message to log the bot disable
+	stateMsg := "Bot disabled for 6 hours due to human agent activity (timer refreshes with each human message)"
+	var insertErr error
+	if clientID.Valid {
+		_, insertErr = tx.ExecContext(ctx, `
+            INSERT INTO messages (
+                id,
+                client_id, 
+                page_id,
+                platform, 
+                thread_id,
+                content, 
+                from_user, 
+                source, 
+                requires_attention,
+                timestamp,
+                read
+            ) VALUES (
+                gen_random_uuid(),
+                $1,     -- client_id
+                $2,     -- page_id (UUID)
+                $3,     -- platform
+                $4,     -- thread_id 
+                $5,     -- content
+                'system',
+                'system',
+                true,   -- requires_attention
+                NOW(),
+                false
+            )
+        `, clientID.String, pageUUID, platform, threadID, stateMsg)
+	} else {
+		_, insertErr = tx.ExecContext(ctx, `
+            INSERT INTO messages (
+                id,
+                page_id,
+                platform, 
+                thread_id,
+                content, 
+                from_user, 
+                source, 
+                requires_attention,
+                timestamp,
+                read
+            ) VALUES (
+                gen_random_uuid(),
+                $1,     -- page_id (UUID)
+                $2,     -- platform
+                $3,     -- thread_id 
+                $4,     -- content
+                'system',
+                'system',
+                true,   -- requires_attention
+                NOW(),
+                false
+            )
+        `, pageUUID, platform, threadID, stateMsg)
+	}
+
+	if insertErr != nil {
+		return fmt.Errorf("error logging human agent activity: %v", insertErr)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %v", err)
+	}
+
+	log.Printf("✅ Successfully updated conversation for human agent message")
+	return nil
+}
+
+// isRecentHumanActivity checks if there has been human agent activity within the last 6 hours
+func isRecentHumanActivity(conv *ConversationState) bool {
+	if conv.LastHumanMessage.IsZero() {
+		return false
+	}
+
+	// Check if the last human message was within the last 6 hours
+	sixHoursAgo := time.Now().Add(-6 * time.Hour)
+	recentActivity := conv.LastHumanMessage.After(sixHoursAgo)
+
+	if recentActivity {
+		log.Printf("🕐 Recent human activity detected: last human message at %v (within 6 hours)", conv.LastHumanMessage)
+	}
+
+	return recentActivity
 }
