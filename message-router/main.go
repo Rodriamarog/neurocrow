@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"message-router/sentiment"
@@ -40,7 +43,7 @@ func loadConfig() {
 	}
 
 	config = Config{
-		DatabaseURL:       getEnvOrDie("DATABASE_URL"), // Use DATABASE_URL for the single database
+		DatabaseURL:       getEnvOrDie("SOCIAL_DASHBOARD_DATABASE_URL"), // Use DATABASE_URL for the single database
 		FacebookAppSecret: getEnvOrDie("FACEBOOK_APP_SECRET"),
 		VerifyToken:       getEnvOrDie("VERIFY_TOKEN"),
 		Port:              getEnvOrDefault("PORT", "8080"),
@@ -222,7 +225,62 @@ func cleanup() {
 	}
 }
 
+// startBotReactivationWorker runs the bot reactivation check every 5 minutes
+func startBotReactivationWorker(ctx context.Context) {
+	log.Printf("🤖 Starting bot reactivation background worker...")
+
+	// Run immediately on startup
+	runBotReactivationCheck()
+
+	// Then run every 5 minutes
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			runBotReactivationCheck()
+		case <-ctx.Done():
+			log.Printf("🛑 Bot reactivation worker stopping...")
+			return
+		}
+	}
+}
+
+// runBotReactivationCheck executes the bot reactivation check
+func runBotReactivationCheck() {
+	log.Printf("🔄 Running bot reactivation check...")
+
+	start := time.Now()
+	var reactivatedCount int
+
+	// Execute the reactivation function
+	err := db.QueryRow("SELECT run_bot_reactivation_check()").Scan(&reactivatedCount)
+	if err != nil {
+		log.Printf("❌ Bot reactivation check failed: %v", err)
+		return
+	}
+
+	duration := time.Since(start)
+	if reactivatedCount > 0 {
+		log.Printf("✅ Bot reactivation check completed: %d bots reactivated (took %v)", reactivatedCount, duration)
+	} else {
+		log.Printf("ℹ️ Bot reactivation check completed: no bots needed reactivation (took %v)", duration)
+	}
+}
+
 func main() {
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start background worker
+	go startBotReactivationWorker(ctx)
+
 	// Ensure cleanup on exit
 	defer cleanup()
 
@@ -238,12 +296,31 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start server
-	log.Printf("🌐 Server starting on port %s", config.Port)
-	log.Printf("🔗 Local URL: http://localhost:%s", config.Port)
-	log.Printf("⚡ Server is ready to handle requests")
+	// Start server in a goroutine
+	go func() {
+		log.Printf("🌐 Server starting on port %s", config.Port)
+		log.Printf("🔗 Local URL: http://localhost:%s", config.Port)
+		log.Printf("⚡ Server is ready to handle requests")
 
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("❌ Server failed: %v", err)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("❌ Server failed: %v", err)
+		}
+	}()
+
+	// Wait for shutdown signal
+	<-sigChan
+	log.Printf("🛑 Shutdown signal received, stopping server...")
+
+	// Cancel background workers
+	cancel()
+
+	// Graceful shutdown with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("❌ Server shutdown error: %v", err)
+	} else {
+		log.Printf("✅ Server stopped gracefully")
 	}
 }
