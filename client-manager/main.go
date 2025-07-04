@@ -498,12 +498,37 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	}
 	defer permResp.Body.Close()
 
+	// Read and log the permanent token response
+	permBodyBytes, readErr := io.ReadAll(permResp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("error reading permanent token response body: %w", readErr)
+	}
+	log.Printf("Permanent token response status: %s, body: %s", permResp.Status, string(permBodyBytes))
+
 	var permResult struct {
 		AccessToken string `json:"access_token"`
+		Error       struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    int    `json:"code"`
+		} `json:"error"`
 	}
-	if err := json.NewDecoder(permResp.Body).Decode(&permResult); err != nil {
+	if err := json.Unmarshal(permBodyBytes, &permResult); err != nil {
 		return nil, fmt.Errorf("error parsing permanent token response: %w", err)
 	}
+
+	if permResult.Error.Message != "" {
+		log.Printf("❌ Facebook permanent token error: %s (Type: %s, Code: %d)",
+			permResult.Error.Message, permResult.Error.Type, permResult.Error.Code)
+		return nil, fmt.Errorf("Facebook permanent token error: %s", permResult.Error.Message)
+	}
+
+	if permResult.AccessToken == "" {
+		log.Printf("❌ No access token received in permanent token response")
+		return nil, fmt.Errorf("no access token received from Facebook")
+	}
+
+	log.Printf("✅ Successfully obtained permanent token")
 
 	// Use the permanent token to get pages
 	fbURL := fmt.Sprintf(
@@ -513,12 +538,19 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		permResult.AccessToken,
 	)
 
-	log.Printf("Fetching Facebook pages and connected Instagram accounts")
+	log.Printf("Fetching Facebook pages and connected Instagram accounts from: %s", fbURL)
 	fbResp, err := http.Get(fbURL)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching pages: %w", err)
 	}
 	defer fbResp.Body.Close()
+
+	// Read and log the pages response
+	fbBodyBytes, readErr := io.ReadAll(fbResp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("error reading pages response body: %w", readErr)
+	}
+	log.Printf("Facebook pages response status: %s, body: %s", fbResp.Status, string(fbBodyBytes))
 
 	var fbResult struct {
 		Data []struct {
@@ -532,12 +564,21 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 			} `json:"instagram_business_account"`
 		} `json:"data"`
 		Error struct {
-			Message string `json:"message"`
+			Message   string `json:"message"`
+			Type      string `json:"type"`
+			Code      int    `json:"code"`
+			FbtraceID string `json:"fbtrace_id"`
 		} `json:"error"`
 	}
 
-	if err := json.NewDecoder(fbResp.Body).Decode(&fbResult); err != nil {
+	if err := json.Unmarshal(fbBodyBytes, &fbResult); err != nil {
 		return nil, fmt.Errorf("error parsing Facebook response: %w", err)
+	}
+
+	if fbResult.Error.Message != "" {
+		log.Printf("❌ Facebook pages API error: %s (Type: %s, Code: %d, Trace: %s)",
+			fbResult.Error.Message, fbResult.Error.Type, fbResult.Error.Code, fbResult.Error.FbtraceID)
+		return nil, fmt.Errorf("Facebook pages API error: %s", fbResult.Error.Message)
 	}
 
 	var allPages []FacebookPage
