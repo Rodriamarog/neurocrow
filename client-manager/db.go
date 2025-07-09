@@ -61,7 +61,8 @@ func initDB() {
         CREATE TABLE IF NOT EXISTS clients (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
+            email TEXT,
+            facebook_user_id TEXT UNIQUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 

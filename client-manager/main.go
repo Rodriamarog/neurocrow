@@ -290,7 +290,7 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 		defer socialTx.Rollback()
 	}
 
-	// 4. Create or update client
+	// 4. Create or update client in client-manager database
 	var clientID string
 	err = tx.QueryRow(`
         INSERT INTO clients (name, facebook_user_id)
@@ -300,11 +300,28 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
         RETURNING id
     `, fbUser.Name, fbUser.ID).Scan(&clientID)
 	if err != nil {
-		log.Printf("❌ Error upserting client: %v", err)
+		log.Printf("❌ Error upserting client in client-manager database: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Printf("✅ Upserted client with ID: %s", clientID)
+	log.Printf("✅ Upserted client in client-manager database with ID: %s", clientID)
+
+	// 4b. Also create or update client in social dashboard database (to avoid foreign key issues)
+	if socialTx != nil {
+		_, err = socialTx.Exec(`
+            INSERT INTO clients (id, name, facebook_user_id, created_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                facebook_user_id = EXCLUDED.facebook_user_id
+        `, clientID, fbUser.Name, fbUser.ID)
+		if err != nil {
+			log.Printf("❌ Error upserting client in social dashboard database: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("✅ Upserted client in social dashboard database with ID: %s", clientID)
+	}
 
 	// 5. Disable client's previous pages
 	result, err := tx.Exec(`
