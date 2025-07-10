@@ -547,6 +547,38 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 	log.Printf("✅ Successfully obtained permanent token")
 
+	// DEBUG: Log the actual token values for manual debugging
+	log.Printf("🔑 TOKEN COMPARISON FOR DEBUGGING:")
+	log.Printf("   Original user token: %s", userToken)
+	log.Printf("   Permanent token: %s", permResult.AccessToken)
+	log.Printf("   📝 Copy these tokens to https://developers.facebook.com/tools/debug/accesstoken/ for detailed analysis")
+
+	// DEBUG: Check what permissions the permanent token actually has
+	debugPermUrl := fmt.Sprintf("https://graph.facebook.com/v19.0/me/permissions?access_token=%s", permResult.AccessToken)
+	log.Printf("🔍 Checking permanent token permissions: %s", debugPermUrl)
+
+	permDebugResp, err := http.Get(debugPermUrl)
+	if err != nil {
+		log.Printf("⚠️ Warning: Could not check permanent token permissions: %v", err)
+	} else {
+		defer permDebugResp.Body.Close()
+		permDebugBody, _ := io.ReadAll(permDebugResp.Body)
+		log.Printf("📋 Permanent token permissions response: %s", string(permDebugBody))
+	}
+
+	// DEBUG: Also check permissions of the original user token for comparison
+	originalPermUrl := fmt.Sprintf("https://graph.facebook.com/v19.0/me/permissions?access_token=%s", userToken)
+	log.Printf("🔍 Checking original user token permissions: %s", originalPermUrl)
+
+	originalPermResp, err := http.Get(originalPermUrl)
+	if err != nil {
+		log.Printf("⚠️ Warning: Could not check original token permissions: %v", err)
+	} else {
+		defer originalPermResp.Body.Close()
+		originalPermBody, _ := io.ReadAll(originalPermResp.Body)
+		log.Printf("📋 Original token permissions response: %s", string(originalPermBody))
+	}
+
 	// Use the permanent token to get pages
 	fbURL := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
@@ -596,6 +628,97 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		log.Printf("❌ Facebook pages API error: %s (Type: %s, Code: %d, Trace: %s)",
 			fbResult.Error.Message, fbResult.Error.Type, fbResult.Error.Code, fbResult.Error.FbtraceID)
 		return nil, fmt.Errorf("Facebook pages API error: %s", fbResult.Error.Message)
+	}
+
+	// DEBUG: If no pages found, try additional debugging
+	if len(fbResult.Data) == 0 {
+		log.Printf("🔍 No pages found with permanent token - performing additional debugging...")
+
+		log.Printf("🔑 REMINDER - TOKEN VALUES FOR MANUAL DEBUGGING:")
+		log.Printf("   Original user token: %s", userToken)
+		log.Printf("   Permanent token: %s", permResult.AccessToken)
+		log.Printf("   📝 Test both tokens at: https://developers.facebook.com/tools/debug/accesstoken/")
+
+		// TEST: Try the same API call with the original user token
+		originalPagesURL := fmt.Sprintf(
+			"https://graph.facebook.com/v19.0/me/accounts?"+
+				"access_token=%s&"+
+				"fields=id,name,access_token,instagram_business_account{id,name,username}",
+			userToken,
+		)
+		log.Printf("🔍 Testing pages API with original user token: %s", originalPagesURL)
+
+		originalPagesResp, err := http.Get(originalPagesURL)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not check pages with original token: %v", err)
+		} else {
+			defer originalPagesResp.Body.Close()
+			originalPagesBody, _ := io.ReadAll(originalPagesResp.Body)
+			log.Printf("📋 Original token pages response: %s", string(originalPagesBody))
+		}
+
+		// Check if user has any pages at all (without permissions filter)
+		debugURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/accounts?access_token=%s", permResult.AccessToken)
+		log.Printf("🔍 Checking all user accounts: %s", debugURL)
+
+		debugResp, err := http.Get(debugURL)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not check all accounts: %v", err)
+		} else {
+			defer debugResp.Body.Close()
+			debugBody, _ := io.ReadAll(debugResp.Body)
+			log.Printf("📋 All user accounts response: %s", string(debugBody))
+		}
+
+		// Also check user's basic info
+		userInfoURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=%s", permResult.AccessToken)
+		log.Printf("🔍 Checking user info: %s", userInfoURL)
+
+		userInfoResp, err := http.Get(userInfoURL)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not check user info: %v", err)
+		} else {
+			defer userInfoResp.Body.Close()
+			userInfoBody, _ := io.ReadAll(userInfoResp.Body)
+			log.Printf("👤 User info response: %s", string(userInfoBody))
+		}
+
+		// TEST: Try accessing the specific page we know exists from token debugger
+		// Page ID: 269054096290372 (Happiness boutique)
+		specificPageURL := fmt.Sprintf("https://graph.facebook.com/v19.0/269054096290372?fields=id,name,access_token&access_token=%s", permResult.AccessToken)
+		log.Printf("🔍 Testing direct access to known page: %s", specificPageURL)
+
+		specificPageResp, err := http.Get(specificPageURL)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not access specific page: %v", err)
+		} else {
+			defer specificPageResp.Body.Close()
+			specificPageBody, _ := io.ReadAll(specificPageResp.Body)
+			log.Printf("📄 Specific page response: %s", string(specificPageBody))
+		}
+
+		// TEST: Try the accounts endpoint with different API versions
+		debugURLv18 := fmt.Sprintf("https://graph.facebook.com/v18.0/me/accounts?access_token=%s", permResult.AccessToken)
+		log.Printf("🔍 Testing with API v18.0: %s", debugURLv18)
+
+		debugRespv18, err := http.Get(debugURLv18)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not check with v18.0: %v", err)
+		} else {
+			defer debugRespv18.Body.Close()
+			debugBodyv18, _ := io.ReadAll(debugRespv18.Body)
+			log.Printf("📋 v18.0 response: %s", string(debugBodyv18))
+		}
+
+		log.Printf("💡 Possible reasons for no pages:")
+		log.Printf("   1. Permanent token doesn't inherit all permissions from user token")
+		log.Printf("   2. User is not an admin of any Facebook pages")
+		log.Printf("   3. User hasn't granted necessary permissions")
+		log.Printf("   4. Facebook app needs additional permissions/review")
+		log.Printf("   5. User doesn't have a Facebook Business account")
+		log.Printf("   6. Pages are restricted or suspended")
+		log.Printf("   7. API version compatibility issue")
+		log.Printf("   8. Token exchange issue - permanent token not working correctly")
 	}
 
 	var allPages []FacebookPage
