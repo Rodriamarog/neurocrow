@@ -60,6 +60,7 @@ function Login() {
         'pages_show_list',
         'pages_manage_metadata',
         'pages_messaging',
+        'pages_read_engagement',
         'instagram_basic',
         'instagram_manage_messages',
       ].join(','),
