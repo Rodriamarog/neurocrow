@@ -1,56 +1,83 @@
-# Redli - a humane alternative to redis-cli
+# Social Media Admin Dashboard
 
-[![Release](https://img.shields.io/github/release/IBM-Cloud/redli.svg)](https://github.com/IBM-Cloud/redli/releases/latest)
+A modern, real-time admin dashboard for managing social media messages across Facebook and Instagram platforms, built with Go.
 
-## About
+## 🌟 Features
 
-Redli is a Go-based alternative to the official Redis-cli application. It's major feature is that it mimics the redis-cli command line argurments while also understanding rediss: protocols and supporting a `--tls` flag allowing it to connect to TLS/SSL secured Redis without the need for tunnels. It also has a number of flags and environment variables for passing server certificates over as files or base64 strings. Note, passing a certificate turns TLS on by default.
+- **Authentication & Authorization**
+  - JWT-based authentication
+  - Role-based access control
+  - Secure session management
 
-## Installation
+- **Real-time Message Management**
+  - Live message updates
+  - Thread-based conversation view
+  - Message search and filtering
+  - Profile picture integration with Meta API
+  - Support for both Facebook and Instagram messages
 
-You can download the binary for your OS from the [releases page](https://github.com/IBM-Cloud/redli/releases). Un-tar the file, then `chmod +x` the binary and move it to your path.
+- **Performance Optimizations**
+  - In-memory caching
+  - Rate limiting
+  - Pagination support
+  - Efficient database queries
 
-You can also compile Redli with **go** using these steps (Go 1.8+ required):
+- **Modern UI**
+  - Responsive design with Tailwind CSS
+  - HTMX for dynamic updates
+  - Alpine.js for interactive components
+  - Custom scrollbar styling
 
-1. `go get -u github.com/IBM-Cloud/redli`
-2. `go install github.com/IBM-Cloud/redli`
+## 🛠 Tech Stack
 
-## Usage
+- **Backend**
+  - Go 1.22.2
+  - PostgreSQL
+  - JWT for authentication
+  - Supabase Realtime (planned)
 
-```text
- redli [<flags>] [<commands>...]
+- **Frontend**
+  - HTMX
+  - Alpine.js
+  - Tailwind CSS
+  - Hyperscript
 
-      --help               Show context-sensitive help (also try --help-long and --help-man).
-      --debug              Enable debug mode.
-      --long               Enable long prompt with host/port
-  -u, --uri=URI            URI to connect to
-  -h, --host="127.0.0.1"   Host to connect to
-  -p, --port=6379          Port to connect to
-  -a, --auth=AUTH          Password to use when connecting
-  -n, --ndb=0              Redis database to access
-      --tls                Enable TLS/SSL
-      --skipverify         Insecure option to skip server certificate validation
-      --certfile=CERTFILE  Self-signed certificate file for validation
-      --certb64=CERTB64    Self-signed certificate string as base64 for validation
-      --raw                Produce raw output
-      --eval=EVAL          Evaluate a Lua script file, follow with keys a , and args
-      
-Args:
-  [<commands>]  Redis commands and values
-```
+- **External Services**
+  - Meta Graph API
+  - Facebook Messenger Platform API
 
-* `URI`  URI to connect To. It follow the format of [the provisional IANA spec for Redis URLs](https://www.iana.org/assignments/uri-schemes/prov/redis), but with the option to denote a TLS secured connection with the protocol rediss:.
+## 📋 Prerequisites
 
-e.g. `INFO KEYSPACE`
+- Go 1.22.2 or higher
+- PostgreSQL database
+- Meta Developer Account (for Facebook/Instagram integration)
+- Environment variables configured
 
-Be aware of interactions with wild cards and special characters in the shell; quote and escape as appropriate.
+## 🚀 Getting Started
 
-## License
+1. **Clone the repository**
+   ```bash
+   git clone [repository-url]
+   cd admin-dashboard
+   ```
 
-Redli is (c) IBM Corporation 2018. All rights reserved.
+2. **Set up environment variables**
+   Create a `.env` file in the root directory:
+   ```env
+   DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+   JWT_SECRET=your-secret-key
+   META_API_KEY=your-meta-api-key
+   PORT=8080
+   ```
 
-Redli is released under the Apache 2 License.
+3. **Install dependencies**
+   ```bash
+   go mod download
+   ```
 
-Attribution: The `commands.json` file is by Salvatore Sanfillipo.
+4. **Run the application**
+   ```bash
+   go run main.go
+   ```
 
-In the process of building the application, the commands.json file of the Redis-docs repository is retrieved and incorporated into the code. This file is distributed under a CC-BY-SA 4.0 license (see [Copyright](https://github.com/antirez/redis-doc/blob/master/COPYRIGHT)).
+## 🗄️ Project Structure

@@ -109,14 +109,15 @@ type InstagramChanges struct {
 }
 
 type ConversationState struct {
-	ThreadID         string
-	PageID           string
-	Platform         string
-	BotEnabled       bool
-	LastBotMessage   time.Time
-	LastHumanMessage time.Time
-	LastUserMessage  time.Time
-	MessageCount     int
+	ThreadID           string
+	PageID             string
+	Platform           string
+	BotEnabled         bool
+	LastBotMessage     time.Time
+	LastHumanMessage   time.Time
+	LastUserMessage    time.Time
+	MessageCount       int
+	DifyConversationID string // Dify conversation ID for maintaining context
 }
 
 type Config struct {
@@ -125,6 +126,9 @@ type Config struct {
 	VerifyToken       string
 	Port              string
 	FireworksKey      string
+	// Botpress integration (legacy - will be removed after migration)
+	BotpressToken string // Botpress token (temporary during migration)
+	// Note: Dify API keys are now stored per-page in database (multi-tenant)
 }
 
 // PageInfo represents essential page information retrieved from the database
@@ -212,4 +216,51 @@ func (c *UserCache) Set(userID, name string) {
 		expiresAt: expiresAt,
 	}
 	log.Printf("💾 Cached user %s name as %s (expires at %v)", userID, name, expiresAt)
+}
+
+// =============================================================================
+// DIFY API TYPES - New integration replacing Botpress
+// =============================================================================
+
+// DifyRequest represents the request we send to Dify Chat API
+type DifyRequest struct {
+	Inputs         map[string]interface{} `json:"inputs"`                    // Additional inputs (usually empty for simple chat)
+	Query          string                 `json:"query"`                     // The user's message text
+	ResponseMode   string                 `json:"response_mode"`             // "blocking" or "streaming"
+	User           string                 `json:"user"`                      // Unique user identifier
+	ConversationId string                 `json:"conversation_id,omitempty"` // Optional, for conversation continuity
+	Files          []interface{}          `json:"files,omitempty"`           // File attachments (if any)
+}
+
+// DifyResponse represents the response from Dify Chat API
+type DifyResponse struct {
+	Answer         string `json:"answer"`          // The AI's response text
+	ConversationId string `json:"conversation_id"` // Conversation ID for continuity
+	MessageId      string `json:"message_id"`      // Unique message identifier
+	Mode           string `json:"mode"`            // Response mode used
+	Metadata       struct {
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
+		RetrieverResources []interface{} `json:"retriever_resources"`
+	} `json:"metadata"`
+	CreatedAt int64 `json:"created_at"` // Unix timestamp
+}
+
+// DifyErrorResponse represents error responses from Dify API
+type DifyErrorResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Status  int    `json:"status"`
+}
+
+// DifyConversationState represents conversation state for Dify integration
+type DifyConversationState struct {
+	ConversationId string    // Dify's conversation ID
+	UserId         string    // Our internal user ID (pageId-senderId)
+	LastMessageId  string    // Last message ID from Dify
+	CreatedAt      time.Time // When this conversation started
+	UpdatedAt      time.Time // Last activity
 }

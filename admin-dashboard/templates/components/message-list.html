@@ -1,7 +1,5 @@
 {{define "message-list"}}
-<div class="divide-y overflow-x-hidden"
-     hx-ext="ws" 
-     ws-connect="/ws-connect">
+<div class="divide-y overflow-x-hidden">
    {{range .Messages}}
    <div class="p-4 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
         id="thread-preview-{{.ThreadID}}"
@@ -52,7 +50,7 @@
                <img src="{{.ProfilePictureURL}}" alt="Profile Picture" onerror="this.onerror=null;this.src='/static/default-avatar.png';">
            </div>
            <div class="ml-3 flex-1">
-               <div class="text-sm font-medium text-gray-900">{{.FromUser}}</div>
+               <div class="text-sm font-medium text-gray-900">{{if .SocialUserName}}{{.SocialUserName}}{{else}}{{.FromUser}}{{end}}</div>
                <div class="text-sm text-gray-500 truncate">{{.Content}}</div>
            </div>
        </div>

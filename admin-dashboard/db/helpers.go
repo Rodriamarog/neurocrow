@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/google/uuid" // added for UUID validation
 )
 
 // New helper function to validate profile picture URLs
@@ -18,19 +20,37 @@ func isValidProfilePicture(url string) bool {
 		trimmed == "/static/default-avatar.png"
 }
 
-func FetchMessages(query string, args ...interface{}) ([]models.Message, error) {
-	if len(args) > 0 && args[0] == "" {
-		args = []interface{}{}
+// FetchMessages is now more flexible to handle different query types
+func FetchMessages(clientID string, query string, args ...interface{}) ([]models.Message, error) {
+	log.Printf("🔍 FetchMessages called with:")
+	log.Printf("  - ClientID: %s", clientID)
+	log.Printf("  - Query: %s", query)
+	log.Printf("  - Additional args: %+v", args)
+
+	// Validate UUID
+	_, err := uuid.Parse(clientID)
+	if err != nil {
+		log.Printf("❌ Invalid UUID format for clientID: %v", err)
+		return nil, fmt.Errorf("invalid UUID format: %v", err)
 	}
 
-	rows, err := DB.Query(query, args...)
+	// Create final args array with clientID first
+	queryArgs := make([]interface{}, 0, len(args)+1)
+	queryArgs = append(queryArgs, clientID)
+	queryArgs = append(queryArgs, args...)
+
+	log.Printf("  - Final args for query: %+v", queryArgs)
+
+	rows, err := DB.Query(query, queryArgs...)
 	if err != nil {
+		log.Printf("❌ Database query error: %v", err)
+		log.Printf("  - Query that failed: %s", query)
+		log.Printf("  - Args that failed: %+v", queryArgs)
 		return nil, err
 	}
 	defer rows.Close()
 
 	var messages []models.Message
-
 	for rows.Next() {
 		var msg models.Message
 		var clientID, profilePicture sql.NullString
@@ -48,34 +68,27 @@ func FetchMessages(query string, args ...interface{}) ([]models.Message, error) 
 			&msg.Source,
 			&msg.BotEnabled,
 			&profilePicture,
+			&msg.SocialUserName,
 		)
 		if err != nil {
-			log.Printf("Error scanning message: %v", err)
+			log.Printf("❌ Error scanning row: %v", err)
 			continue
 		}
 
-		// Set ClientID if valid
 		if clientID.Valid {
 			msg.ClientID = &clientID.String
 		}
 
-		// Simple profile picture check: if the trimmed value starts with "http://" or "https://", use it.
-		// Otherwise, default to the provided URL.
-		if profilePicture.Valid {
-			trimmed := strings.TrimSpace(profilePicture.String)
-			if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
-				msg.ProfilePictureURL = trimmed
-			} else {
-				log.Printf("  - Invalid profile picture URL: %s", trimmed)
-				msg.ProfilePictureURL = "https://www.svgrepo.com/show/452030/avatar-default.svg"
-			}
+		if profilePicture.Valid && profilePicture.String != "" {
+			msg.ProfilePictureURL = profilePicture.String
 		} else {
-			msg.ProfilePictureURL = "https://www.svgrepo.com/show/452030/avatar-default.svg"
+			msg.ProfilePictureURL = "/static/default-avatar.png"
 		}
 
 		messages = append(messages, msg)
 	}
 
+	log.Printf("✅ FetchMessages completed. Found %d messages", len(messages))
 	return messages, nil
 }
 
@@ -134,4 +147,44 @@ func UpdateBotStatus(threadID string, enabled bool) error {
 	}
 
 	return nil
+}
+
+// FetchSingleMessage gets a single message by ID
+func FetchSingleMessage(messageID string, clientID string) (models.Message, error) {
+	query := `
+        SELECT 
+            m.id, m.client_id, m.page_id, m.platform,
+            m.from_user, m.content, m.timestamp, m.thread_id,
+            m.read, m.source,
+            COALESCE(c.bot_enabled, TRUE) AS bot_enabled,
+            COALESCE(NULLIF(TRIM(c.profile_picture_url), ''), '/static/default-avatar.png') as profile_picture_url,
+            c.social_user_name
+        FROM messages m
+        JOIN social_pages sp ON m.page_id = sp.id
+        LEFT JOIN conversations c ON c.thread_id = m.thread_id
+        WHERE m.id = $1 AND sp.client_id = $2::uuid
+    `
+
+	var message models.Message
+	var dbClientID, socialUserName sql.NullString
+
+	err := DB.QueryRow(query, messageID, clientID).Scan(
+		&message.ID, &dbClientID, &message.PageID, &message.Platform,
+		&message.FromUser, &message.Content, &message.Timestamp, &message.ThreadID,
+		&message.Read, &message.Source, &message.BotEnabled, &message.ProfilePictureURL,
+		&socialUserName,
+	)
+
+	if err != nil {
+		return message, err
+	}
+
+	if dbClientID.Valid {
+		message.ClientID = &dbClientID.String
+	}
+	if socialUserName.Valid {
+		message.SocialUserName = &socialUserName.String
+	}
+
+	return message, nil
 }

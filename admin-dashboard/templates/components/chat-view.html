@@ -3,14 +3,10 @@
      _="on load
           if window.innerWidth < 1024
             add .hidden to #search-container
-          end
-          on closeChat
-          if window.innerWidth < 1024
-            remove .hidden from #search-container
           end">
     <!-- Fixed Header -->
     <div class="flex-none px-4 py-3 border-b flex items-center bg-white">
-        <button class="mr-2 p-2 -ml-2 hover:bg-gray-100 rounded-full back-button"
+        <button class="mr-2 p-2 -ml-2 hover:bg-gray-100 rounded-full back-button lg:hidden"
                 _="on click 
                     add .translate-x-full to #chat-view 
                     wait 300ms 
@@ -28,7 +24,7 @@
                     <img src="{{.ProfilePictureURL}}" alt="Profile Picture" onerror="this.onerror=null;this.src='/static/default-avatar.png';">
                 </div>
                 <div class="ml-2">
-                    <div class="text-sm font-medium">{{.FromUser}}</div>
+                    <div class="text-sm font-medium">{{.SocialUserName}}</div>
                     <div class="text-xs text-gray-500">
                         {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
                     </div>
@@ -44,50 +40,35 @@
         {{end}}
     </div>
 
-    <!-- Scrollable Messages -->
+    <!-- Messages Container -->
     <div id="messages-container" 
-        class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 overflow-x-hidden"
-        _="on load
-            set my.scrollTop to my.scrollHeight
-            on htmx:afterSwap 
-            wait 10ms 
-            set my.scrollTop to my.scrollHeight">
-        {{template "chat-messages" .}}
+         class="flex-1 min-h-0 overflow-y-auto p-4">
+        <div id="messages-content" class="flex flex-col space-y-2">
+            {{template "chat-messages" .}}
+        </div>
     </div>
-
-    <!-- Scroll to Bottom Button -->
-    <button 
-        id="scroll-bottom-btn"
-        class="fixed left-1/2 -translate-x-1/2 bottom-24 bg-white text-gray-800 rounded-full px-4 py-2 shadow-lg opacity-0 transition-opacity duration-200 hover:bg-gray-50 pointer-events-none flex items-center space-x-2"
-        _="on click
-           set #messages-container.scrollTop to #messages-container.scrollHeight">
-        <span class="text-sm font-medium">Scroll to bottom</span>
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
-        </svg>
-    </button>
 
     <!-- Fixed Input Area -->
     <form id="message-form" 
           class="flex items-center space-x-2 p-4 border-t bg-white" 
           hx-post="/send-message" 
-          hx-target="#messages-container"
+          hx-target="#messages-content"
           hx-swap="beforeend"
-          hx-on::after-request="
-            if(event.detail.successful) { 
-              this.reset();
-              const container = document.getElementById('messages-container');
-              container.scrollTop = container.scrollHeight;
-            }
-          "
+          hx-trigger="submit"
           _="on keydown[key is 'Enter'] from #message-input
                halt the event
                if #message-input.value.trim() !== ''
                  trigger submit
                end
+             
              on submit
                if #message-input.value.trim() === ''
                  halt the event
+               else
+                 set msgInput to #message-input
+                 set oldValue to msgInput.value
+                 set msgInput.value to ''
+                 call msgInput.focus()
                end">
         <input type="hidden" name="thread_id" value="{{if .Messages}}{{with index .Messages 0}}{{.ThreadID}}{{end}}{{end}}">
         <button type="button" class="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
@@ -100,12 +81,41 @@
                name="message"
                autocomplete="off"
                class="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:border-indigo-500" 
-               placeholder="Type your message...">
+               placeholder="Type your message..."
+               _="on keydown[key is 'Enter']
+                    halt the event
+                    if my.value.trim() !== ''
+                      trigger submit on closest <form/>
+                    end">
         <button type="submit" class="p-2 text-white bg-indigo-600 rounded-full hover:bg-indigo-700">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
             </svg>
         </button>
     </form>
+
+    <!-- Add this somewhere in your chat view -->
+    <button 
+      type="button" 
+      class="p-2 bg-gray-200 rounded text-sm" 
+      onclick="messageRealtime.testRealtime()">
+      Test Realtime
+    </button>
+
+    <!-- Add this next to your existing Test Realtime button -->
+    <button 
+      type="button" 
+      class="p-2 bg-green-200 rounded text-sm ml-2" 
+      onclick="messageRealtime.testDirectUpdate()">
+      Test Direct Update
+    </button>
 </div>
+<script>
+    document.addEventListener('htmx:afterOnLoad', function() {
+        const messagesContainer = document.getElementById('messages-container');
+        if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    });
+</script>
 {{end}}
