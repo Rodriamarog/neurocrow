@@ -496,8 +496,9 @@ func getFacebookUser(token string) (*FacebookUser, error) {
 }
 
 func getConnectedPages(userToken string) ([]FacebookPage, error) {
-	// Exchange user token for permanent token first
-	permUrl := fmt.Sprintf(
+	// Exchange user token for long-lived user token (60 days)
+	// Note: This is NOT permanent, but the page tokens we get from it ARE permanent
+	longLivedUrl := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/oauth/access_token?"+
 			"grant_type=fb_exchange_token&"+
 			"client_id=%s&"+
@@ -508,21 +509,21 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		userToken,
 	)
 
-	log.Printf("Getting permanent user token")
-	permResp, err := http.Get(permUrl)
+	log.Printf("Getting long-lived user token (60 days)")
+	longLivedResp, err := http.Get(longLivedUrl)
 	if err != nil {
-		return nil, fmt.Errorf("error getting permanent token: %w", err)
+		return nil, fmt.Errorf("error getting long-lived token: %w", err)
 	}
-	defer permResp.Body.Close()
+	defer longLivedResp.Body.Close()
 
-	// Read and log the permanent token response
-	permBodyBytes, readErr := io.ReadAll(permResp.Body)
+	// Read and log the long-lived token response
+	longLivedBodyBytes, readErr := io.ReadAll(longLivedResp.Body)
 	if readErr != nil {
-		return nil, fmt.Errorf("error reading permanent token response body: %w", readErr)
+		return nil, fmt.Errorf("error reading long-lived token response body: %w", readErr)
 	}
-	log.Printf("Permanent token response status: %s, body: %s", permResp.Status, string(permBodyBytes))
+	log.Printf("Long-lived token response status: %s, body: %s", longLivedResp.Status, string(longLivedBodyBytes))
 
-	var permResult struct {
+	var longLivedResult struct {
 		AccessToken string `json:"access_token"`
 		Error       struct {
 			Message string `json:"message"`
@@ -530,40 +531,40 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 			Code    int    `json:"code"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(permBodyBytes, &permResult); err != nil {
-		return nil, fmt.Errorf("error parsing permanent token response: %w", err)
+	if err := json.Unmarshal(longLivedBodyBytes, &longLivedResult); err != nil {
+		return nil, fmt.Errorf("error parsing long-lived token response: %w", err)
 	}
 
-	if permResult.Error.Message != "" {
-		log.Printf("❌ Facebook permanent token error: %s (Type: %s, Code: %d)",
-			permResult.Error.Message, permResult.Error.Type, permResult.Error.Code)
-		return nil, fmt.Errorf("Facebook permanent token error: %s", permResult.Error.Message)
+	if longLivedResult.Error.Message != "" {
+		log.Printf("❌ Facebook long-lived token error: %s (Type: %s, Code: %d)",
+			longLivedResult.Error.Message, longLivedResult.Error.Type, longLivedResult.Error.Code)
+		return nil, fmt.Errorf("Facebook long-lived token error: %s", longLivedResult.Error.Message)
 	}
 
-	if permResult.AccessToken == "" {
-		log.Printf("❌ No access token received in permanent token response")
+	if longLivedResult.AccessToken == "" {
+		log.Printf("❌ No access token received in long-lived token response")
 		return nil, fmt.Errorf("no access token received from Facebook")
 	}
 
-	log.Printf("✅ Successfully obtained permanent token")
+	log.Printf("✅ Successfully obtained long-lived user token (60 days, NOT permanent)")
 
 	// DEBUG: Log the actual token values for manual debugging
 	log.Printf("🔑 TOKEN COMPARISON FOR DEBUGGING:")
 	log.Printf("   Original user token: %s", userToken)
-	log.Printf("   Permanent token: %s", permResult.AccessToken)
+	log.Printf("   Long-lived user token: %s", longLivedResult.AccessToken)
 	log.Printf("   📝 Copy these tokens to https://developers.facebook.com/tools/debug/accesstoken/ for detailed analysis")
 
-	// DEBUG: Check what permissions the permanent token actually has
-	debugPermUrl := fmt.Sprintf("https://graph.facebook.com/v19.0/me/permissions?access_token=%s", permResult.AccessToken)
-	log.Printf("🔍 Checking permanent token permissions: %s", debugPermUrl)
+	// DEBUG: Check what permissions the long-lived token actually has
+	debugPermUrl := fmt.Sprintf("https://graph.facebook.com/v19.0/me/permissions?access_token=%s", longLivedResult.AccessToken)
+	log.Printf("🔍 Checking long-lived token permissions: %s", debugPermUrl)
 
 	permDebugResp, err := http.Get(debugPermUrl)
 	if err != nil {
-		log.Printf("⚠️ Warning: Could not check permanent token permissions: %v", err)
+		log.Printf("⚠️ Warning: Could not check long-lived token permissions: %v", err)
 	} else {
 		defer permDebugResp.Body.Close()
 		permDebugBody, _ := io.ReadAll(permDebugResp.Body)
-		log.Printf("📋 Permanent token permissions response: %s", string(permDebugBody))
+		log.Printf("📋 Long-lived token permissions response: %s", string(permDebugBody))
 	}
 
 	// DEBUG: Also check permissions of the original user token for comparison
@@ -579,12 +580,12 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		log.Printf("📋 Original token permissions response: %s", string(originalPermBody))
 	}
 
-	// Use the permanent token to get pages
+	// Use the long-lived user token to get pages (page tokens will be permanent)
 	fbURL := fmt.Sprintf(
 		"https://graph.facebook.com/v19.0/me/accounts?"+
 			"access_token=%s&"+
 			"fields=id,name,access_token,instagram_business_account{id,name,username}",
-		permResult.AccessToken,
+		longLivedResult.AccessToken,
 	)
 
 	log.Printf("Fetching Facebook pages and connected Instagram accounts from: %s", fbURL)
@@ -632,11 +633,11 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 	// DEBUG: If no pages found, try additional debugging
 	if len(fbResult.Data) == 0 {
-		log.Printf("🔍 No pages found with permanent token - performing additional debugging...")
+		log.Printf("🔍 No pages found with long-lived token - performing additional debugging...")
 
 		log.Printf("🔑 REMINDER - TOKEN VALUES FOR MANUAL DEBUGGING:")
 		log.Printf("   Original user token: %s", userToken)
-		log.Printf("   Permanent token: %s", permResult.AccessToken)
+		log.Printf("   Long-lived user token: %s", longLivedResult.AccessToken)
 		log.Printf("   📝 Test both tokens at: https://developers.facebook.com/tools/debug/accesstoken/")
 
 		// TEST: Try the same API call with the original user token
@@ -658,7 +659,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		}
 
 		// Check if user has any pages at all (without permissions filter)
-		debugURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/accounts?access_token=%s", permResult.AccessToken)
+		debugURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/accounts?access_token=%s", longLivedResult.AccessToken)
 		log.Printf("🔍 Checking all user accounts: %s", debugURL)
 
 		debugResp, err := http.Get(debugURL)
@@ -671,7 +672,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		}
 
 		// Also check user's basic info
-		userInfoURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=%s", permResult.AccessToken)
+		userInfoURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=%s", longLivedResult.AccessToken)
 		log.Printf("🔍 Checking user info: %s", userInfoURL)
 
 		userInfoResp, err := http.Get(userInfoURL)
@@ -685,7 +686,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 		// TEST: Try accessing the specific page we know exists from token debugger
 		// Page ID: 269054096290372 (Happiness boutique)
-		specificPageURL := fmt.Sprintf("https://graph.facebook.com/v19.0/269054096290372?fields=id,name,access_token&access_token=%s", permResult.AccessToken)
+		specificPageURL := fmt.Sprintf("https://graph.facebook.com/v19.0/269054096290372?fields=id,name,access_token&access_token=%s", longLivedResult.AccessToken)
 		log.Printf("🔍 Testing direct access to known page: %s", specificPageURL)
 
 		specificPageResp, err := http.Get(specificPageURL)
@@ -698,7 +699,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		}
 
 		// TEST: Try the accounts endpoint with different API versions
-		debugURLv18 := fmt.Sprintf("https://graph.facebook.com/v18.0/me/accounts?access_token=%s", permResult.AccessToken)
+		debugURLv18 := fmt.Sprintf("https://graph.facebook.com/v18.0/me/accounts?access_token=%s", longLivedResult.AccessToken)
 		log.Printf("🔍 Testing with API v18.0: %s", debugURLv18)
 
 		debugRespv18, err := http.Get(debugURLv18)
@@ -725,11 +726,44 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 	// Add Facebook pages and their connected Instagram accounts
 	for _, page := range fbResult.Data {
-		// Add Facebook page with permanent token
+		// DEBUG: Verify that page tokens are actually permanent
+		pageTokenDebugURL := fmt.Sprintf("https://graph.facebook.com/v19.0/debug_token?input_token=%s&access_token=%s|%s",
+			page.AccessToken, os.Getenv("FACEBOOK_APP_ID"), os.Getenv("FACEBOOK_APP_SECRET"))
+
+		log.Printf("🔍 Verifying page token for %s: %s", page.Name, pageTokenDebugURL)
+
+		pageTokenResp, err := http.Get(pageTokenDebugURL)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not verify page token for %s: %v", page.Name, err)
+		} else {
+			defer pageTokenResp.Body.Close()
+			pageTokenBody, _ := io.ReadAll(pageTokenResp.Body)
+			log.Printf("📋 Page token info for %s: %s", page.Name, string(pageTokenBody))
+
+			// Parse and log key info about the token
+			var tokenInfo struct {
+				Data struct {
+					Type      string `json:"type"`
+					ExpiresAt int64  `json:"expires_at"`
+					IsValid   bool   `json:"is_valid"`
+				} `json:"data"`
+			}
+
+			if json.Unmarshal(pageTokenBody, &tokenInfo) == nil {
+				expiry := "PERMANENT (no expiration)"
+				if tokenInfo.Data.ExpiresAt > 0 {
+					expiry = fmt.Sprintf("EXPIRES at %d", tokenInfo.Data.ExpiresAt)
+				}
+				log.Printf("🔑 Token for %s: Type=%s, Valid=%v, %s",
+					page.Name, tokenInfo.Data.Type, tokenInfo.Data.IsValid, expiry)
+			}
+		}
+
+		// Add Facebook page with permanent page token
 		allPages = append(allPages, FacebookPage{
 			ID:          page.ID,
 			Name:        page.Name,
-			AccessToken: page.AccessToken, // This is now a permanent token
+			AccessToken: page.AccessToken, // This IS a permanent page token (never expires)
 			Platform:    "facebook",
 		})
 		log.Printf("Added Facebook page: %s", page.Name)
@@ -739,7 +773,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 			allPages = append(allPages, FacebookPage{
 				ID:          page.Instagram.ID,
 				Name:        page.Instagram.Name,
-				AccessToken: page.AccessToken, // Use same permanent token
+				AccessToken: page.AccessToken, // Use same permanent page token
 				Platform:    "instagram",
 			})
 			log.Printf("Added connected Instagram account: %s", page.Instagram.Name)
