@@ -7,6 +7,7 @@ function Login() {
   const navigate = useNavigate();
   const [isVerifying, setIsVerifying] = useState(false);
   const [pollInterval, setPollInterval] = useState(null);
+  const [connectionType, setConnectionType] = useState('both');
 
   useEffect(() => {
     return () => {
@@ -40,6 +41,28 @@ function Login() {
   };
 
   const handleFacebookLogin = () => {
+    let scopeArray = [];
+    if (connectionType === 'fb' || connectionType === 'both') {
+      scopeArray = scopeArray.concat([
+        'pages_show_list',
+        'pages_manage_metadata',
+        'pages_messaging',
+        'pages_read_engagement',
+        'public_profile'
+      ]);
+    }
+    if (connectionType === 'ig' || connectionType === 'both') {
+      scopeArray = scopeArray.concat([
+        'pages_show_list',
+        'pages_manage_metadata',
+        'instagram_basic',
+        'instagram_manage_messages',
+        'pages_read_engagement',
+        'public_profile'
+      ]);
+    }
+    const scope = scopeArray.join(',');
+
     window.FB.login(function(response) {
       console.log('Login response:', response);
       
@@ -56,14 +79,7 @@ function Login() {
         setIsVerifying(false);
       }
     }, {
-      scope: [
-        'pages_show_list',
-        'pages_manage_metadata',
-        'pages_messaging',
-        'pages_read_engagement',
-        'instagram_basic',
-        'instagram_manage_messages',
-      ].join(','),
+      scope: scope,
       auth_type: 'rerequest'
     });
   };
@@ -85,6 +101,35 @@ function Login() {
         ) : (
           <>
             <p>Para comenzar, conecta tus cuentas de redes sociales a nuestra app</p>
+            <div className="connection-type-selector">
+              <label>
+                <input 
+                  type="radio" 
+                  value="fb" 
+                  checked={connectionType === 'fb'} 
+                  onChange={() => setConnectionType('fb')} 
+                />
+                Connect Facebook Pages only
+              </label>
+              <label>
+                <input 
+                  type="radio" 
+                  value="ig" 
+                  checked={connectionType === 'ig'} 
+                  onChange={() => setConnectionType('ig')} 
+                />
+                Connect Instagram Accounts only
+              </label>
+              <label>
+                <input 
+                  type="radio" 
+                  value="both" 
+                  checked={connectionType === 'both'} 
+                  onChange={() => setConnectionType('both')} 
+                />
+                Connect both
+              </label>
+            </div>
             <button onClick={handleFacebookLogin} className="facebook-login-btn">
               <i className="fab fa-facebook"></i> Continuar con Facebook
             </button>
