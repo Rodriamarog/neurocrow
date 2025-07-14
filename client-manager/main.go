@@ -565,6 +565,33 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		defer permDebugResp.Body.Close()
 		permDebugBody, _ := io.ReadAll(permDebugResp.Body)
 		log.Printf("📋 Long-lived token permissions response: %s", string(permDebugBody))
+
+		var permissions struct {
+			Data []struct {
+				Permission string `json:"permission"`
+				Status     string `json:"status"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(permDebugBody, &permissions) == nil {
+			var grantedPermissions []string
+			for _, perm := range permissions.Data {
+				if perm.Status == "granted" {
+					grantedPermissions = append(grantedPermissions, perm.Permission)
+				}
+			}
+
+			hasReadEngagement := false
+			for _, p := range grantedPermissions {
+				if p == "pages_read_engagement" {
+					hasReadEngagement = true
+					break
+				}
+			}
+
+			if !hasReadEngagement {
+				log.Printf("Warning: pages_read_engagement permission not granted. This permission is required to fetch managed pages. Please ensure it's included in the frontend login scope and ask the user to re-authorize if necessary.")
+			}
+		}
 	}
 
 	// DEBUG: Also check permissions of the original user token for comparison
