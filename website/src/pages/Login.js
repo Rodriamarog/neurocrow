@@ -48,7 +48,8 @@ function Login() {
         'pages_manage_metadata',
         'pages_messaging',
         'pages_read_engagement',
-        'public_profile'
+        'public_profile',
+        'business_management'
       ]);
     }
     if (connectionType === 'ig' || connectionType === 'both') {
@@ -61,7 +62,10 @@ function Login() {
         'public_profile'
       ]);
     }
-    const scope = scopeArray.join(',');
+    const scope = Array.from(new Set(scopeArray)).join(',');
+    
+    console.log('🔍 Requesting Facebook permissions:', scope);
+    console.log('🔍 Connection type selected:', connectionType);
 
     window.FB.login(function(response) {
       console.log('Login response:', response);
@@ -102,32 +106,35 @@ function Login() {
           <>
             <p>Para comenzar, conecta tus cuentas de redes sociales a nuestra app</p>
             <div className="connection-type-selector">
-              <label>
+              <label className={connectionType === 'fb' ? 'selected' : ''}>
                 <input 
                   type="radio" 
                   value="fb" 
                   checked={connectionType === 'fb'} 
                   onChange={() => setConnectionType('fb')} 
                 />
-                Connect Facebook Pages only
+                <span className="radio-custom-button"></span>
+                <span className="radio-button-text">Connect Facebook Pages only</span>
               </label>
-              <label>
+              <label className={connectionType === 'ig' ? 'selected' : ''}>
                 <input 
                   type="radio" 
                   value="ig" 
                   checked={connectionType === 'ig'} 
                   onChange={() => setConnectionType('ig')} 
                 />
-                Connect Instagram Accounts only
+                <span className="radio-custom-button"></span>
+                <span className="radio-button-text">Connect Instagram Accounts only</span>
               </label>
-              <label>
+              <label className={connectionType === 'both' ? 'selected' : ''}>
                 <input 
                   type="radio" 
                   value="both" 
                   checked={connectionType === 'both'} 
                   onChange={() => setConnectionType('both')} 
                 />
-                Connect both
+                <span className="radio-custom-button"></span>
+                <span className="radio-button-text">Connect both</span>
               </label>
             </div>
             <button onClick={handleFacebookLogin} className="facebook-login-btn">

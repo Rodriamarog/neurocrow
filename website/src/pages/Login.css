@@ -27,6 +27,75 @@
   margin-bottom: 2rem;
 }
 
+.connection-type-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+  text-align: left;
+}
+
+.connection-type-selector label {
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  background-color: #fff;
+}
+
+.connection-type-selector label:hover {
+  border-color: #A0AEC0;
+}
+
+.connection-type-selector input[type="radio"] {
+  display: none;
+}
+
+.connection-type-selector input[type="radio"]:checked + .radio-button-text {
+  font-weight: 600;
+  color: #2D3748;
+}
+
+.connection-type-selector label.selected {
+  background-color: #EBF8FF;
+  border-color: #4299E1;
+  box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
+}
+
+.radio-custom-button {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #CBD5E0;
+  border-radius: 50%;
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease-in-out;
+}
+
+.connection-type-selector label.selected .radio-custom-button {
+  border-color: #4299E1;
+  background-color: #4299E1;
+}
+
+.radio-custom-button::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background-color: white;
+  border-radius: 50%;
+  transform: scale(0);
+  transition: transform 0.2s ease-in-out;
+}
+
+.connection-type-selector label.selected .radio-custom-button::after {
+  transform: scale(1);
+}
+
 .facebook-login-btn {
   background: #1877F2;
   color: white;
