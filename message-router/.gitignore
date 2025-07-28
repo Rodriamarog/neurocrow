@@ -1,6 +1,7 @@
 # Environment files
 .env
 .env.*
+mcp.json
 
 # Go build and test files
 *.exe

@@ -239,6 +239,8 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 			// Only proceed with bot processing if enabled
 			if conv.BotEnabled {
 				log.Printf("      🤖 Bot is enabled, proceeding with message analysis")
+				log.Printf("      📊 Bot state details: LastHuman=%v, LastBot=%v", 
+					conv.LastHumanMessage, conv.LastBotMessage)
 
 				analysis, err := sentimentAnalyzer.Analyze(ctx, msg.Message.Text)
 				if err != nil {
@@ -254,6 +256,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				// Update conversation state based on analysis
 				if analysis.Status == "need_human" {
 					log.Printf("      ⚡ Human assistance specifically requested")
+					log.Printf("      🎯 HANDOFF FLOW: Starting human handoff process for thread=%s", msg.Sender.ID)
 
 					// Prepare handoff message
 					handoffMsg := "Claro, te conectaré con un agente humano para ayudarte mejor."
@@ -276,7 +279,8 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 						log.Printf("      ✅ Handoff message sent successfully")
 					}
 
-					log.Printf("      ✅ Handoff completed - no storage needed")
+					log.Printf("      ✅ HANDOFF FLOW: Completed - bot disabled, exiting message processing")
+					log.Printf("      🚪 HANDOFF FLOW: Using continue to skip remaining processing")
 					continue
 				}
 
@@ -297,7 +301,19 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 
 				// If sentiment is "general" or "frustrated" and bot is enabled, forward to Dify
 				if analysis.Status == "general" || analysis.Status == "frustrated" {
-					log.Printf("      🤖 Forwarding message to Dify")
+					// Re-check bot state before forwarding to Dify (prevents race conditions)
+					currentConv, err := getOrCreateConversation(ctx, entry.ID, msg.Sender.ID, platform)
+					if err != nil {
+						log.Printf("❌ Error re-checking conversation state: %v", err)
+						continue
+					}
+					
+					if !currentConv.BotEnabled {
+						log.Printf("      🚫 Bot was disabled during processing - skipping Dify forward")
+						continue
+					}
+					
+					log.Printf("      🤖 Forwarding message to Dify (bot confirmed enabled)")
 					if err := forwardToDify(ctx, entry.ID, msg, platform); err != nil {
 						log.Printf("❌ Error forwarding to Dify: %v", err)
 
@@ -314,6 +330,8 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				}
 			} else {
 				log.Printf("      ℹ️ Bot is disabled, message noted for human review")
+				log.Printf("      📊 Bot disabled state: LastHuman=%v, TimeSince=%v", 
+					conv.LastHumanMessage, time.Since(conv.LastHumanMessage))
 			}
 		}
 	}

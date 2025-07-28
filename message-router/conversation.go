@@ -83,19 +83,33 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 	log.Printf("🔍 Updating conversation state: pageID=%s, platform=%s, threadID=%s, botEnabled=%v",
 		conv.PageID, conv.Platform, conv.ThreadID, botEnabled)
 
-	// Start a transaction
+	// Start a transaction with row-level locking to prevent race conditions
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %v", err)
 	}
 	defer tx.Rollback()
 
+	// Lock the conversation row to prevent concurrent modifications
+	var currentBotState bool
+	err = tx.QueryRowContext(ctx, `
+        SELECT bot_enabled FROM conversations 
+        WHERE thread_id = $1
+        FOR UPDATE
+    `, conv.ThreadID).Scan(&currentBotState)
+	if err != nil {
+		return fmt.Errorf("error locking conversation: %v", err)
+	}
+	
+	log.Printf("🔒 Conversation state locked - current: %v, target: %v", currentBotState, botEnabled)
+
 	// Update conversations table
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE conversations 
 		SET bot_enabled = $1,
 			latest_message_at = NOW(),
-			message_count = message_count + 1
+			message_count = message_count + 1,
+			updated_at = NOW()
 		WHERE thread_id = $2
 	`, botEnabled, conv.ThreadID); err != nil {
 		return fmt.Errorf("error updating conversation: %v", err)
@@ -247,12 +261,25 @@ func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, pl
 		return fmt.Errorf("error finding page: %v", err)
 	}
 
-	// Start a transaction
+	// Start a transaction with row-level locking to prevent race conditions
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %v", err)
 	}
 	defer tx.Rollback()
+
+	// Lock the conversation row to prevent concurrent modifications
+	var currentBotState bool
+	err = tx.QueryRowContext(ctx, `
+        SELECT bot_enabled FROM conversations 
+        WHERE thread_id = $1 AND page_id = $2
+        FOR UPDATE
+    `, threadID, pageUUID).Scan(&currentBotState)
+	if err != nil {
+		return fmt.Errorf("error locking conversation: %v", err)
+	}
+	
+	log.Printf("🔒 Conversation locked - current bot state: %v", currentBotState)
 
 	// Update the conversation to record human message and disable bot
 	// This refreshes the 6-hour timer every time a human agent sends a message
@@ -261,7 +288,8 @@ func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, pl
         SET last_human_message_at = NOW(),
             bot_enabled = false,
             latest_message_at = NOW(),
-            message_count = message_count + 1
+            message_count = message_count + 1,
+            updated_at = NOW()
         WHERE thread_id = $1 AND page_id = $2
     `, threadID, pageUUID)
 	if err != nil {
@@ -366,4 +394,91 @@ func isRecentHumanActivity(conv *ConversationState) bool {
 	}
 
 	return recentActivity
+}
+
+// =============================================================================
+// FACEBOOK HANDOVER PROTOCOL DATABASE FUNCTIONS - For thread control management
+// =============================================================================
+
+// updateThreadControlStatus updates the thread control status in database
+func updateThreadControlStatus(ctx context.Context, threadID string, status string, reason string) error {
+	query := `
+        UPDATE conversations 
+        SET thread_control_status = $1, 
+            handover_timestamp = CURRENT_TIMESTAMP,
+            handover_reason = $2,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE thread_id = $3`
+
+	result, err := db.ExecContext(ctx, query, status, reason, threadID)
+	if err != nil {
+		return fmt.Errorf("failed to update thread control status: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("⚠️ Could not get rows affected count: %v", err)
+	} else if rowsAffected == 0 {
+		log.Printf("⚠️ No conversation found with thread_id: %s", threadID)
+		return fmt.Errorf("no conversation found with thread_id: %s", threadID)
+	}
+
+	log.Printf("✅ Updated thread control status: %s -> %s (reason: %s)", threadID, status, reason)
+	return nil
+}
+
+// getThreadControlStatus retrieves current thread control status from database
+func getThreadControlStatus(ctx context.Context, threadID string) (string, error) {
+	var status string
+	query := "SELECT COALESCE(thread_control_status, 'bot') FROM conversations WHERE thread_id = $1"
+
+	err := db.QueryRowContext(ctx, query, threadID).Scan(&status)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("⚠️ No conversation found for thread_id: %s, defaulting to 'bot'", threadID)
+			return "bot", nil // Graceful degradation
+		}
+		return "", fmt.Errorf("failed to get thread control status: %v", err)
+	}
+
+	log.Printf("🔍 Thread control status for %s: %s", threadID, status)
+	return status, nil
+}
+
+// shouldBotProcessMessage determines if bot should process message based on thread control status
+func shouldBotProcessMessage(ctx context.Context, threadID string) (bool, error) {
+	status, err := getThreadControlStatus(ctx, threadID)
+	if err != nil {
+		log.Printf("⚠️ Error getting thread control status, defaulting to bot control: %v", err)
+		return true, nil // Graceful degradation
+	}
+
+	shouldProcess := status == "bot" || status == "system"
+	log.Printf("🤖 Should bot process message for %s? %v (status: %s)", threadID, shouldProcess, status)
+	return shouldProcess, nil
+}
+
+// getThreadControlStatusWithTimestamp retrieves thread control status with handover info
+func getThreadControlStatusWithTimestamp(ctx context.Context, threadID string) (string, *time.Time, string, error) {
+	var status, reason string
+	var timestamp *time.Time
+
+	query := `
+        SELECT 
+            COALESCE(thread_control_status, 'bot') as status,
+            handover_timestamp,
+            COALESCE(handover_reason, '') as reason
+        FROM conversations 
+        WHERE thread_id = $1`
+
+	err := db.QueryRowContext(ctx, query, threadID).Scan(&status, &timestamp, &reason)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("⚠️ No conversation found for thread_id: %s, defaulting to 'bot'", threadID)
+			return "bot", nil, "", nil // Graceful degradation
+		}
+		return "", nil, "", fmt.Errorf("failed to get thread control status with timestamp: %v", err)
+	}
+
+	return status, timestamp, reason, nil
 }

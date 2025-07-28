@@ -13,6 +13,7 @@ DECLARE
     conversation_record RECORD;
 BEGIN
     -- Find conversations where bot should be reactivated
+    -- Added extra safety checks to prevent premature reactivation
     FOR conversation_record IN
         SELECT c.thread_id, c.page_id, c.platform, sp.page_id as meta_page_id, sp.client_id
         FROM conversations c
@@ -20,6 +21,9 @@ BEGIN
         WHERE c.bot_enabled = false 
           AND c.last_human_message_at IS NOT NULL
           AND c.last_human_message_at < NOW() - INTERVAL '6 hours'
+          -- Additional safety: ensure the conversation was updated more than 5 minutes ago
+          -- This prevents reactivation if there's recent activity
+          AND c.updated_at < NOW() - INTERVAL '5 minutes'
     LOOP
         -- Reactivate the bot
         UPDATE conversations 
@@ -111,13 +115,38 @@ $$ LANGUAGE plpgsql;
 -- ========================================================
 
 -- Trigger function that runs reactivation check on new messages
+-- Modified to prevent immediate reactivation after handoff
 CREATE OR REPLACE FUNCTION check_bot_reactivation_on_message()
 RETURNS TRIGGER AS $$
+DECLARE
+    last_check_time timestamp;
+    min_check_interval interval := '15 minutes'; -- Minimum time between reactivation checks
 BEGIN
     -- Only run reactivation check when a user message is inserted
     -- This ensures we check periodically without needing a cron job
     IF NEW.from_user != 'system' AND NEW.from_user != 'admin' THEN
-        PERFORM run_bot_reactivation_check();
+        -- Check if we've run the reactivation check recently to avoid excessive processing
+        SELECT created_at INTO last_check_time 
+        FROM messages 
+        WHERE content LIKE 'Bot reactivation check:%' 
+        AND from_user = 'system'
+        ORDER BY created_at DESC 
+        LIMIT 1;
+        
+        -- Only run if it's been more than the minimum interval since last check
+        IF last_check_time IS NULL OR last_check_time < NOW() - min_check_interval THEN
+            -- Log that we're running a reactivation check
+            INSERT INTO messages (
+                id, page_id, platform, thread_id, content, from_user, source, 
+                requires_attention, timestamp, read
+            ) VALUES (
+                gen_random_uuid(), NEW.page_id, NEW.platform, 'system', 
+                'Bot reactivation check: triggered by user message', 
+                'system', 'system', false, NOW(), true
+            );
+            
+            PERFORM run_bot_reactivation_check();
+        END IF;
     END IF;
     
     RETURN NEW;

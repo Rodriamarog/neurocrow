@@ -126,6 +126,9 @@ type Config struct {
 	VerifyToken       string
 	Port              string
 	FireworksKey      string
+	// Facebook Handover Protocol App IDs
+	FacebookBotAppID       int64 // Your bot's Facebook App ID (1195277397801905)
+	FacebookPageInboxAppID int64 // Facebook Page Inbox App ID (263902037430900)
 	// Botpress integration (legacy - will be removed after migration)
 	BotpressToken string // Botpress token (temporary during migration)
 	// Note: Dify API keys are now stored per-page in database (multi-tenant)
@@ -263,4 +266,55 @@ type DifyConversationState struct {
 	LastMessageId  string    // Last message ID from Dify
 	CreatedAt      time.Time // When this conversation started
 	UpdatedAt      time.Time // Last activity
+}
+
+// =============================================================================
+// FACEBOOK HANDOVER PROTOCOL TYPES - For thread control management
+// =============================================================================
+
+// HandoverEvent represents Facebook handover protocol events in webhooks
+type HandoverEvent struct {
+	Sender struct {
+		ID string `json:"id"`
+	} `json:"sender"`
+	Recipient struct {
+		ID string `json:"id"`
+	} `json:"recipient"`
+	Timestamp         int64                      `json:"timestamp"`
+	PassThreadControl *PassThreadControlData    `json:"pass_thread_control,omitempty"`
+	TakeThreadControl *TakeThreadControlData    `json:"take_thread_control,omitempty"`
+	RequestThreadControl *RequestThreadControlData `json:"request_thread_control,omitempty"`
+}
+
+// PassThreadControlData represents data when control is passed to another app
+type PassThreadControlData struct {
+	NewOwnerAppID      int64  `json:"new_owner_app_id"`
+	PreviousOwnerAppID int64  `json:"previous_owner_app_id"`
+	Metadata           string `json:"metadata"`
+}
+
+// TakeThreadControlData represents data when control is taken from another app
+type TakeThreadControlData struct {
+	PreviousOwnerAppID int64  `json:"previous_owner_app_id"`
+	Metadata           string `json:"metadata"`
+}
+
+// RequestThreadControlData represents data when another app requests control
+type RequestThreadControlData struct {
+	RequestedOwnerAppID int64  `json:"requested_owner_app_id"`
+	Metadata            string `json:"metadata"`
+}
+
+// ThreadControlResponse represents Facebook's response to thread control API calls
+type ThreadControlResponse struct {
+	Success bool `json:"success"`
+}
+
+// ThreadOwnerResponse represents Facebook's response when querying thread owner
+type ThreadOwnerResponse struct {
+	Data []struct {
+		ThreadOwner struct {
+			AppID int64 `json:"app_id"`
+		} `json:"thread_owner"`
+	} `json:"data"`
 }
