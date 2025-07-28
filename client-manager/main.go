@@ -917,22 +917,11 @@ func configureHandoverProtocol(pageID, pageToken string) error {
 		return fmt.Errorf("FACEBOOK_APP_ID environment variable not set")
 	}
 
-	// Facebook Page Inbox App ID (constant for all Facebook pages)
-	pageInboxAppID := "263902037430900"
-
 	log.Printf("🔄 Configuring handover protocol for page %s", pageID)
 	log.Printf("   Primary receiver (Neurocrow): %s", neurocrowAppID)
-	log.Printf("   Secondary receiver (Page Inbox): %s", pageInboxAppID)
+	log.Printf("   Secondary receiver (Page Inbox): 263902037430900")
 
-	// Step 1: Set Neurocrow app as primary receiver
-	primaryURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/thread_settings", pageID)
-	primaryPayload := map[string]interface{}{
-		"setting_type": "domain_whitelisting",
-		"whitelisted_domains": []string{"https://neurocrow.com"},
-		"thread_state": "existing_thread",
-	}
-
-	// Actually, let's use the correct endpoint for handover protocol
+	// Set up handover protocol using messenger_profile endpoint
 	handoverURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messenger_profile", pageID)
 	handoverPayload := map[string]interface{}{
 		"primary_receiver_app_id": neurocrowAppID,
