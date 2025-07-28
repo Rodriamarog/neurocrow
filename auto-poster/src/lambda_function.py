@@ -76,7 +76,7 @@ class NewsPostGenerator:
                 return False
             
             print("Posting to Facebook...")
-            url = f"https://graph.facebook.com/v18.0/{page_id}/feed"
+            url = f"https://graph.facebook.com/v23.0/{page_id}/feed"
             
             # Create post with link preview
             data = {

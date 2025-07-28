@@ -11,7 +11,7 @@ def verify_token(token):
     app_secret = os.getenv('FACEBOOK_APP_SECRET')
     
     # Debug token endpoint
-    url = "https://graph.facebook.com/v18.0/debug_token"
+    url = "https://graph.facebook.com/v23.0/debug_token"
     params = {
         'input_token': token,
         'access_token': f"{app_id}|{app_secret}"  # App access token
@@ -39,7 +39,7 @@ def verify_token(token):
         print(f"Is Page Token: {'Yes ✅' if data.get('type') == 'PAGE' else 'No ❌'}")
         
         # Test actual permissions
-        test_url = "https://graph.facebook.com/v18.0/me"
+        test_url = "https://graph.facebook.com/v23.0/me"
         test_response = requests.get(test_url, params={'access_token': token})
         if test_response.status_code == 200:
             print("Token Active: Yes ✅")

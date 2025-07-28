@@ -829,7 +829,7 @@ func getProfileInfo(ctx context.Context, userID string, pageToken string, platfo
 	// Different endpoints and handling for Facebook and Instagram
 	var userName string
 	if platform == "facebook" {
-		apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s?fields=name&access_token=%s", userID, pageToken)
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v23.0/%s?fields=name&access_token=%s", userID, pageToken)
 		log.Printf("📡 Making Facebook API request for user %s", userID)
 
 		var profile FacebookProfile
@@ -839,7 +839,7 @@ func getProfileInfo(ctx context.Context, userID string, pageToken string, platfo
 		userName = profile.Name
 		log.Printf("👤 Using Facebook name: %s", userName)
 	} else {
-		apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s?fields=username&access_token=%s", userID, pageToken)
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v23.0/%s?fields=username&access_token=%s", userID, pageToken)
 		log.Printf("📡 Making Instagram API request for user %s", userID)
 
 		var profile InstagramProfile

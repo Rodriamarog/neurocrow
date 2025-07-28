@@ -43,7 +43,7 @@ type FacebookPage struct {
 
 func getPageInfo(pageToken string) (*FacebookPage, error) {
 	// Get page info using the token
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me?access_token=%s", pageToken)
+	url := fmt.Sprintf("https://graph.facebook.com/v23.0/me?access_token=%s", pageToken)
 	log.Printf("Fetching page info from Facebook...")
 
 	resp, err := http.Get(url)

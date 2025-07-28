@@ -73,7 +73,7 @@ func sendFacebookMessage(ctx context.Context, pageID string, pageToken string, r
 		return fmt.Errorf("error creating Facebook payload: %v", err)
 	}
 
-	fbURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages?access_token=%s",
+	fbURL := fmt.Sprintf("https://graph.facebook.com/v23.0/%s/messages?access_token=%s",
 		pageID, pageToken)
 
 	// Log payload details only in debug mode
@@ -103,7 +103,7 @@ func sendFacebookMessage(ctx context.Context, pageID string, pageToken string, r
 
 func sendInstagramMessage(ctx context.Context, pageID string, pageToken string, recipientID string, message string) error {
 	// Instagram uses a different endpoint format
-	igURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/messages?access_token=%s", pageToken)
+	igURL := fmt.Sprintf("https://graph.facebook.com/v23.0/me/messages?access_token=%s", pageToken)
 
 	igPayload := map[string]interface{}{
 		"recipient": map[string]string{
@@ -156,7 +156,7 @@ func isValidFacebookObject(objectType string) bool {
 
 // passThreadControl passes thread control to another app (usually Facebook Page Inbox)
 func passThreadControl(ctx context.Context, pageAccessToken, recipientID string, targetAppID int64, metadata string) error {
-	fbURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/pass_thread_control?access_token=%s", pageAccessToken)
+	fbURL := fmt.Sprintf("https://graph.facebook.com/v23.0/me/pass_thread_control?access_token=%s", pageAccessToken)
 
 	payload := map[string]interface{}{
 		"recipient": map[string]string{
@@ -200,7 +200,7 @@ func passThreadControl(ctx context.Context, pageAccessToken, recipientID string,
 
 // takeThreadControl takes thread control back from another app
 func takeThreadControl(ctx context.Context, pageAccessToken, recipientID string, metadata string) error {
-	fbURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/take_thread_control?access_token=%s", pageAccessToken)
+	fbURL := fmt.Sprintf("https://graph.facebook.com/v23.0/me/take_thread_control?access_token=%s", pageAccessToken)
 
 	payload := map[string]interface{}{
 		"recipient": map[string]string{
@@ -243,7 +243,7 @@ func takeThreadControl(ctx context.Context, pageAccessToken, recipientID string,
 
 // getThreadOwner queries who currently owns thread control
 func getThreadOwner(ctx context.Context, pageAccessToken, recipientID string) (int64, error) {
-	fbURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/thread_owner?recipient=%s&access_token=%s",
+	fbURL := fmt.Sprintf("https://graph.facebook.com/v23.0/me/thread_owner?recipient=%s&access_token=%s",
 		recipientID, pageAccessToken)
 
 	log.Printf("🔍 Querying thread owner for user %s", recipientID)

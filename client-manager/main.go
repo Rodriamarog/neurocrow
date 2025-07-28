@@ -461,7 +461,7 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 
 // Enhanced getFacebookUser function
 func getFacebookUser(token string) (*FacebookUser, error) {
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name&access_token=%s", token)
+	url := fmt.Sprintf("https://graph.facebook.com/v23.0/me?fields=id,name&access_token=%s", token)
 	log.Printf("Attempting to get Facebook user details from: %s", url)
 
 	resp, err := http.Get(url)
@@ -522,7 +522,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	// Exchange user token for long-lived user token (60 days)
 	// Note: This is NOT permanent, but the page tokens we get from it ARE permanent
 	longLivedUrl := fmt.Sprintf(
-		"https://graph.facebook.com/v19.0/oauth/access_token?"+
+		"https://graph.facebook.com/v23.0/oauth/access_token?"+
 			"grant_type=fb_exchange_token&"+
 			"client_id=%s&"+
 			"client_secret=%s&"+
@@ -578,7 +578,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	log.Printf("   📝 Copy these tokens to https://developers.facebook.com/tools/debug/accesstoken/ for detailed analysis")
 
 	// DEBUG: Check what permissions the long-lived token actually has
-	debugPermUrl := fmt.Sprintf("https://graph.facebook.com/v19.0/me/permissions?access_token=%s", longLivedResult.AccessToken)
+	debugPermUrl := fmt.Sprintf("https://graph.facebook.com/v23.0/me/permissions?access_token=%s", longLivedResult.AccessToken)
 	log.Printf("🔍 Checking long-lived token permissions: %s", debugPermUrl)
 
 	permDebugResp, err := http.Get(debugPermUrl)
@@ -618,7 +618,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	}
 
 	// DEBUG: Also check permissions of the original user token for comparison
-	originalPermUrl := fmt.Sprintf("https://graph.facebook.com/v19.0/me/permissions?access_token=%s", userToken)
+	originalPermUrl := fmt.Sprintf("https://graph.facebook.com/v23.0/me/permissions?access_token=%s", userToken)
 	log.Printf("🔍 Checking original user token permissions: %s", originalPermUrl)
 
 	originalPermResp, err := http.Get(originalPermUrl)
@@ -632,7 +632,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 	// Use the long-lived user token to get pages (page tokens will be permanent)
 	fbURL := fmt.Sprintf(
-		"https://graph.facebook.com/v19.0/me/accounts?"+
+		"https://graph.facebook.com/v23.0/me/accounts?"+
 			"access_token=%s&"+
 			"fields=id,name,access_token,instagram_business_account{id,name,username}",
 		longLivedResult.AccessToken,
@@ -692,7 +692,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 		// TEST: Try the same API call with the original user token
 		originalPagesURL := fmt.Sprintf(
-			"https://graph.facebook.com/v19.0/me/accounts?"+
+			"https://graph.facebook.com/v23.0/me/accounts?"+
 				"access_token=%s&"+
 				"fields=id,name,access_token,instagram_business_account{id,name,username}",
 			userToken,
@@ -709,7 +709,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		}
 
 		// Check if user has any pages at all (without permissions filter)
-		debugURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me/accounts?access_token=%s", longLivedResult.AccessToken)
+		debugURL := fmt.Sprintf("https://graph.facebook.com/v23.0/me/accounts?access_token=%s", longLivedResult.AccessToken)
 		log.Printf("🔍 Checking all user accounts: %s", debugURL)
 
 		debugResp, err := http.Get(debugURL)
@@ -722,7 +722,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		}
 
 		// Also check user's basic info
-		userInfoURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=%s", longLivedResult.AccessToken)
+		userInfoURL := fmt.Sprintf("https://graph.facebook.com/v23.0/me?fields=id,name,email&access_token=%s", longLivedResult.AccessToken)
 		log.Printf("🔍 Checking user info: %s", userInfoURL)
 
 		userInfoResp, err := http.Get(userInfoURL)
@@ -736,7 +736,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 		// TEST: Try accessing the specific page we know exists from token debugger
 		// Page ID: 269054096290372 (Happiness boutique)
-		specificPageURL := fmt.Sprintf("https://graph.facebook.com/v19.0/269054096290372?fields=id,name,access_token&access_token=%s", longLivedResult.AccessToken)
+		specificPageURL := fmt.Sprintf("https://graph.facebook.com/v23.0/269054096290372?fields=id,name,access_token&access_token=%s", longLivedResult.AccessToken)
 		log.Printf("🔍 Testing direct access to known page: %s", specificPageURL)
 
 		specificPageResp, err := http.Get(specificPageURL)
@@ -749,16 +749,16 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 		}
 
 		// TEST: Try the accounts endpoint with different API versions
-		debugURLv18 := fmt.Sprintf("https://graph.facebook.com/v18.0/me/accounts?access_token=%s", longLivedResult.AccessToken)
-		log.Printf("🔍 Testing with API v18.0: %s", debugURLv18)
+		debugURLv23 := fmt.Sprintf("https://graph.facebook.com/v23.0/me/accounts?access_token=%s", longLivedResult.AccessToken)
+		log.Printf("🔍 Testing with API v23.0: %s", debugURLv23)
 
-		debugRespv18, err := http.Get(debugURLv18)
+		debugRespv23, err := http.Get(debugURLv23)
 		if err != nil {
-			log.Printf("⚠️ Warning: Could not check with v18.0: %v", err)
+			log.Printf("⚠️ Warning: Could not check with v23.0: %v", err)
 		} else {
-			defer debugRespv18.Body.Close()
-			debugBodyv18, _ := io.ReadAll(debugRespv18.Body)
-			log.Printf("📋 v18.0 response: %s", string(debugBodyv18))
+			defer debugRespv23.Body.Close()
+			debugBodyv23, _ := io.ReadAll(debugRespv23.Body)
+			log.Printf("📋 v23.0 response: %s", string(debugBodyv23))
 		}
 
 		log.Printf("💡 Possible reasons for no pages:")
@@ -777,7 +777,7 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 	// Add Facebook pages and their connected Instagram accounts
 	for _, page := range fbResult.Data {
 		// DEBUG: Verify that page tokens are actually permanent
-		pageTokenDebugURL := fmt.Sprintf("https://graph.facebook.com/v19.0/debug_token?input_token=%s&access_token=%s|%s",
+		pageTokenDebugURL := fmt.Sprintf("https://graph.facebook.com/v23.0/debug_token?input_token=%s&access_token=%s|%s",
 			page.AccessToken, os.Getenv("FACEBOOK_APP_ID"), os.Getenv("FACEBOOK_APP_SECRET"))
 
 		log.Printf("🔍 Verifying page token for %s: %s", page.Name, pageTokenDebugURL)
@@ -846,7 +846,7 @@ func subscribePageToWebhooks(pageID, pageToken string) error {
 	}
 
 	// Subscribe page to the Neurocrow app for webhook events
-	subscribeURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/subscribed_apps", pageID)
+	subscribeURL := fmt.Sprintf("https://graph.facebook.com/v23.0/%s/subscribed_apps", pageID)
 	
 	// Create payload for subscribing to webhooks
 	subscribePayload := map[string]interface{}{
@@ -922,7 +922,7 @@ func configureHandoverProtocol(pageID, pageToken string) error {
 	log.Printf("   Secondary receiver (Page Inbox): 263902037430900")
 
 	// Set up handover protocol using messenger_profile endpoint
-	handoverURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messenger_profile", pageID)
+	handoverURL := fmt.Sprintf("https://graph.facebook.com/v23.0/%s/messenger_profile", pageID)
 	handoverPayload := map[string]interface{}{
 		"primary_receiver_app_id": neurocrowAppID,
 	}
@@ -985,7 +985,7 @@ func configureHandoverProtocol(pageID, pageToken string) error {
 // verifyWebhookSetup verifies that webhook subscriptions were set up correctly
 func verifyWebhookSetup(pageID, pageToken string) error {
 	// Check subscribed apps for the page
-	verifyURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/subscribed_apps?access_token=%s", pageID, pageToken)
+	verifyURL := fmt.Sprintf("https://graph.facebook.com/v23.0/%s/subscribed_apps?access_token=%s", pageID, pageToken)
 	
 	log.Printf("🔍 Verifying webhook setup for page %s: %s", pageID, verifyURL)
 

@@ -20,7 +20,7 @@ def test_facebook_post():
               "#Test #IA #Automatización"
     
     # API endpoint
-    url = f"https://graph.facebook.com/v18.0/{page_id}/feed"
+    url = f"https://graph.facebook.com/v23.0/{page_id}/feed"
     
     # Post data
     data = {
@@ -66,7 +66,7 @@ def test_image_post():
     image_url = "https://static.wikia.nocookie.net/airtv/images/9/9e/Sora_Anime.gif/revision/latest?cb=20121229045520"
     
     # API endpoint for photos
-    url = f"https://graph.facebook.com/v18.0/{page_id}/photos"
+    url = f"https://graph.facebook.com/v23.0/{page_id}/photos"
     
     data = {
         'message': message,

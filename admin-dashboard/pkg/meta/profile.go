@@ -70,7 +70,7 @@ func FetchProfilePicture(userID, accessToken, platform string) (string, error) {
 
 	log.Printf("🔍 Fetching profile picture for user %s on %s", userID, platform)
 	// Use the Messenger Platform API endpoint which works for both Facebook and Instagram
-	url := fmt.Sprintf("https://graph.facebook.com/v18.0/%s?fields=name,profile_pic&access_token=%s",
+	url := fmt.Sprintf("https://graph.facebook.com/v23.0/%s?fields=name,profile_pic&access_token=%s",
 		userID, accessToken)
 
 	log.Printf("📡 Calling Messenger Platform API: %s", url)

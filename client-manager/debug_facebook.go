@@ -38,7 +38,7 @@ func (fd *FacebookDebugger) DebugUserToken(userToken string) {
 func (fd *FacebookDebugger) checkTokenInfo(token string) {
 	log.Printf("📋 Checking token information...")
 
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/debug_token?input_token=%s&access_token=%s|%s",
+	url := fmt.Sprintf("https://graph.facebook.com/v23.0/debug_token?input_token=%s&access_token=%s|%s",
 		token, fd.AppID, fd.AppSecret)
 
 	resp, err := http.Get(url)
@@ -86,7 +86,7 @@ func (fd *FacebookDebugger) checkTokenInfo(token string) {
 func (fd *FacebookDebugger) checkUserPermissions(token string) {
 	log.Printf("📋 Checking user permissions...")
 
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me/permissions?access_token=%s", token)
+	url := fmt.Sprintf("https://graph.facebook.com/v23.0/me/permissions?access_token=%s", token)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -153,7 +153,7 @@ func (fd *FacebookDebugger) checkUserPermissions(token string) {
 func (fd *FacebookDebugger) checkUserInfo(token string) {
 	log.Printf("📋 Checking user info...")
 
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,email&access_token=%s", token)
+	url := fmt.Sprintf("https://graph.facebook.com/v23.0/me?fields=id,name,email&access_token=%s", token)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -174,7 +174,7 @@ func (fd *FacebookDebugger) checkUserInfo(token string) {
 func (fd *FacebookDebugger) checkUserPages(token string) {
 	log.Printf("📋 Checking user pages...")
 
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/me/accounts?access_token=%s", token)
+	url := fmt.Sprintf("https://graph.facebook.com/v23.0/me/accounts?access_token=%s", token)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -221,7 +221,7 @@ func (fd *FacebookDebugger) checkUserPages(token string) {
 func (fd *FacebookDebugger) checkAppInfo() {
 	log.Printf("📋 Checking app info...")
 
-	url := fmt.Sprintf("https://graph.facebook.com/v19.0/%s?access_token=%s|%s",
+	url := fmt.Sprintf("https://graph.facebook.com/v23.0/%s?access_token=%s|%s",
 		fd.AppID, fd.AppID, fd.AppSecret)
 
 	resp, err := http.Get(url)

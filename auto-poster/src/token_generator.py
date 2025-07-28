@@ -14,7 +14,7 @@ def get_permanent_page_token():
     
     # Step 1: Convert to Long-lived Token
     print("\nConverting to long-lived token...")
-    url = "https://graph.facebook.com/v18.0/oauth/access_token"
+    url = "https://graph.facebook.com/v23.0/oauth/access_token"
     params = {
         'grant_type': 'fb_exchange_token',
         'client_id': app_id,
@@ -32,7 +32,7 @@ def get_permanent_page_token():
     
     # Step 2: Get Permanent Page Token
     print("\nGetting permanent page token...")
-    url = f"https://graph.facebook.com/v18.0/{page_id}"
+    url = f"https://graph.facebook.com/v23.0/{page_id}"
     params = {
         'fields': 'access_token',
         'access_token': long_lived_token
@@ -48,7 +48,7 @@ def get_permanent_page_token():
     
     # Step 3: Verify token
     print("\nVerifying token...")
-    url = "https://graph.facebook.com/v18.0/debug_token"
+    url = "https://graph.facebook.com/v23.0/debug_token"
     params = {
         'input_token': page_token,
         'access_token': f"{app_id}|{app_secret}"
