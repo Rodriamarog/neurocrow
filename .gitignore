@@ -2,6 +2,7 @@
 venv/
 env/
 ENV/
+.mcp.json
 
 # Python
 __pycache__/

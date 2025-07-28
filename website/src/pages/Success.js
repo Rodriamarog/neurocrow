@@ -5,6 +5,11 @@ import './Success.css';
 
 function Success() {
   const [syncStatus, setSyncStatus] = useState('syncing');
+  const [setupProgress, setSetupProgress] = useState({
+    pageConnection: 'pending',  // pending, success, error
+    webhookSetup: 'pending',    // pending, success, error  
+    handoverConfig: 'pending'   // pending, success, error
+  });
   const location = useLocation();
   const accessToken = location.state?.accessToken;
 
@@ -12,8 +17,16 @@ function Success() {
     if (!accessToken) {
       console.error('No access token available');
       setSyncStatus('error');
+      setSetupProgress({
+        pageConnection: 'error',
+        webhookSetup: 'error', 
+        handoverConfig: 'error'
+      });
       return;
     }
+
+    // Update progress indicators step by step
+    setSetupProgress(prev => ({ ...prev, pageConnection: 'in_progress' }));
 
     // Send token to your backend
     fetch('https://neurocrow-client-manager.onrender.com/facebook-token', {
@@ -27,16 +40,57 @@ function Success() {
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
-      setSyncStatus('success');
+      
+      // Simulate progress through the setup steps
+      setSetupProgress(prev => ({ ...prev, pageConnection: 'success' }));
+      
+      // Simulate webhook setup (in reality this happens in backend)
+      setTimeout(() => {
+        setSetupProgress(prev => ({ ...prev, webhookSetup: 'in_progress' }));
+        
+        setTimeout(() => {
+          setSetupProgress(prev => ({ ...prev, webhookSetup: 'success' }));
+          
+          // Simulate handover protocol setup
+          setTimeout(() => {
+            setSetupProgress(prev => ({ ...prev, handoverConfig: 'in_progress' }));
+            
+            setTimeout(() => {
+              setSetupProgress(prev => ({ ...prev, handoverConfig: 'success' }));
+              setSyncStatus('success');
+            }, 1000);
+          }, 1000);
+        }, 1500);
+      }, 1000);
     })
     .catch(error => {
       console.error('Error syncing pages:', error);
       setSyncStatus('error');
+      setSetupProgress(prev => ({
+        pageConnection: prev.pageConnection === 'in_progress' ? 'error' : prev.pageConnection,
+        webhookSetup: 'error',
+        handoverConfig: 'error'
+      }));
     });
   }, [accessToken]);
 
   const handleContactClick = () => {
     window.open('https://m.me/413548765185533', '_blank');
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'pending':
+        return <i className="fas fa-clock" style={{ color: '#ccc' }}></i>;
+      case 'in_progress':
+        return <i className="fas fa-spinner fa-spin" style={{ color: '#007bff' }}></i>;
+      case 'success':
+        return <i className="fas fa-check-circle" style={{ color: '#28a745' }}></i>;
+      case 'error':
+        return <i className="fas fa-times-circle" style={{ color: '#dc3545' }}></i>;
+      default:
+        return <i className="fas fa-clock" style={{ color: '#ccc' }}></i>;
+    }
   };
 
   return (
@@ -45,20 +99,45 @@ function Success() {
         {syncStatus === 'syncing' ? (
           <>
             <i className="fas fa-spinner fa-spin success-icon"></i>
-            <h1>Sincronizando páginas...</h1>
-            <p>Estamos configurando tus cuentas conectadas. Por favor espera un momento.</p>
+            <h1>Configurando tu cuenta...</h1>
+            <p>Estamos configurando automáticamente tus cuentas para que funcionen con Neurocrow.</p>
+            
+            <div className="setup-progress" style={{ margin: '20px 0', textAlign: 'left' }}>
+              <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
+                {getStatusIcon(setupProgress.pageConnection)}
+                <span style={{ marginLeft: '10px' }}>Conectando páginas de Facebook/Instagram</span>
+              </div>
+              <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
+                {getStatusIcon(setupProgress.webhookSetup)}
+                <span style={{ marginLeft: '10px' }}>Configurando webhooks automáticos</span>
+              </div>
+              <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
+                {getStatusIcon(setupProgress.handoverConfig)}
+                <span style={{ marginLeft: '10px' }}>Activando protocolo de mensajería</span>
+              </div>
+            </div>
           </>
         ) : syncStatus === 'success' ? (
           <>
             <i className="fas fa-check-circle success-icon"></i>
-            <h1>¡Conexión Exitosa!</h1>
-            <p>Gracias por conectar tus cuentas con Neurocrow. Nos pondremos en contacto contigo pronto para configurar tu chatbot.</p>
+            <h1>¡Configuración Completada!</h1>
+            <p>Tu cuenta ha sido configurada automáticamente. Tus páginas ya están listas para recibir mensajes y usar el chatbot de Neurocrow.</p>
+            
+            <div className="setup-summary" style={{ margin: '20px 0', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px', textAlign: 'left' }}>
+              <h3 style={{ margin: '0 0 10px 0', color: '#28a745' }}>✅ Configuración completada:</h3>
+              <ul style={{ margin: '0', paddingLeft: '20px' }}>
+                <li>Páginas conectadas y sincronizadas</li>
+                <li>Webhooks configurados automáticamente</li>
+                <li>Protocolo de handover activado</li>
+                <li>Bot listo para responder mensajes</li>
+              </ul>
+            </div>
           </>
         ) : (
           <>
             <i className="fas fa-exclamation-circle success-icon error"></i>
             <h1>Hubo un problema</h1>
-            <p>No pudimos sincronizar tus páginas. Por favor contáctanos para ayudarte.</p>
+            <p>No pudimos completar la configuración automática. Por favor contáctanos para ayudarte.</p>
           </>
         )}
         

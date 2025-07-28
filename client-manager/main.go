@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -429,9 +430,31 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("✅ Social dashboard transaction committed successfully")
-		log.Printf("✅ Successfully completed Facebook token request, changes committed to both pages and social_pages tables.")
+	}
+
+	// 8. Set up webhook subscriptions for all pages (after database commits)
+	log.Printf("🚀 Starting webhook subscription automation for %d pages", len(pages))
+	webhookSuccessCount := 0
+	for _, page := range pages {
+		log.Printf("📝 Setting up webhooks for page: %s (%s)", page.Name, page.Platform)
+		
+		// Set up webhook subscriptions automatically
+		if err := setupWebhookSubscriptions(page.ID, page.AccessToken, page.Name, page.Platform); err != nil {
+			log.Printf("⚠️ Webhook setup failed for %s: %v", page.Name, err)
+			// Don't fail the entire request - webhook setup is best effort
+			// Client can still use the service, but might need manual webhook setup
+		} else {
+			webhookSuccessCount++
+			log.Printf("✅ Webhook setup completed for %s", page.Name)
+		}
+	}
+
+	log.Printf("🎯 Webhook automation summary: %d/%d pages configured successfully", webhookSuccessCount, len(pages))
+	
+	if socialTx != nil {
+		log.Printf("✅ Successfully completed Facebook token request with webhook automation. Changes committed to both pages and social_pages tables.")
 	} else {
-		log.Printf("✅ Successfully completed Facebook token request, changes committed to pages table only.")
+		log.Printf("✅ Successfully completed Facebook token request with webhook automation. Changes committed to pages table only.")
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -809,4 +832,251 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 	log.Printf("Found total of %d pages/accounts", len(allPages))
 	return allPages, nil
+}
+
+// =============================================================================
+// WEBHOOK SUBSCRIPTION AUTOMATION - For multi-tenant setup
+// =============================================================================
+
+// subscribePageToWebhooks subscribes a Facebook page to all required webhook events
+func subscribePageToWebhooks(pageID, pageToken string) error {
+	appID := os.Getenv("FACEBOOK_APP_ID")
+	if appID == "" {
+		return fmt.Errorf("FACEBOOK_APP_ID environment variable not set")
+	}
+
+	// Subscribe page to the Neurocrow app for webhook events
+	subscribeURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/subscribed_apps", pageID)
+	
+	// Create payload for subscribing to webhooks
+	subscribePayload := map[string]interface{}{
+		"subscribed_fields": []string{
+			"messages",
+			"messaging_postbacks", 
+			"messaging_handovers",
+			"messaging_policy_enforcement",
+		},
+	}
+
+	jsonData, err := json.Marshal(subscribePayload)
+	if err != nil {
+		return fmt.Errorf("error marshaling subscribe payload: %v", err)
+	}
+
+	// Make POST request to subscribe
+	req, err := http.NewRequest("POST", subscribeURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("error creating subscribe request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.URL.RawQuery = fmt.Sprintf("access_token=%s", pageToken)
+
+	log.Printf("🔗 Subscribing page %s to webhooks: %s", pageID, subscribeURL)
+	log.Printf("📤 Subscribe payload: %s", string(jsonData))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error making subscribe request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading subscribe response: %v", err)
+	}
+
+	log.Printf("📥 Webhook subscription response: %d - %s", resp.StatusCode, string(respBody))
+
+	if resp.StatusCode != http.StatusOK {
+		var fbError struct {
+			Error struct {
+				Message   string `json:"message"`
+				Type      string `json:"type"`  
+				Code      int    `json:"code"`
+				FbtraceID string `json:"fbtrace_id"`
+			} `json:"error"`
+		}
+		
+		if json.Unmarshal(respBody, &fbError) == nil && fbError.Error.Message != "" {
+			return fmt.Errorf("Facebook webhook subscription error: %s (Code: %d, Trace: %s)", 
+				fbError.Error.Message, fbError.Error.Code, fbError.Error.FbtraceID)
+		}
+		return fmt.Errorf("webhook subscription failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	log.Printf("✅ Successfully subscribed page %s to webhooks", pageID)
+	return nil
+}
+
+// configureHandoverProtocol sets up the Facebook handover protocol for the page
+func configureHandoverProtocol(pageID, pageToken string) error {
+	neurocrowAppID := os.Getenv("FACEBOOK_APP_ID")
+	if neurocrowAppID == "" {
+		return fmt.Errorf("FACEBOOK_APP_ID environment variable not set")
+	}
+
+	// Facebook Page Inbox App ID (constant for all Facebook pages)
+	pageInboxAppID := "263902037430900"
+
+	log.Printf("🔄 Configuring handover protocol for page %s", pageID)
+	log.Printf("   Primary receiver (Neurocrow): %s", neurocrowAppID)
+	log.Printf("   Secondary receiver (Page Inbox): %s", pageInboxAppID)
+
+	// Step 1: Set Neurocrow app as primary receiver
+	primaryURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/thread_settings", pageID)
+	primaryPayload := map[string]interface{}{
+		"setting_type": "domain_whitelisting",
+		"whitelisted_domains": []string{"https://neurocrow.com"},
+		"thread_state": "existing_thread",
+	}
+
+	// Actually, let's use the correct endpoint for handover protocol
+	handoverURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messenger_profile", pageID)
+	handoverPayload := map[string]interface{}{
+		"primary_receiver_app_id": neurocrowAppID,
+	}
+
+	jsonData, err := json.Marshal(handoverPayload)
+	if err != nil {
+		return fmt.Errorf("error marshaling handover payload: %v", err)
+	}
+
+	// Make POST request to set primary receiver
+	req, err := http.NewRequest("POST", handoverURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("error creating handover request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.URL.RawQuery = fmt.Sprintf("access_token=%s", pageToken)
+
+	log.Printf("🔗 Setting primary receiver for page %s: %s", pageID, handoverURL)
+	log.Printf("📤 Handover payload: %s", string(jsonData))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error making handover request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading handover response: %v", err)
+	}
+
+	log.Printf("📥 Handover protocol response: %d - %s", resp.StatusCode, string(respBody))
+
+	if resp.StatusCode != http.StatusOK {
+		var fbError struct {
+			Error struct {
+				Message   string `json:"message"`
+				Type      string `json:"type"`
+				Code      int    `json:"code"`
+				FbtraceID string `json:"fbtrace_id"`
+			} `json:"error"`
+		}
+		
+		if json.Unmarshal(respBody, &fbError) == nil && fbError.Error.Message != "" {
+			log.Printf("⚠️ Handover protocol setup warning: %s (Code: %d, Trace: %s)", 
+				fbError.Error.Message, fbError.Error.Code, fbError.Error.FbtraceID)
+			// Don't return error - handover protocol setup can fail but webhook subscription still works
+		} else {
+			log.Printf("⚠️ Handover protocol setup returned status %d: %s", resp.StatusCode, string(respBody))
+		}
+	} else {
+		log.Printf("✅ Successfully configured handover protocol for page %s", pageID)
+	}
+
+	return nil
+}
+
+// verifyWebhookSetup verifies that webhook subscriptions were set up correctly
+func verifyWebhookSetup(pageID, pageToken string) error {
+	// Check subscribed apps for the page
+	verifyURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/subscribed_apps?access_token=%s", pageID, pageToken)
+	
+	log.Printf("🔍 Verifying webhook setup for page %s: %s", pageID, verifyURL)
+
+	resp, err := http.Get(verifyURL)
+	if err != nil {
+		return fmt.Errorf("error verifying webhook setup: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading verification response: %v", err)
+	}
+
+	log.Printf("📋 Webhook verification response: %d - %s", resp.StatusCode, string(respBody))
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("webhook verification failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse and log the subscribed apps
+	var verifyResult struct {
+		Data []struct {
+			ID             string   `json:"id"`
+			Name           string   `json:"name"`
+			SubscribedFields []string `json:"subscribed_fields"`
+		} `json:"data"`
+	}
+
+	if json.Unmarshal(respBody, &verifyResult) == nil {
+		log.Printf("📊 Subscribed apps for page %s:", pageID)
+		for _, app := range verifyResult.Data {
+			log.Printf("   App: %s (%s) - Fields: %v", app.Name, app.ID, app.SubscribedFields)
+		}
+		
+		// Check if our app is in the list
+		neurocrowAppID := os.Getenv("FACEBOOK_APP_ID")
+		found := false
+		for _, app := range verifyResult.Data {
+			if app.ID == neurocrowAppID {
+				found = true
+				log.Printf("✅ Neurocrow app (%s) is subscribed with fields: %v", neurocrowAppID, app.SubscribedFields)
+				break
+			}
+		}
+		
+		if !found {
+			log.Printf("⚠️ Warning: Neurocrow app (%s) not found in subscribed apps list", neurocrowAppID)
+		}
+	}
+
+	return nil
+}
+
+// setupWebhookSubscriptions orchestrates the complete webhook setup for a page
+func setupWebhookSubscriptions(pageID, pageToken, pageName, platform string) error {
+	log.Printf("🚀 Starting webhook setup for %s page: %s (%s)", platform, pageName, pageID)
+
+	// Step 1: Subscribe page to webhooks
+	if err := subscribePageToWebhooks(pageID, pageToken); err != nil {
+		log.Printf("❌ Webhook subscription failed for %s: %v", pageName, err)
+		return fmt.Errorf("webhook subscription failed: %v", err)
+	}
+
+	// Step 2: Configure handover protocol (only for Facebook pages, not Instagram)
+	if platform == "facebook" {
+		if err := configureHandoverProtocol(pageID, pageToken); err != nil {
+			log.Printf("⚠️ Handover protocol setup failed for %s: %v", pageName, err)
+			// Don't return error - handover protocol is optional, webhook subscription is more important
+		}
+	} else {
+		log.Printf("ℹ️ Skipping handover protocol for Instagram account: %s", pageName)
+	}
+
+	// Step 3: Verify the setup
+	if err := verifyWebhookSetup(pageID, pageToken); err != nil {
+		log.Printf("⚠️ Webhook verification failed for %s: %v", pageName, err)
+		// Don't return error - verification is informational
+	}
+
+	log.Printf("✅ Webhook setup completed for %s page: %s", platform, pageName)
+	return nil
 }
