@@ -247,6 +247,8 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 
 // updateConversationForHumanMessage updates the conversation when a human agent sends a message
 // This disables the bot for 6 hours to prevent double responses
+// DEPRECATED: Used only as fallback when handover protocol fails. 
+// New handover protocol should use Facebook's native thread control instead.
 func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, platform string) error {
 	log.Printf("🔍 Updating conversation for human agent message: pageID=%s, threadID=%s, platform=%s", pageID, threadID, platform)
 
@@ -379,22 +381,7 @@ func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, pl
 	return nil
 }
 
-// isRecentHumanActivity checks if there has been human agent activity within the last 6 hours
-func isRecentHumanActivity(conv *ConversationState) bool {
-	if conv.LastHumanMessage.IsZero() {
-		return false
-	}
-
-	// Check if the last human message was within the last 6 hours
-	sixHoursAgo := time.Now().Add(-6 * time.Hour)
-	recentActivity := conv.LastHumanMessage.After(sixHoursAgo)
-
-	if recentActivity {
-		log.Printf("🕐 Recent human activity detected: last human message at %v (within 6 hours)", conv.LastHumanMessage)
-	}
-
-	return recentActivity
-}
+// Legacy 6-hour timer functions removed - thread control now managed by Facebook Handover Protocol
 
 // =============================================================================
 // FACEBOOK HANDOVER PROTOCOL DATABASE FUNCTIONS - For thread control management

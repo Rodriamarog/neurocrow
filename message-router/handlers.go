@@ -148,61 +148,9 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				continue
 			}
 
-			// Echo message handling
+			// Echo message handling - simplified with handover protocol
 			if msg.Message.IsEcho {
-				log.Printf("      📝 Processing echo message")
-				log.Printf("      🔍 Echo message details: sender=%s, page=%s, app_id=%d", msg.Sender.ID, entry.ID, msg.Message.AppId)
-				platform := event.Object
-				if platform == "page" {
-					platform = "facebook"
-				}
-
-				// For Facebook, we need to distinguish between bot and human agent messages
-				if platform == "facebook" && msg.Message.AppId > 0 {
-					// Log the app_id to help identify patterns
-					log.Printf("      📝 Echo message with app_id: %d", msg.Message.AppId)
-
-					// Check if this is a known bot app_id that should be skipped
-					// Bot app_id: 1195277397801905 (Dify/automated responses)
-					// Human agent app_id: 263902037430900 (Facebook Page admin interface)
-					if msg.Message.AppId == 1195277397801905 {
-						log.Printf("      🤖 Detected bot echo message (app_id: %d)", msg.Message.AppId)
-						log.Printf("      📝 Skipping bot echo message - no action needed")
-						continue
-					}
-
-					// If sender ID matches the page ID and it's not a bot app_id, it's a human agent
-					if msg.Sender.ID == entry.ID {
-						log.Printf("      👤 Detected human agent message (app_id: %d)", msg.Message.AppId)
-						// This is a human agent message - proceed to disable bot
-					} else {
-						log.Printf("      ⚠️ Unknown echo message pattern: sender=%s, page=%s, app_id=%d", msg.Sender.ID, entry.ID, msg.Message.AppId)
-						continue
-					}
-				}
-
-				// For Instagram, check if sender matches page and it's not a human message
-				if platform == "instagram" && msg.Sender.ID == entry.ID {
-					// Additional check to ensure it's really a bot message
-					if _, err := getPageInfo(ctx, entry.ID); err == nil {
-						log.Printf("      📝 Skipping storage of Instagram bot echo message")
-						continue
-					}
-				}
-
-				// If we get here, it's a human message
-				log.Printf("      🔍 Detected human agent message (sender ID: %s)", msg.Sender.ID)
-
-				// For human agent messages, the thread_id should be the recipient (customer), not the sender (page)
-				customerThreadID := msg.Recipient.ID
-				log.Printf("      🔍 Using customer thread ID: %s for human agent message", customerThreadID)
-
-				// Update conversation to track human agent activity and disable bot for 6 hours
-				if err := updateConversationForHumanMessage(ctx, entry.ID, customerThreadID, platform); err != nil {
-					log.Printf("❌ Error updating conversation for human message: %v", err)
-				} else {
-					log.Printf("      ✅ Bot disabled for 6 hours due to human agent activity")
-				}
+				log.Printf("      📝 Skipping echo message - handover protocol manages thread control")
 				continue
 			}
 

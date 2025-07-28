@@ -114,9 +114,9 @@ type ConversationState struct {
 	ThreadID           string
 	PageID             string
 	Platform           string
-	BotEnabled         bool
+	BotEnabled         bool      // DEPRECATED: Use shouldBotProcessMessage() instead. Kept for fallback compatibility.
 	LastBotMessage     time.Time
-	LastHumanMessage   time.Time
+	LastHumanMessage   time.Time // DEPRECATED: Kept for analytics. Thread control transitions tracked via handover events.
 	LastUserMessage    time.Time
 	MessageCount       int
 	DifyConversationID string // Dify conversation ID for maintaining context

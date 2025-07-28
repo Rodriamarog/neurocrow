@@ -230,61 +230,20 @@ func cleanup() {
 	}
 }
 
-// startBotReactivationWorker runs the bot reactivation check every 5 minutes
-func startBotReactivationWorker(ctx context.Context) {
-	log.Printf("🤖 Starting bot reactivation background worker...")
-
-	// Run immediately on startup
-	runBotReactivationCheck()
-
-	// Then run every 5 minutes
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			runBotReactivationCheck()
-		case <-ctx.Done():
-			log.Printf("🛑 Bot reactivation worker stopping...")
-			return
-		}
-	}
-}
-
-// runBotReactivationCheck executes the bot reactivation check
-func runBotReactivationCheck() {
-	log.Printf("🔄 Running bot reactivation check...")
-
-	start := time.Now()
-	var reactivatedCount int
-
-	// Execute the reactivation function
-	err := db.QueryRow("SELECT run_bot_reactivation_check()").Scan(&reactivatedCount)
-	if err != nil {
-		log.Printf("❌ Bot reactivation check failed: %v", err)
-		return
-	}
-
-	duration := time.Since(start)
-	if reactivatedCount > 0 {
-		log.Printf("✅ Bot reactivation check completed: %d bots reactivated (took %v)", reactivatedCount, duration)
-	} else {
-		log.Printf("ℹ️ Bot reactivation check completed: no bots needed reactivation (took %v)", duration)
-	}
-}
+// Legacy bot reactivation system removed - now using Facebook Handover Protocol
+// Thread control is managed through native Facebook handover events instead of 
+// background workers and 6-hour timers
 
 func main() {
-	// Create context for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
+	// Create context for graceful shutdown (used in shutdown signal handling)
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start background worker
-	go startBotReactivationWorker(ctx)
+	// Background worker removed - thread control now managed by Facebook Handover Protocol
 
 	// Ensure cleanup on exit
 	defer cleanup()
