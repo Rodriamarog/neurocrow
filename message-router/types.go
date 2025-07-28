@@ -19,6 +19,8 @@ type EntryData struct {
 	Time int64  `json:"time"`
 	// Handle both types of messaging
 	Messaging []MessagingEntry `json:"messaging"`
+	// Facebook Handover Protocol events
+	MessagingHandovers []HandoverEvent `json:"messaging_handovers"`
 }
 
 // MessagingEntry represents a message in the Facebook webhook

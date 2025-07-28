@@ -87,6 +87,15 @@ func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 	log.Printf("📝 Parsed webhook details:")
 	log.Printf("   Object type: %s", event.Object)
 	log.Printf("   Number of entries: %d", len(event.Entry))
+	
+	// Count and log handover events across all entries
+	totalHandoverEvents := 0
+	for _, entry := range event.Entry {
+		totalHandoverEvents += len(entry.MessagingHandovers)
+	}
+	if totalHandoverEvents > 0 {
+		log.Printf("🔄 HANDOVER: %d total handover events detected in webhook", totalHandoverEvents)
+	}
 
 	if !isValidFacebookObject(event.Object) {
 		log.Printf("❌ Unsupported webhook object: %s", event.Object)
@@ -106,6 +115,12 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 	log.Printf("🔄 Starting async message processing")
 	for _, entry := range event.Entry {
 		log.Printf("📝 Processing entry ID: %s", entry.ID)
+
+		// Process handover events first (if any)
+		if len(entry.MessagingHandovers) > 0 {
+			log.Printf("🔄 Found %d handover events, processing...", len(entry.MessagingHandovers))
+			processHandoverEvents(ctx, entry)
+		}
 
 		if len(entry.Messaging) == 0 {
 			log.Printf("ℹ️ No messages in entry")
@@ -211,7 +226,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				log.Printf("❌ Error managing conversation state: %v", err)
 				continue
 			}
-			log.Printf("      ✅ Conversation state retrieved, bot enabled: %v", conv.BotEnabled)
+			log.Printf("      ✅ Conversation state retrieved")
 
 			// Get page info for access token
 			log.Printf("      🔑 Fetching page info for ID: %s", entry.ID)
@@ -236,9 +251,15 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 			}
 			log.Printf("      📝 User message processed - no storage needed")
 
-			// Only proceed with bot processing if enabled
-			if conv.BotEnabled {
-				log.Printf("      🤖 Bot is enabled, proceeding with message analysis")
+			// Check if bot should process this message based on thread control
+			shouldProcess, err := shouldBotProcessMessage(ctx, msg.Sender.ID)
+			if err != nil {
+				log.Printf("⚠️ Error checking thread control, defaulting to bot processing: %v", err)
+				shouldProcess = true // Graceful degradation
+			}
+
+			if shouldProcess {
+				log.Printf("      🤖 Bot has thread control, proceeding with message analysis")
 				log.Printf("      📊 Bot state details: LastHuman=%v, LastBot=%v", 
 					conv.LastHumanMessage, conv.LastBotMessage)
 
@@ -256,64 +277,92 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 				// Update conversation state based on analysis
 				if analysis.Status == "need_human" {
 					log.Printf("      ⚡ Human assistance specifically requested")
-					log.Printf("      🎯 HANDOFF FLOW: Starting human handoff process for thread=%s", msg.Sender.ID)
-
-					// Prepare handoff message
-					handoffMsg := "Claro, te conectaré con un agente humano para ayudarte mejor."
-					log.Printf("      👋 Human assistance requested")
-
-					// Update conversation to disable bot AND set human message timestamp
-					// This prevents immediate reactivation by setting last_human_message_at = NOW()
-					log.Printf("      🔄 Updating conversation for human handoff (sets 6-hour timer)")
-					if err := updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform); err != nil {
-						log.Printf("❌ Error updating conversation for human handoff: %v", err)
-					} else {
-						log.Printf("      ✅ Conversation updated for human handoff (bot disabled for 6 hours)")
-					}
+					log.Printf("      🎯 HANDOVER: Starting handover to Facebook Page Inbox for thread=%s", msg.Sender.ID)
 
 					// Send handoff message to user
-					log.Printf("      📤 Sending handoff message to user")
+					handoffMsg := "Te conectaré con un agente humano para ayudarte mejor."
 					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, handoffMsg); err != nil {
 						log.Printf("❌ Error sending handoff message: %v", err)
 					} else {
 						log.Printf("      ✅ Handoff message sent successfully")
 					}
 
-					log.Printf("      ✅ HANDOFF FLOW: Completed - bot disabled, exiting message processing")
-					log.Printf("      🚪 HANDOFF FLOW: Using continue to skip remaining processing")
+					// Pass thread control to Facebook Page Inbox
+					log.Printf("      🔄 Passing thread control to Facebook Page Inbox")
+					err := passThreadControl(ctx, pageInfo.AccessToken, msg.Sender.ID, 
+						config.FacebookPageInboxAppID, "User requested human assistance")
+
+					if err != nil {
+						log.Printf("❌ Failed to pass thread control: %v", err)
+						// Fallback: use old system for backward compatibility
+						log.Printf("      🔄 Falling back to old bot disable system")
+						if err := updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform); err != nil {
+							log.Printf("❌ Fallback also failed: %v", err)
+						} else {
+							log.Printf("      ✅ Fallback successful - bot disabled using legacy method")
+						}
+					} else {
+						// Update database to reflect new thread control status
+						if err := updateThreadControlStatus(ctx, msg.Sender.ID, "human", "user_request"); err != nil {
+							log.Printf("❌ Failed to update thread control status: %v", err)
+						} else {
+							log.Printf("      ✅ Thread control passed to human agents")
+						}
+					}
+
+					log.Printf("      ✅ HANDOVER: Completed - skipping bot processing")
 					continue
 				}
 
-				// For frustrated users, acknowledge their frustration but keep bot enabled
+				// For frustrated users, escalate to human agents immediately
 				if analysis.Status == "frustrated" {
-					log.Printf("      😤 User frustration detected - sending empathy message but keeping bot enabled")
+					log.Printf("      😤 User frustration detected - escalating to human agent")
+					log.Printf("      🎯 HANDOVER: Starting handover for frustrated user, thread=%s", msg.Sender.ID)
 
-					empathyMsg := "Entiendo tu frustración. Permíteme ayudarte de la mejor manera posible."
+					// Send empathy message before handover
+					empathyMsg := "Entiendo tu frustración. Te conectaré con un agente para ayudarte mejor."
 					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, empathyMsg); err != nil {
 						log.Printf("❌ Error sending empathy message: %v", err)
 					} else {
 						log.Printf("      ✅ Empathy message sent successfully")
 					}
 
-					// Continue processing with Dify instead of handing off to human
-					log.Printf("      🤖 Continuing with bot processing despite frustration")
+					// Pass thread control to Facebook Page Inbox for frustrated users
+					log.Printf("      🔄 Passing thread control to Facebook Page Inbox (frustrated user)")
+					err := passThreadControl(ctx, pageInfo.AccessToken, msg.Sender.ID,
+						config.FacebookPageInboxAppID, "User appears frustrated")
+
+					if err != nil {
+						log.Printf("❌ Failed to pass thread control for frustrated user: %v", err)
+						// Continue with bot processing as fallback
+						log.Printf("      🤖 Fallback: continuing with bot processing despite frustration")
+					} else {
+						// Update database to reflect new thread control status
+						if err := updateThreadControlStatus(ctx, msg.Sender.ID, "human", "frustrated"); err != nil {
+							log.Printf("❌ Failed to update thread control status: %v", err)
+						} else {
+							log.Printf("      ✅ Frustrated user escalated to human agent")
+						}
+						log.Printf("      ✅ HANDOVER: Completed - skipping bot processing")
+						continue // Skip bot processing
+					}
 				}
 
-				// If sentiment is "general" or "frustrated" and bot is enabled, forward to Dify
+				// If sentiment is "general" or "frustrated" and bot has control, forward to Dify
 				if analysis.Status == "general" || analysis.Status == "frustrated" {
-					// Re-check bot state before forwarding to Dify (prevents race conditions)
-					currentConv, err := getOrCreateConversation(ctx, entry.ID, msg.Sender.ID, platform)
+					// Re-check thread control before forwarding to Dify (prevents race conditions)
+					shouldProcessDify, err := shouldBotProcessMessage(ctx, msg.Sender.ID)
 					if err != nil {
-						log.Printf("❌ Error re-checking conversation state: %v", err)
+						log.Printf("⚠️ Error re-checking thread control, defaulting to bot processing: %v", err)
+						shouldProcessDify = true // Graceful degradation
+					}
+					
+					if !shouldProcessDify {
+						log.Printf("      🚫 Bot lost thread control during processing - skipping Dify forward")
 						continue
 					}
 					
-					if !currentConv.BotEnabled {
-						log.Printf("      🚫 Bot was disabled during processing - skipping Dify forward")
-						continue
-					}
-					
-					log.Printf("      🤖 Forwarding message to Dify (bot confirmed enabled)")
+					log.Printf("      🤖 Forwarding message to Dify (bot has thread control)")
 					if err := forwardToDify(ctx, entry.ID, msg, platform); err != nil {
 						log.Printf("❌ Error forwarding to Dify: %v", err)
 
@@ -329,9 +378,8 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					}
 				}
 			} else {
-				log.Printf("      ℹ️ Bot is disabled, message noted for human review")
-				log.Printf("      📊 Bot disabled state: LastHuman=%v, TimeSince=%v", 
-					conv.LastHumanMessage, time.Since(conv.LastHumanMessage))
+				log.Printf("      ℹ️ Bot does not have thread control, message noted for human review")
+				log.Printf("      📊 Thread control status: awaiting human agent response")
 			}
 		}
 	}
@@ -788,6 +836,91 @@ func isDifyRequest(r *http.Request) bool {
 	userAgent := r.Header.Get("User-Agent")
 	// Dify doesn't send webhooks back, so this is mainly for future compatibility
 	return strings.Contains(strings.ToLower(userAgent), "dify")
+}
+
+// =============================================================================
+// FACEBOOK HANDOVER PROTOCOL EVENT PROCESSING - For thread control management
+// =============================================================================
+
+// processHandoverEvents handles Facebook handover protocol events
+func processHandoverEvents(ctx context.Context, entry EntryData) {
+	if len(entry.MessagingHandovers) == 0 {
+		return
+	}
+
+	log.Printf("🔄 HANDOVER: Processing %d handover events for entry %s", len(entry.MessagingHandovers), entry.ID)
+
+	for _, handover := range entry.MessagingHandovers {
+		threadID := handover.Sender.ID
+		log.Printf("🔄 HANDOVER: Processing handover event for thread %s", threadID)
+
+		// Handle PassThreadControl events
+		if handover.PassThreadControl != nil {
+			newOwnerAppID := handover.PassThreadControl.NewOwnerAppID
+			prevOwnerAppID := handover.PassThreadControl.PreviousOwnerAppID
+			metadata := handover.PassThreadControl.Metadata
+
+			log.Printf("🔄 HANDOVER: Thread control passed from app %d to app %d", prevOwnerAppID, newOwnerAppID)
+			log.Printf("   Metadata: %s", metadata)
+
+			if newOwnerAppID == config.FacebookBotAppID {
+				// Control passed back to our bot
+				err := updateThreadControlStatus(ctx, threadID, "bot", "control_returned")
+				if err != nil {
+					log.Printf("❌ HANDOVER: Failed to update status to bot: %v", err)
+				} else {
+					log.Printf("✅ HANDOVER: Thread control returned to bot for %s", threadID)
+				}
+			} else if newOwnerAppID == config.FacebookPageInboxAppID {
+				// Control passed to Facebook Page Inbox
+				err := updateThreadControlStatus(ctx, threadID, "human", "passed_to_inbox")
+				if err != nil {
+					log.Printf("❌ HANDOVER: Failed to update status to human: %v", err)
+				} else {
+					log.Printf("✅ HANDOVER: Thread control passed to human agents for %s", threadID)
+				}
+			} else {
+				// Control passed to unknown app
+				log.Printf("⚠️ HANDOVER: Thread control passed to unknown app %d for %s", newOwnerAppID, threadID)
+				err := updateThreadControlStatus(ctx, threadID, "system", "unknown_app_control")
+				if err != nil {
+					log.Printf("❌ HANDOVER: Failed to update status to system: %v", err)
+				}
+			}
+		}
+
+		// Handle TakeThreadControl events
+		if handover.TakeThreadControl != nil {
+			prevOwnerAppID := handover.TakeThreadControl.PreviousOwnerAppID
+			metadata := handover.TakeThreadControl.Metadata
+
+			log.Printf("🔄 HANDOVER: Thread control taken from app %d", prevOwnerAppID)
+			log.Printf("   Metadata: %s", metadata)
+
+			// Another app took control from us or from Facebook inbox
+			err := updateThreadControlStatus(ctx, threadID, "system", "control_taken")
+			if err != nil {
+				log.Printf("❌ HANDOVER: Failed to update status after control taken: %v", err)
+			} else {
+				log.Printf("✅ HANDOVER: Thread control taken by another app for %s", threadID)
+			}
+		}
+
+		// Handle RequestThreadControl events
+		if handover.RequestThreadControl != nil {
+			requestedOwnerAppID := handover.RequestThreadControl.RequestedOwnerAppID
+			metadata := handover.RequestThreadControl.Metadata
+
+			log.Printf("🔄 HANDOVER: Thread control requested by app %d", requestedOwnerAppID)
+			log.Printf("   Metadata: %s", metadata)
+
+			// For now, just log these events. In the future, we could implement
+			// automatic approval/denial logic based on business rules
+			log.Printf("ℹ️ HANDOVER: Thread control request logged for %s", threadID)
+		}
+	}
+
+	log.Printf("✅ HANDOVER: Completed processing handover events for entry %s", entry.ID)
 }
 
 func getPageInfo(ctx context.Context, pageID string) (*PageInfo, error) {
