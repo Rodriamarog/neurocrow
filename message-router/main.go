@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +18,83 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
+
+// =============================================================================
+// LOGGING SYSTEM - Optimized for debugging experience
+// =============================================================================
+
+type LogLevel int
+
+const (
+	LogLevelError LogLevel = iota
+	LogLevelWarn
+	LogLevelInfo
+	LogLevelDebug
+)
+
+var (
+	currentLogLevel LogLevel = LogLevelInfo // Default to info level
+	logLevelNames   = map[LogLevel]string{
+		LogLevelError: "ERROR",
+		LogLevelWarn:  "WARN",
+		LogLevelInfo:  "INFO",
+		LogLevelDebug: "DEBUG",
+	}
+)
+
+// Log level helper functions for clean debugging experience
+func LogError(format string, args ...interface{}) {
+	if currentLogLevel >= LogLevelError {
+		log.Printf("❌ "+format, args...)
+	}
+}
+
+func LogWarn(format string, args ...interface{}) {
+	if currentLogLevel >= LogLevelWarn {
+		log.Printf("⚠️ "+format, args...)
+	}
+}
+
+func LogInfo(format string, args ...interface{}) {
+	if currentLogLevel >= LogLevelInfo {
+		log.Printf("ℹ️ "+format, args...)
+	}
+}
+
+func LogDebug(format string, args ...interface{}) {
+	if currentLogLevel >= LogLevelDebug {
+		log.Printf("🔍 "+format, args...)
+	}
+}
+
+// generateRequestID creates a unique ID for correlating logs across async processing
+func generateRequestID() string {
+	b := make([]byte, 4)
+	rand.Read(b)
+	return fmt.Sprintf("req_%x", b)
+}
+
+// setLogLevelFromEnv configures log level from environment variable
+func setLogLevelFromEnv() {
+	levelStr := strings.ToUpper(os.Getenv("LOG_LEVEL"))
+	switch levelStr {
+	case "ERROR":
+		currentLogLevel = LogLevelError
+	case "WARN", "WARNING":
+		currentLogLevel = LogLevelWarn
+	case "INFO":
+		currentLogLevel = LogLevelInfo
+	case "DEBUG":
+		currentLogLevel = LogLevelDebug
+	default:
+		currentLogLevel = LogLevelInfo // Default
+	}
+	log.Printf("🔧 Log level set to: %s", logLevelNames[currentLogLevel])
+}
+
+// =============================================================================
+// APPLICATION GLOBALS
+// =============================================================================
 
 var (
 	db         *sql.DB // Client Manager DB
@@ -29,7 +108,11 @@ var (
 func init() {
 	// Set up logging with microsecond precision
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
-	log.Printf("🚀 Starting Neurocrow Message Router...")
+	
+	// Configure log level from environment
+	setLogLevelFromEnv()
+	
+	LogInfo("🚀 Starting Neurocrow Message Router...")
 
 	loadConfig()
 	setupDatabase()

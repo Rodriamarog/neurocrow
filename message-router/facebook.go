@@ -76,9 +76,8 @@ func sendFacebookMessage(ctx context.Context, pageID string, pageToken string, r
 	fbURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/messages?access_token=%s",
 		pageID, pageToken)
 
-	log.Printf("📤 Sending response to Facebook:")
-	log.Printf("   URL: %s", fbURL)
-	log.Printf("   Payload: %s", string(jsonData))
+	// Log payload details only in debug mode
+	LogDebug("📤 Facebook payload: %s", string(jsonData))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", fbURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -98,7 +97,7 @@ func sendFacebookMessage(ctx context.Context, pageID string, pageToken string, r
 		return fmt.Errorf("facebook error (status %d): %s", resp.StatusCode, string(fbResp))
 	}
 
-	log.Printf("✅ Facebook response (status %d): %s", resp.StatusCode, string(fbResp))
+	LogDebug("✅ Facebook response (%d): %s", resp.StatusCode, string(fbResp))
 	return nil
 }
 
@@ -121,9 +120,8 @@ func sendInstagramMessage(ctx context.Context, pageID string, pageToken string, 
 		return fmt.Errorf("error creating Instagram payload: %v", err)
 	}
 
-	log.Printf("📤 Sending response to Instagram:")
-	log.Printf("   URL: %s", igURL)
-	log.Printf("   Payload: %s", string(jsonData))
+	// Log payload details only in debug mode
+	LogDebug("📤 Instagram payload: %s", string(jsonData))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", igURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -143,7 +141,7 @@ func sendInstagramMessage(ctx context.Context, pageID string, pageToken string, 
 		return fmt.Errorf("instagram error (status %d): %s", resp.StatusCode, string(igResp))
 	}
 
-	log.Printf("✅ Instagram response (status %d): %s", resp.StatusCode, string(igResp))
+	LogDebug("✅ Instagram response (%d): %s", resp.StatusCode, string(igResp))
 	return nil
 }
 

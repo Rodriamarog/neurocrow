@@ -404,13 +404,13 @@ func updateThreadControlStatus(ctx context.Context, threadID string, status stri
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		log.Printf("⚠️ Could not get rows affected count: %v", err)
+		LogWarn("Could not get rows affected count: %v", err)
 	} else if rowsAffected == 0 {
-		log.Printf("⚠️ No conversation found with thread_id: %s", threadID)
+		LogWarn("No conversation found with thread_id: %s", threadID)
 		return fmt.Errorf("no conversation found with thread_id: %s", threadID)
 	}
 
-	log.Printf("✅ Updated thread control status: %s -> %s (reason: %s)", threadID, status, reason)
+	LogDebug("✅ Thread control: %s -> %s (%s)", threadID, status, reason)
 	return nil
 }
 
@@ -422,13 +422,13 @@ func getThreadControlStatus(ctx context.Context, threadID string) (string, error
 	err := db.QueryRowContext(ctx, query, threadID).Scan(&status)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("⚠️ No conversation found for thread_id: %s, defaulting to 'bot'", threadID)
+			LogDebug("No conversation found for thread_id: %s, defaulting to 'bot'", threadID)
 			return "bot", nil // Graceful degradation
 		}
 		return "", fmt.Errorf("failed to get thread control status: %v", err)
 	}
 
-	log.Printf("🔍 Thread control status for %s: %s", threadID, status)
+	LogDebug("Thread control status for %s: %s", threadID, status)
 	return status, nil
 }
 
@@ -436,12 +436,12 @@ func getThreadControlStatus(ctx context.Context, threadID string) (string, error
 func shouldBotProcessMessage(ctx context.Context, threadID string) (bool, error) {
 	status, err := getThreadControlStatus(ctx, threadID)
 	if err != nil {
-		log.Printf("⚠️ Error getting thread control status, defaulting to bot control: %v", err)
+		LogWarn("Thread control check failed, defaulting to bot: %v", err)
 		return true, nil // Graceful degradation
 	}
 
 	shouldProcess := status == "bot" || status == "system"
-	log.Printf("🤖 Should bot process message for %s? %v (status: %s)", threadID, shouldProcess, status)
+	LogDebug("Bot should process %s? %v (%s)", threadID, shouldProcess, status)
 	return shouldProcess, nil
 }
 
@@ -461,7 +461,7 @@ func getThreadControlStatusWithTimestamp(ctx context.Context, threadID string) (
 	err := db.QueryRowContext(ctx, query, threadID).Scan(&status, &timestamp, &reason)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("⚠️ No conversation found for thread_id: %s, defaulting to 'bot'", threadID)
+			LogDebug("No conversation found for thread_id: %s, defaulting to 'bot'", threadID)
 			return "bot", nil, "", nil // Graceful degradation
 		}
 		return "", nil, "", fmt.Errorf("failed to get thread control status with timestamp: %v", err)

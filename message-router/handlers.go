@@ -73,32 +73,33 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) {
-	// Log the raw webhook payload
-	log.Printf("📥 Raw webhook payload: %s", string(body))
+	// Generate request ID for log correlation
+	requestID := generateRequestID()
+	
+	// Log webhook reception (optimized)
+	LogDebug("[%s] 📥 Raw webhook payload: %d bytes", requestID, len(body))
 
 	var event FacebookEvent
 	if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
-		log.Printf("❌ Error parsing webhook: %v", err)
+		LogError("[%s] Error parsing webhook payload: %v", requestID, err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Log parsed event details
-	log.Printf("📝 Parsed webhook details:")
-	log.Printf("   Object type: %s", event.Object)
-	log.Printf("   Number of entries: %d", len(event.Entry))
-	
-	// Count and log handover events across all entries
+	// Count handover events across all entries
 	totalHandoverEvents := 0
+	totalMessages := 0
 	for _, entry := range event.Entry {
 		totalHandoverEvents += len(entry.MessagingHandovers)
+		totalMessages += len(entry.Messaging)
 	}
-	if totalHandoverEvents > 0 {
-		log.Printf("🔄 HANDOVER: %d total handover events detected in webhook", totalHandoverEvents)
-	}
+	
+	// Single consolidated log for webhook details
+	LogInfo("[%s] 📝 Webhook: %s, %d entries, %d messages, %d handovers", 
+		requestID, event.Object, len(event.Entry), totalMessages, totalHandoverEvents)
 
 	if !isValidFacebookObject(event.Object) {
-		log.Printf("❌ Unsupported webhook object: %s", event.Object)
+		LogError("[%s] Unsupported webhook object: %s", requestID, event.Object)
 		http.Error(w, "Unsupported webhook object", http.StatusBadRequest)
 		return
 	}
@@ -106,194 +107,145 @@ func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 	// Send immediate 200 OK
 	w.WriteHeader(http.StatusOK)
 
-	// Process messages asynchronously
+	// Process messages asynchronously with request ID for correlation
 	ctx := context.Background()
-	go processMessagesAsync(ctx, event)
+	go processMessagesAsync(ctx, event, requestID)
 }
 
-func processMessagesAsync(ctx context.Context, event FacebookEvent) {
-	log.Printf("🔄 Starting async message processing")
+func processMessagesAsync(ctx context.Context, event FacebookEvent, requestID string) {
+	LogDebug("[%s] 🔄 Starting async message processing", requestID)
+	
 	for _, entry := range event.Entry {
-		log.Printf("📝 Processing entry ID: %s", entry.ID)
-
 		// Process handover events first (if any)
 		if len(entry.MessagingHandovers) > 0 {
-			log.Printf("🔄 Found %d handover events, processing...", len(entry.MessagingHandovers))
-			processHandoverEvents(ctx, entry)
+			LogInfo("[%s] 🔄 Processing %d handover events", requestID, len(entry.MessagingHandovers))
+			processHandoverEvents(ctx, entry, requestID)
 		}
 
 		if len(entry.Messaging) == 0 {
-			log.Printf("ℹ️ No messages in entry")
+			LogDebug("[%s] No messages in entry %s", requestID, entry.ID)
 			continue
 		}
 
 		for _, msg := range entry.Messaging {
-			// ⚠️ Delivery receipt handling
+			// Skip non-message events (delivery receipts, etc.)
 			if msg.Delivery != nil {
-				log.Printf("      ⚠️ Delivery receipt - skipping")
+				LogDebug("[%s] Skipping delivery receipt", requestID)
 				continue
 			}
 
-			// Message validation
-			if msg.Message == nil {
-				log.Printf("      ⚠️ No message content")
+			// Validate message content
+			if msg.Message == nil || msg.Message.Text == "" {
+				LogDebug("[%s] Skipping empty message from %s", requestID, msg.Sender.ID)
 				continue
 			}
-			if msg.Message.Text == "" {
-				log.Printf("      ⚠️ Empty message text")
+			
+			// Skip non-user senders and echo messages
+			if strings.HasPrefix(msg.Sender.ID, "page-") || strings.HasPrefix(msg.Sender.ID, "bot-") || msg.Message.IsEcho {
+				LogDebug("[%s] Skipping non-user/echo message from %s", requestID, msg.Sender.ID)
 				continue
 			}
-			if strings.HasPrefix(msg.Sender.ID, "page-") || strings.HasPrefix(msg.Sender.ID, "bot-") {
-				log.Printf("      ⚠️ Message from non-user sender - skipping")
-				continue
-			}
-
-			// Echo message handling - simplified with handover protocol
-			if msg.Message.IsEcho {
-				log.Printf("      📝 Skipping echo message - handover protocol manages thread control")
-				continue
-			}
-
-			// At this point, we have a valid user message
-			log.Printf("      ✨ Valid message received from sender %s", msg.Sender.ID)
-			log.Printf("      📨 Message content: %q", msg.Message.Text)
 
 			// Normalize platform name
 			platform := event.Object
 			if platform == "page" {
 				platform = "facebook"
-				log.Printf("      🔄 Normalized platform from 'page' to 'facebook'")
 			}
 
-			log.Printf("      🌐 Processing message for platform: %s", platform)
+			// Single consolidated log for message reception
+			LogInfo("[%s] 📥 Message: %s -> %s (%s) %q", 
+				requestID, msg.Sender.ID, entry.ID, platform, msg.Message.Text)
 
-			// Get or create conversation state
-			log.Printf("      🔍 Getting conversation state for thread %s", msg.Sender.ID)
+			// Get conversation state and page info (consolidated error handling)
 			conv, err := getOrCreateConversation(ctx, entry.ID, msg.Sender.ID, platform)
 			if err != nil {
-				log.Printf("❌ Error managing conversation state: %v", err)
+				LogError("[%s] Failed to get conversation state for %s: %v", requestID, msg.Sender.ID, err)
 				continue
 			}
-			log.Printf("      ✅ Conversation state retrieved")
 
-			// Get page info for access token
-			log.Printf("      🔑 Fetching page info for ID: %s", entry.ID)
 			pageInfo, err := getPageInfo(ctx, entry.ID)
 			if err != nil {
-				log.Printf("❌ Error getting page info: %v", err)
+				LogError("[%s] Failed to get page info for %s: %v", requestID, entry.ID, err)
 				continue
 			}
-			log.Printf("      ✅ Page info retrieved successfully")
 
-			// Get user's profile info
-			log.Printf("      👤 Fetching user profile info")
+			// Get user profile (non-critical, don't log failures unless debug)
 			userName, err := getProfileInfo(ctx, msg.Sender.ID, pageInfo.AccessToken, platform)
 			if err != nil {
-				log.Printf("⚠️ Could not get user name, using 'user': %v", err)
+				LogDebug("[%s] Could not get user name for %s: %v", requestID, msg.Sender.ID, err)
 				userName = "user"
 			} else {
-				// Update the conversation with the user name
-				if err := updateConversationUsername(ctx, msg.Sender.ID, userName); err != nil {
-					log.Printf("⚠️ Could not update conversation user name: %v", err)
-				}
+				updateConversationUsername(ctx, msg.Sender.ID, userName) // Fire and forget
 			}
-			log.Printf("      📝 User message processed - no storage needed")
 
-			// Check if bot should process this message based on thread control
+			// Check thread control status
 			shouldProcess, err := shouldBotProcessMessage(ctx, msg.Sender.ID)
 			if err != nil {
-				log.Printf("⚠️ Error checking thread control, defaulting to bot processing: %v", err)
+				LogWarn("[%s] Thread control check failed, defaulting to bot: %v", requestID, err)
 				shouldProcess = true // Graceful degradation
 			}
 
 			if shouldProcess {
-				log.Printf("      🤖 Bot has thread control, proceeding with message analysis")
-				log.Printf("      📊 Bot state details: LastHuman=%v, LastBot=%v", 
-					conv.LastHumanMessage, conv.LastBotMessage)
-
+				// Analyze sentiment
+				start := time.Now()
 				analysis, err := sentimentAnalyzer.Analyze(ctx, msg.Message.Text)
 				if err != nil {
-					log.Printf("❌ Error analyzing sentiment: %v", err)
+					LogError("[%s] Sentiment analysis failed for %s: %v", requestID, msg.Sender.ID, err)
 					continue
 				}
+				
+				// Single consolidated log for processing status
+				processingTime := time.Since(start)
+				LogInfo("[%s] 🤖 Processing: %s sentiment, %d tokens, %dms", 
+					requestID, analysis.Status, analysis.TokensUsed, processingTime.Milliseconds())
+				
+				// Log cost details only in debug mode
+				LogDebug("[%s] Estimated cost: $%.6f", requestID, float64(analysis.TokensUsed)*0.20/1_000_000)
 
-				log.Printf("      📊 Sentiment analysis complete:")
-				log.Printf("         Status: %s", analysis.Status)
-				log.Printf("         Tokens used: %d", analysis.TokensUsed)
-				log.Printf("         Estimated cost: $%.5f", float64(analysis.TokensUsed)*0.20/1_000_000)
-
-				// Update conversation state based on analysis
+				// Handle sentiment-based actions
 				if analysis.Status == "need_human" {
-					log.Printf("      ⚡ Human assistance specifically requested")
-					log.Printf("      🎯 HANDOVER: Starting handover to Facebook Page Inbox for thread=%s", msg.Sender.ID)
-
-					// Send handoff message to user
+					LogInfo("[%s] ⚡ Handover: need_human -> facebook_inbox", requestID)
+					
+					// Send handoff message and pass control
 					handoffMsg := "Te conectaré con un agente humano para ayudarte mejor."
 					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, handoffMsg); err != nil {
-						log.Printf("❌ Error sending handoff message: %v", err)
-					} else {
-						log.Printf("      ✅ Handoff message sent successfully")
+						LogError("[%s] Handoff message failed: %v", requestID, err)
 					}
 
-					// Pass thread control to Facebook Page Inbox
-					log.Printf("      🔄 Passing thread control to Facebook Page Inbox")
 					err := passThreadControl(ctx, pageInfo.AccessToken, msg.Sender.ID, 
 						config.FacebookPageInboxAppID, "User requested human assistance")
 
 					if err != nil {
-						log.Printf("❌ Failed to pass thread control: %v", err)
-						// Fallback: use old system for backward compatibility
-						log.Printf("      🔄 Falling back to old bot disable system")
-						if err := updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform); err != nil {
-							log.Printf("❌ Fallback also failed: %v", err)
-						} else {
-							log.Printf("      ✅ Fallback successful - bot disabled using legacy method")
-						}
+						LogWarn("[%s] Handover failed, using fallback: %v", requestID, err)
+						updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform)
 					} else {
-						// Update database to reflect new thread control status
-						if err := updateThreadControlStatus(ctx, msg.Sender.ID, "human", "user_request"); err != nil {
-							log.Printf("❌ Failed to update thread control status: %v", err)
-						} else {
-							log.Printf("      ✅ Thread control passed to human agents")
-						}
+						updateThreadControlStatus(ctx, msg.Sender.ID, "human", "user_request")
+						LogInfo("[%s] ✅ Control passed: %dms", requestID, time.Since(start).Milliseconds())
 					}
-
-					log.Printf("      ✅ HANDOVER: Completed - skipping bot processing")
 					continue
 				}
 
 				// For frustrated users, escalate to human agents immediately
 				if analysis.Status == "frustrated" {
-					log.Printf("      😤 User frustration detected - escalating to human agent")
-					log.Printf("      🎯 HANDOVER: Starting handover for frustrated user, thread=%s", msg.Sender.ID)
-
+					LogInfo("[%s] ⚡ Handover: frustrated -> facebook_inbox", requestID)
+					
 					// Send empathy message before handover
 					empathyMsg := "Entiendo tu frustración. Te conectaré con un agente para ayudarte mejor."
 					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, empathyMsg); err != nil {
-						log.Printf("❌ Error sending empathy message: %v", err)
-					} else {
-						log.Printf("      ✅ Empathy message sent successfully")
+						LogError("[%s] Empathy message failed: %v", requestID, err)
 					}
 
-					// Pass thread control to Facebook Page Inbox for frustrated users
-					log.Printf("      🔄 Passing thread control to Facebook Page Inbox (frustrated user)")
 					err := passThreadControl(ctx, pageInfo.AccessToken, msg.Sender.ID,
 						config.FacebookPageInboxAppID, "User appears frustrated")
 
 					if err != nil {
-						log.Printf("❌ Failed to pass thread control for frustrated user: %v", err)
-						// Continue with bot processing as fallback
-						log.Printf("      🤖 Fallback: continuing with bot processing despite frustration")
+						LogWarn("[%s] Handover failed, using fallback: %v", requestID, err)
+						updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform)
 					} else {
-						// Update database to reflect new thread control status
-						if err := updateThreadControlStatus(ctx, msg.Sender.ID, "human", "frustrated"); err != nil {
-							log.Printf("❌ Failed to update thread control status: %v", err)
-						} else {
-							log.Printf("      ✅ Frustrated user escalated to human agent")
-						}
-						log.Printf("      ✅ HANDOVER: Completed - skipping bot processing")
-						continue // Skip bot processing
+						updateThreadControlStatus(ctx, msg.Sender.ID, "human", "frustrated")
+						LogInfo("[%s] ✅ Control passed: %dms", requestID, time.Since(start).Milliseconds())
 					}
+					continue
 				}
 
 				// If sentiment is "general" or "frustrated" and bot has control, forward to Dify
@@ -301,37 +253,29 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent) {
 					// Re-check thread control before forwarding to Dify (prevents race conditions)
 					shouldProcessDify, err := shouldBotProcessMessage(ctx, msg.Sender.ID)
 					if err != nil {
-						log.Printf("⚠️ Error re-checking thread control, defaulting to bot processing: %v", err)
+						LogWarn("[%s] Thread control recheck failed, using bot: %v", requestID, err)
 						shouldProcessDify = true // Graceful degradation
 					}
 					
 					if !shouldProcessDify {
-						log.Printf("      🚫 Bot lost thread control during processing - skipping Dify forward")
+						LogDebug("[%s] Thread control lost during processing", requestID)
 						continue
 					}
 					
-					log.Printf("      🤖 Forwarding message to Dify (bot has thread control)")
+					LogDebug("[%s] 🤖 Forwarding to Dify...", requestID)
 					if err := forwardToDify(ctx, entry.ID, msg, platform); err != nil {
-						log.Printf("❌ Error forwarding to Dify: %v", err)
-
-						// If Dify fails, mark for human attention
-						log.Printf("      ⚠️ Dify error, marking for human attention")
-						if err := updateConversationState(ctx, conv, false, "Error al procesar con Dify"); err != nil {
-							log.Printf("❌ Error updating conversation state: %v", err)
-						} else {
-							log.Printf("      ✅ Conversation marked for human attention")
-						}
+						LogError("[%s] Dify forwarding failed: %v", requestID, err)
+						updateConversationState(ctx, conv, false, "Error al procesar con Dify")
 					} else {
-						log.Printf("      ✅ Message successfully forwarded to Dify")
+						LogDebug("[%s] ✅ Dify response sent", requestID)
 					}
 				}
 			} else {
-				log.Printf("      ℹ️ Bot does not have thread control, message noted for human review")
-				log.Printf("      📊 Thread control status: awaiting human agent response")
+				LogDebug("[%s] 🔒 Human has control, message logged", requestID)
 			}
 		}
 	}
-	log.Printf("✅ Async message processing complete")
+	LogDebug("[%s] ✅ Async processing complete", requestID)
 }
 
 // storeMessage function removed - no longer storing messages
@@ -670,16 +614,6 @@ func sendToDify(ctx context.Context, apiKey string, payload DifyRequest) (*DifyR
 		return nil, fmt.Errorf("error marshaling Dify payload: %v", err)
 	}
 
-	// Pretty print the payload for logging
-	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, jsonData, "", "  "); err != nil {
-		log.Printf("⚠️ Warning: Could not pretty print JSON: %v", err)
-	}
-
-	log.Printf("🤖 Preparing Dify request:")
-	log.Printf("   URL: %s", apiURL)
-	log.Printf("   Payload:\n%s", prettyJSON.String())
-
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -690,10 +624,8 @@ func sendToDify(ctx context.Context, apiKey string, payload DifyRequest) (*DifyR
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	log.Printf("📤 Request headers:")
-	for key, values := range req.Header {
-		log.Printf("   %s: %s", key, values)
-	}
+	// Log payload details only in debug mode
+	LogDebug("🤖 Dify request payload: %s", string(jsonData))
 
 	// Send the request
 	start := time.Now()
@@ -709,21 +641,12 @@ func sendToDify(ctx context.Context, apiKey string, payload DifyRequest) (*DifyR
 		return nil, fmt.Errorf("error reading Dify response: %v", err)
 	}
 
-	// Try to pretty print the response if it's JSON
-	var prettyResp bytes.Buffer
-	if json.Valid(respBody) {
-		if err := json.Indent(&prettyResp, respBody, "", "  "); err != nil {
-			log.Printf("⚠️ Warning: Could not pretty print response: %v", err)
-		}
-	}
-
-	log.Printf("📥 Dify response after %v:", time.Since(start))
-	log.Printf("   Status: %d %s", resp.StatusCode, resp.Status)
-	if prettyResp.Len() > 0 {
-		log.Printf("   Body:\n%s", prettyResp.String())
-	} else {
-		log.Printf("   Body: %s", string(respBody))
-	}
+	// Log response timing and basic status
+	responseTime := time.Since(start)
+	LogDebug("📥 Dify response: %d in %dms", resp.StatusCode, responseTime.Milliseconds())
+	
+	// Log full response body only in debug mode
+	LogDebug("Dify response body: %s", string(respBody))
 
 	// Handle different response scenarios
 	if resp.StatusCode != http.StatusOK {
@@ -741,7 +664,7 @@ func sendToDify(ctx context.Context, apiKey string, payload DifyRequest) (*DifyR
 		return nil, fmt.Errorf("error parsing Dify response: %v", err)
 	}
 
-	log.Printf("✅ Successfully received response from Dify")
+	LogDebug("✅ Dify response parsed")
 	return &difyResp, nil
 }
 
@@ -790,17 +713,16 @@ func isDifyRequest(r *http.Request) bool {
 // FACEBOOK HANDOVER PROTOCOL EVENT PROCESSING - For thread control management
 // =============================================================================
 
-// processHandoverEvents handles Facebook handover protocol events
-func processHandoverEvents(ctx context.Context, entry EntryData) {
+// processHandoverEvents handles Facebook handover protocol events  
+func processHandoverEvents(ctx context.Context, entry EntryData, requestID string) {
 	if len(entry.MessagingHandovers) == 0 {
 		return
 	}
 
-	log.Printf("🔄 HANDOVER: Processing %d handover events for entry %s", len(entry.MessagingHandovers), entry.ID)
+	LogDebug("[%s] 🔄 Processing %d handover events", requestID, len(entry.MessagingHandovers))
 
 	for _, handover := range entry.MessagingHandovers {
 		threadID := handover.Sender.ID
-		log.Printf("🔄 HANDOVER: Processing handover event for thread %s", threadID)
 
 		// Handle PassThreadControl events
 		if handover.PassThreadControl != nil {
@@ -808,32 +730,28 @@ func processHandoverEvents(ctx context.Context, entry EntryData) {
 			prevOwnerAppID := handover.PassThreadControl.PreviousOwnerAppID
 			metadata := handover.PassThreadControl.Metadata
 
-			log.Printf("🔄 HANDOVER: Thread control passed from app %d to app %d", prevOwnerAppID, newOwnerAppID)
-			log.Printf("   Metadata: %s", metadata)
+			LogInfo("[%s] ⚡ Control: app_%d -> app_%d (%s)", requestID, prevOwnerAppID, newOwnerAppID, metadata)
 
 			if newOwnerAppID == config.FacebookBotAppID {
 				// Control passed back to our bot
 				err := updateThreadControlStatus(ctx, threadID, "bot", "control_returned")
 				if err != nil {
-					log.Printf("❌ HANDOVER: Failed to update status to bot: %v", err)
+					LogError("[%s] Status update failed (bot): %v", requestID, err)
 				} else {
-					log.Printf("✅ HANDOVER: Thread control returned to bot for %s", threadID)
+					LogInfo("[%s] ✅ Bot control restored", requestID)
 				}
 			} else if newOwnerAppID == config.FacebookPageInboxAppID {
 				// Control passed to Facebook Page Inbox
 				err := updateThreadControlStatus(ctx, threadID, "human", "passed_to_inbox")
 				if err != nil {
-					log.Printf("❌ HANDOVER: Failed to update status to human: %v", err)
+					LogError("[%s] Status update failed (human): %v", requestID, err)
 				} else {
-					log.Printf("✅ HANDOVER: Thread control passed to human agents for %s", threadID)
+					LogInfo("[%s] ✅ Human control active", requestID)
 				}
 			} else {
 				// Control passed to unknown app
-				log.Printf("⚠️ HANDOVER: Thread control passed to unknown app %d for %s", newOwnerAppID, threadID)
-				err := updateThreadControlStatus(ctx, threadID, "system", "unknown_app_control")
-				if err != nil {
-					log.Printf("❌ HANDOVER: Failed to update status to system: %v", err)
-				}
+				LogWarn("[%s] Unknown app control: %d", requestID, newOwnerAppID)
+				updateThreadControlStatus(ctx, threadID, "system", "unknown_app_control")
 			}
 		}
 
@@ -842,15 +760,14 @@ func processHandoverEvents(ctx context.Context, entry EntryData) {
 			prevOwnerAppID := handover.TakeThreadControl.PreviousOwnerAppID
 			metadata := handover.TakeThreadControl.Metadata
 
-			log.Printf("🔄 HANDOVER: Thread control taken from app %d", prevOwnerAppID)
-			log.Printf("   Metadata: %s", metadata)
+			LogInfo("[%s] ⚡ Control taken from app_%d (%s)", requestID, prevOwnerAppID, metadata)
 
 			// Another app took control from us or from Facebook inbox
 			err := updateThreadControlStatus(ctx, threadID, "system", "control_taken")
 			if err != nil {
-				log.Printf("❌ HANDOVER: Failed to update status after control taken: %v", err)
+				LogError("[%s] Status update failed (taken): %v", requestID, err)
 			} else {
-				log.Printf("✅ HANDOVER: Thread control taken by another app for %s", threadID)
+				LogInfo("[%s] ✅ Control taken logged", requestID)
 			}
 		}
 
@@ -859,16 +776,11 @@ func processHandoverEvents(ctx context.Context, entry EntryData) {
 			requestedOwnerAppID := handover.RequestThreadControl.RequestedOwnerAppID
 			metadata := handover.RequestThreadControl.Metadata
 
-			log.Printf("🔄 HANDOVER: Thread control requested by app %d", requestedOwnerAppID)
-			log.Printf("   Metadata: %s", metadata)
-
-			// For now, just log these events. In the future, we could implement
-			// automatic approval/denial logic based on business rules
-			log.Printf("ℹ️ HANDOVER: Thread control request logged for %s", threadID)
+			LogDebug("[%s] Control requested by app_%d (%s)", requestID, requestedOwnerAppID, metadata)
 		}
 	}
 
-	log.Printf("✅ HANDOVER: Completed processing handover events for entry %s", entry.ID)
+	LogDebug("[%s] ✅ Handover events processed", requestID)
 }
 
 func getPageInfo(ctx context.Context, pageID string) (*PageInfo, error) {
