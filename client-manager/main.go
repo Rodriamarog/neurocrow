@@ -860,14 +860,15 @@ func subscribePageToWebhooks(pageID, pageToken, platform string) error {
 		}
 		log.Printf("📱 Using Instagram-specific webhook fields (messages, messaging_postbacks only)")
 	} else {
-		// Facebook pages support all fields including handovers
+		// Facebook pages support all fields including handovers and echoes
 		subscribedFields = []string{
 			"messages",
 			"messaging_postbacks", 
 			"messaging_handovers",
 			"messaging_policy_enforcement",
+			"message_echoes",
 		}
-		log.Printf("📘 Using Facebook-specific webhook fields (including messaging_handovers)")
+		log.Printf("📘 Using Facebook-specific webhook fields (including messaging_handovers and message_echoes)")
 	}
 	
 	subscribePayload := map[string]interface{}{
