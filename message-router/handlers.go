@@ -115,13 +115,10 @@ func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 func processMessagesAsync(ctx context.Context, event FacebookEvent, requestID string) {
 	LogDebug("[%s] 🔄 Starting async message processing", requestID)
 	
+	// Check and reactivate eligible bots before processing new messages (12-hour rule)
+	checkAndReactivateBots(ctx, requestID)
+	
 	for _, entry := range event.Entry {
-		// Process handover events first (if any)
-		if len(entry.MessagingHandovers) > 0 {
-			LogInfo("[%s] 🔄 Processing %d handover events", requestID, len(entry.MessagingHandovers))
-			processHandoverEvents(ctx, entry, requestID)
-		}
-
 		if len(entry.Messaging) == 0 {
 			LogDebug("[%s] No messages in entry %s", requestID, entry.ID)
 			continue
@@ -140,7 +137,23 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent, requestID st
 				continue
 			}
 			
-			// Skip non-user senders and echo messages
+			// Check if this is a human agent message (from page admin)
+			if msg.Sender.ID == entry.ID && !msg.Message.IsEcho {
+				// This is a human agent responding - auto-disable bot for this conversation
+				platform := event.Object
+				if platform == "page" {
+					platform = "facebook"
+				}
+				
+				LogInfo("[%s] 👤 Human agent message detected - auto-disabling bot", requestID)
+				err := updateConversationForHumanMessage(ctx, entry.ID, msg.Recipient.ID, platform)
+				if err != nil {
+					LogError("[%s] Failed to disable bot for human agent: %v", requestID, err)
+				}
+				continue
+			}
+			
+			// Skip non-user senders and echo messages  
 			if strings.HasPrefix(msg.Sender.ID, "page-") || strings.HasPrefix(msg.Sender.ID, "bot-") || msg.Message.IsEcho {
 				LogDebug("[%s] Skipping non-user/echo message from %s", requestID, msg.Sender.ID)
 				continue
@@ -204,52 +217,40 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent, requestID st
 
 				// Handle sentiment-based actions
 				if analysis.Status == "need_human" {
-					LogInfo("[%s] ⚡ Handover: need_human -> facebook_inbox", requestID)
+					LogInfo("[%s] 👤 User requested human - disabling bot", requestID)
 					
-					// Send handoff message and pass control
+					// Send handoff message and disable bot
 					handoffMsg := "Te conectaré con un agente humano para ayudarte mejor."
 					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, handoffMsg); err != nil {
 						LogError("[%s] Handoff message failed: %v", requestID, err)
 					}
 
-					err := passThreadControl(ctx, pageInfo.AccessToken, msg.Sender.ID, 
-						config.FacebookPageInboxAppID, "User requested human assistance")
-
-					if err != nil {
-						LogWarn("[%s] Handover failed, using fallback: %v", requestID, err)
-						updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform)
-					} else {
-						updateThreadControlStatus(ctx, msg.Sender.ID, "human", "user_request")
-						LogInfo("[%s] ✅ Control passed: %dms", requestID, time.Since(start).Milliseconds())
+					// Disable bot for this conversation
+					if err := updateConversationState(ctx, conv, false, "User requested human assistance"); err != nil {
+						LogError("[%s] Failed to disable bot: %v", requestID, err)
 					}
 					continue
 				}
 
 				// For frustrated users, escalate to human agents immediately
 				if analysis.Status == "frustrated" {
-					LogInfo("[%s] ⚡ Handover: frustrated -> facebook_inbox", requestID)
+					LogInfo("[%s] 😤 User frustrated - disabling bot", requestID)
 					
-					// Send empathy message before handover
+					// Send empathy message before disabling
 					empathyMsg := "Entiendo tu frustración. Te conectaré con un agente para ayudarte mejor."
 					if err := sendPlatformResponse(ctx, pageInfo, msg.Sender.ID, empathyMsg); err != nil {
 						LogError("[%s] Empathy message failed: %v", requestID, err)
 					}
 
-					err := passThreadControl(ctx, pageInfo.AccessToken, msg.Sender.ID,
-						config.FacebookPageInboxAppID, "User appears frustrated")
-
-					if err != nil {
-						LogWarn("[%s] Handover failed, using fallback: %v", requestID, err)
-						updateConversationForHumanMessage(ctx, entry.ID, msg.Sender.ID, platform)
-					} else {
-						updateThreadControlStatus(ctx, msg.Sender.ID, "human", "frustrated")
-						LogInfo("[%s] ✅ Control passed: %dms", requestID, time.Since(start).Milliseconds())
+					// Disable bot for this conversation
+					if err := updateConversationState(ctx, conv, false, "User appears frustrated"); err != nil {
+						LogError("[%s] Failed to disable bot: %v", requestID, err)
 					}
 					continue
 				}
 
-				// If sentiment is "general" or "frustrated" and bot has control, forward to Dify
-				if analysis.Status == "general" || analysis.Status == "frustrated" {
+				// If sentiment is "general" and bot has control, forward to Dify
+				if analysis.Status == "general" {
 					// Re-check thread control before forwarding to Dify (prevents race conditions)
 					shouldProcessDify, err := shouldBotProcessMessage(ctx, msg.Sender.ID)
 					if err != nil {

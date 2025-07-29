@@ -313,9 +313,9 @@ func cleanup() {
 	}
 }
 
-// Legacy bot reactivation system removed - now using Facebook Handover Protocol
-// Thread control is managed through native Facebook handover events instead of 
-// background workers and 6-hour timers
+// Bot reactivation system: 12-hour rule with message-triggered checks
+// System auto-disables bot when human agents respond, auto-reactivates after 12 hours of inactivity
+// No background workers needed - reactivation check runs on each message processing
 
 func main() {
 	// Create context for graceful shutdown (used in shutdown signal handling)
@@ -326,7 +326,7 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Background worker removed - thread control now managed by Facebook Handover Protocol
+	// Bot reactivation now happens on message processing (no background worker needed)
 
 	// Ensure cleanup on exit
 	defer cleanup()
@@ -347,6 +347,7 @@ func main() {
 	go func() {
 		log.Printf("🌐 Server starting on port %s", config.Port)
 		log.Printf("🔗 Local URL: http://localhost:%s", config.Port)
+		log.Printf("🤖 Bot auto-reactivation enabled (12-hour rule, message-triggered)")
 		log.Printf("⚡ Server is ready to handle requests")
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

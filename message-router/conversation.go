@@ -432,17 +432,23 @@ func getThreadControlStatus(ctx context.Context, threadID string) (string, error
 	return status, nil
 }
 
-// shouldBotProcessMessage determines if bot should process message based on thread control status
+// shouldBotProcessMessage determines if bot should process message based on bot_enabled flag
 func shouldBotProcessMessage(ctx context.Context, threadID string) (bool, error) {
-	status, err := getThreadControlStatus(ctx, threadID)
+	var botEnabled bool
+	query := "SELECT COALESCE(bot_enabled, true) FROM conversations WHERE thread_id = $1"
+	
+	err := db.QueryRowContext(ctx, query, threadID).Scan(&botEnabled)
 	if err != nil {
-		LogWarn("Thread control check failed, defaulting to bot: %v", err)
+		if err == sql.ErrNoRows {
+			LogDebug("No conversation found for thread_id: %s, defaulting to enabled", threadID)
+			return true, nil // New conversations default to bot enabled
+		}
+		LogWarn("Bot enabled check failed, defaulting to enabled: %v", err)
 		return true, nil // Graceful degradation
 	}
 
-	shouldProcess := status == "bot" || status == "system"
-	LogDebug("Bot should process %s? %v (%s)", threadID, shouldProcess, status)
-	return shouldProcess, nil
+	LogDebug("Bot should process %s? %v", threadID, botEnabled)
+	return botEnabled, nil
 }
 
 // getThreadControlStatusWithTimestamp retrieves thread control status with handover info
@@ -468,4 +474,23 @@ func getThreadControlStatusWithTimestamp(ctx context.Context, threadID string) (
 	}
 
 	return status, timestamp, reason, nil
+}
+
+// checkAndReactivateBots calls the database function to reactivate eligible bots (12-hour rule)
+// Returns the number of bots reactivated, used for logging
+func checkAndReactivateBots(ctx context.Context, requestID string) {
+	var reactivatedCount int
+	err := db.QueryRowContext(ctx, "SELECT reenable_disabled_bots()").Scan(&reactivatedCount)
+	
+	if err != nil {
+		LogError("[%s] Bot reactivation check failed: %v", requestID, err)
+		return
+	}
+	
+	// Only log when bots are actually reactivated to avoid spam
+	if reactivatedCount > 0 {
+		LogInfo("[%s] 🔄 Reactivated %d bots (12-hour rule)", requestID, reactivatedCount)
+	} else {
+		LogDebug("[%s] No bots eligible for reactivation", requestID)
+	}
 }
