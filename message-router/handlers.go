@@ -97,6 +97,11 @@ func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 	// Single consolidated log for webhook details
 	LogInfo("[%s] 📝 Webhook: %s, %d entries, %d messages, %d handovers", 
 		requestID, event.Object, len(event.Entry), totalMessages, totalHandoverEvents)
+	
+	// Additional debug logging for entries
+	for i, entry := range event.Entry {
+		LogInfo("[%s] 📋 Entry %d: id=%s, messages=%d", requestID, i, entry.ID, len(entry.Messaging))
+	}
 
 	if !isValidFacebookObject(event.Object) {
 		LogError("[%s] Unsupported webhook object: %s", requestID, event.Object)
@@ -124,7 +129,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent, requestID st
 			continue
 		}
 
-		for _, msg := range entry.Messaging {
+		for msgIndex, msg := range entry.Messaging {
 			// Skip non-message events (delivery receipts, etc.)
 			if msg.Delivery != nil {
 				LogDebug("[%s] Skipping delivery receipt", requestID)
@@ -136,28 +141,56 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent, requestID st
 				LogDebug("[%s] Skipping empty message from %s", requestID, msg.Sender.ID)
 				continue
 			}
-			
-			// Check if this is a human agent message (from page admin)
-			if msg.Sender.ID == entry.ID && !msg.Message.IsEcho {
-				// This is a human agent responding - auto-disable bot for this conversation
-				platform := event.Object
-				if platform == "page" {
-					platform = "facebook"
+
+			// Log every message we receive for debugging
+			LogInfo("[%s] 📨 Raw message %d: sender=%s, recipient=%s, echo=%v, app_id=%d, text=%q", 
+				requestID, msgIndex, msg.Sender.ID, msg.Recipient.ID, msg.Message.IsEcho, msg.Message.AppId, msg.Message.Text)
+
+			// Handle echo messages intelligently (FIXED LOGIC)
+			if msg.Message.IsEcho {
+				LogInfo("[%s] 🔍 Echo message detected - analyzing app_id and sender", requestID)
+				
+				// Check if this is a bot echo (our own bot responses)
+				if msg.Message.AppId == 1195277397801905 {
+					LogInfo("[%s] 🤖 Bot echo message detected (app_id: %d) - skipping", requestID, msg.Message.AppId)
+					continue
 				}
 				
-				LogInfo("[%s] 👤 Human agent message detected - auto-disabling bot", requestID)
-				err := updateConversationForHumanMessage(ctx, entry.ID, msg.Recipient.ID, platform)
-				if err != nil {
-					LogError("[%s] Failed to disable bot for human agent: %v", requestID, err)
+				// Check if this is a human agent message (sender = page)
+				if msg.Sender.ID == entry.ID {
+					LogInfo("[%s] 👤 HUMAN AGENT MESSAGE DETECTED! sender=%s matches page=%s, app_id=%d", 
+						requestID, msg.Sender.ID, entry.ID, msg.Message.AppId)
+					
+					// Auto-disable bot for human agent intervention
+					platform := event.Object
+					if platform == "page" {
+						platform = "facebook"
+					}
+					
+					LogInfo("[%s] 🔴 Auto-disabling bot due to human agent intervention", requestID)
+					err := updateConversationForHumanMessage(ctx, entry.ID, msg.Recipient.ID, platform)
+					if err != nil {
+						LogError("[%s] ❌ Failed to disable bot for human agent: %v", requestID, err)
+					} else {
+						LogInfo("[%s] ✅ Bot successfully disabled for human agent", requestID)
+					}
+					continue
 				}
+				
+				// Unknown echo message pattern
+				LogWarn("[%s] ⚠️ Unknown echo pattern: sender=%s, page=%s, app_id=%d", 
+					requestID, msg.Sender.ID, entry.ID, msg.Message.AppId)
 				continue
 			}
-			
-			// Skip non-user senders and echo messages  
-			if strings.HasPrefix(msg.Sender.ID, "page-") || strings.HasPrefix(msg.Sender.ID, "bot-") || msg.Message.IsEcho {
-				LogDebug("[%s] Skipping non-user/echo message from %s", requestID, msg.Sender.ID)
+
+			// Skip non-user senders (but allow regular user messages)
+			if strings.HasPrefix(msg.Sender.ID, "page-") || strings.HasPrefix(msg.Sender.ID, "bot-") {
+				LogDebug("[%s] Skipping non-user message from %s", requestID, msg.Sender.ID)
 				continue
 			}
+
+			// Non-echo message - proceed with normal user processing
+			LogInfo("[%s] 👤 User message detected - proceeding with bot processing", requestID)
 
 			// Normalize platform name
 			platform := event.Object
