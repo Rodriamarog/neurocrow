@@ -109,11 +109,11 @@ function Success() {
               </div>
               <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
                 {getStatusIcon(setupProgress.webhookSetup)}
-                <span style={{ marginLeft: '10px' }}>Configurando webhooks automáticos</span>
+                <span style={{ marginLeft: '10px' }}>Configurando webhooks (Facebook API + Instagram app-level)</span>
               </div>
               <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
                 {getStatusIcon(setupProgress.handoverConfig)}
-                <span style={{ marginLeft: '10px' }}>Configurando protocolo de mensajería (Facebook)</span>
+                <span style={{ marginLeft: '10px' }}>Configurando protocolo avanzado (solo Facebook)</span>
               </div>
             </div>
           </>
@@ -127,10 +127,11 @@ function Success() {
               <h3 style={{ margin: '0 0 10px 0', color: '#28a745' }}>✅ Configuración completada:</h3>
               <ul style={{ margin: '0', paddingLeft: '20px' }}>
                 <li>📱 Páginas de Facebook e Instagram conectadas</li>
-                <li>🔗 Webhooks configurados automáticamente</li>
+                <li>🔗 Webhooks Facebook configurados vía API</li>
+                <li>📲 Webhooks Instagram configurados a nivel de app</li>
                 <li>📨 Protocolo de mensajería activado (Facebook)</li>
-                <li>🤖 Bot listo para responder mensajes</li>
-                <li>📝 <em>Nota: Instagram usa configuración simplificada</em></li>
+                <li>🤖 Bot listo para responder mensajes en ambas plataformas</li>
+                <li>📝 <em>Instagram funciona automáticamente vía configuración central</em></li>
               </ul>
             </div>
           </>

@@ -1070,28 +1070,36 @@ func verifyWebhookSetup(pageID, pageToken string) error {
 func setupWebhookSubscriptions(pageID, pageToken, pageName, platform string) error {
 	log.Printf("🚀 Starting webhook setup for %s page: %s (%s)", platform, pageName, pageID)
 
-	// Step 1: Subscribe page to webhooks
+	if platform == "instagram" {
+		// Instagram webhooks are configured at app level in Facebook App Dashboard
+		// No per-page API subscription needed - webhooks work automatically once configured in dashboard
+		log.Printf("📱 Instagram webhooks configured at app level - no API subscription needed")
+		log.Printf("ℹ️ Instagram account %s will receive webhooks via app-level configuration", pageName)
+		log.Printf("✅ Instagram webhook setup completed for %s (app-level configuration)", pageName)
+		return nil
+	}
+
+	// Facebook pages require individual API subscriptions
+	log.Printf("📘 Facebook page requires individual API webhook subscription")
+
+	// Step 1: Subscribe page to webhooks (Facebook only)
 	if err := subscribePageToWebhooks(pageID, pageToken, platform); err != nil {
 		log.Printf("❌ Webhook subscription failed for %s: %v", pageName, err)
 		return fmt.Errorf("webhook subscription failed: %v", err)
 	}
 
-	// Step 2: Configure handover protocol (only for Facebook pages, not Instagram)
-	if platform == "facebook" {
-		if err := configureHandoverProtocol(pageID, pageToken); err != nil {
-			log.Printf("⚠️ Handover protocol setup failed for %s: %v", pageName, err)
-			// Don't return error - handover protocol is optional, webhook subscription is more important
-		}
-	} else {
-		log.Printf("ℹ️ Skipping handover protocol for Instagram account: %s", pageName)
+	// Step 2: Configure handover protocol (Facebook only)
+	if err := configureHandoverProtocol(pageID, pageToken); err != nil {
+		log.Printf("⚠️ Handover protocol setup failed for %s: %v", pageName, err)
+		// Don't return error - handover protocol is optional, webhook subscription is more important
 	}
 
-	// Step 3: Verify the setup
+	// Step 3: Verify the setup (Facebook only)
 	if err := verifyWebhookSetup(pageID, pageToken); err != nil {
 		log.Printf("⚠️ Webhook verification failed for %s: %v", pageName, err)
 		// Don't return error - verification is informational
 	}
 
-	log.Printf("✅ Webhook setup completed for %s page: %s", platform, pageName)
+	log.Printf("✅ Facebook webhook setup completed for %s page: %s", platform, pageName)
 	return nil
 }
