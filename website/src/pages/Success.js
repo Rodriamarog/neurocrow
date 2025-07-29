@@ -113,7 +113,7 @@ function Success() {
               </div>
               <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
                 {getStatusIcon(setupProgress.handoverConfig)}
-                <span style={{ marginLeft: '10px' }}>Activando protocolo de mensajería</span>
+                <span style={{ marginLeft: '10px' }}>Configurando protocolo de mensajería (Facebook)</span>
               </div>
             </div>
           </>
@@ -121,15 +121,16 @@ function Success() {
           <>
             <i className="fas fa-check-circle success-icon"></i>
             <h1>¡Configuración Completada!</h1>
-            <p>Tu cuenta ha sido configurada automáticamente. Tus páginas ya están listas para recibir mensajes y usar el chatbot de Neurocrow.</p>
+            <p>Tu cuenta ha sido configurada automáticamente. Tus páginas de Facebook e Instagram ya están listas para recibir mensajes y usar el chatbot de Neurocrow.</p>
             
             <div className="setup-summary" style={{ margin: '20px 0', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px', textAlign: 'left' }}>
               <h3 style={{ margin: '0 0 10px 0', color: '#28a745' }}>✅ Configuración completada:</h3>
               <ul style={{ margin: '0', paddingLeft: '20px' }}>
-                <li>Páginas conectadas y sincronizadas</li>
-                <li>Webhooks configurados automáticamente</li>
-                <li>Protocolo de handover activado</li>
-                <li>Bot listo para responder mensajes</li>
+                <li>📱 Páginas de Facebook e Instagram conectadas</li>
+                <li>🔗 Webhooks configurados automáticamente</li>
+                <li>📨 Protocolo de mensajería activado (Facebook)</li>
+                <li>🤖 Bot listo para responder mensajes</li>
+                <li>📝 <em>Nota: Instagram usa configuración simplificada</em></li>
               </ul>
             </div>
           </>
