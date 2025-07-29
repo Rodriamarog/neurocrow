@@ -853,13 +853,12 @@ func subscribePageToWebhooks(pageID, pageToken, platform string) error {
 	var subscribedFields []string
 	
 	if platform == "instagram" {
-		// Instagram doesn't support messaging_handovers field
+		// Instagram only supports basic messaging fields
 		subscribedFields = []string{
 			"messages",
 			"messaging_postbacks",
-			"messaging_policy_enforcement",
 		}
-		log.Printf("📱 Using Instagram-specific webhook fields (excluding messaging_handovers)")
+		log.Printf("📱 Using Instagram-specific webhook fields (messages, messaging_postbacks only)")
 	} else {
 		// Facebook pages support all fields including handovers
 		subscribedFields = []string{
@@ -943,8 +942,11 @@ func configureHandoverProtocol(pageID, pageToken string) error {
 	handoverURL := fmt.Sprintf("https://graph.facebook.com/v23.0/%s/messenger_profile", pageID)
 	handoverPayload := map[string]interface{}{
 		"primary_receiver_app_id": neurocrowAppID,
-		"greeting": map[string]interface{}{
-			"text": "Hola! Soy el asistente inteligente de esta página. ¿En qué puedo ayudarte hoy?",
+		"greeting": []map[string]interface{}{
+			{
+				"locale": "default",
+				"text":   "Hola! Soy el asistente inteligente de esta página. ¿En qué puedo ayudarte hoy?",
+			},
 		},
 		"get_started": map[string]interface{}{
 			"payload": "GET_STARTED",
