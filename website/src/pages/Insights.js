@@ -8,10 +8,8 @@ import {
   Title,
   Tooltip,
   Legend,
-  ArcElement,
-  BarElement,
 } from 'chart.js';
-import { Line, Doughnut, Bar } from 'react-chartjs-2';
+import { Line } from 'react-chartjs-2';
 import './Insights.css';
 
 ChartJS.register(
@@ -21,9 +19,7 @@ ChartJS.register(
   LineElement,
   Title,
   Tooltip,
-  Legend,
-  ArcElement,
-  BarElement
+  Legend
 );
 
 function Insights() {
@@ -48,26 +44,41 @@ function Insights() {
 
   const checkConnectedPages = async () => {
     try {
-      // This endpoint should return user's connected pages
-      // We'll use a simple check to see if user has connected Facebook
-      const hasConnectedPages = localStorage.getItem('facebook_connected') === 'true';
+      const response = await fetch(
+        'https://neurocrow-client-manager.onrender.com/pages'
+      );
       
-      if (hasConnectedPages) {
-        // For demo purposes, create some mock pages
-        // In production, this would come from your API
-        const mockPages = [
-          { page_id: '269054096290372', name: 'Happiness Boutique', platform: 'facebook' },
-          { page_id: '17841400455970028', name: 'Instagram Business', platform: 'instagram' }
-        ];
-        setConnectedPages(mockPages);
-        setSelectedPage(mockPages[0]);
+      if (response.ok) {
+        const data = await response.json();
+        setConnectedPages(data.pages || []);
+        if (data.pages && data.pages.length > 0) {
+          setSelectedPage(data.pages[0]);
+        }
       } else {
-        setConnectedPages([]);
+        // If API call fails, fall back to localStorage check
+        const hasConnectedPages = localStorage.getItem('facebook_connected') === 'true';
+        if (hasConnectedPages) {
+          // Mock pages for demo when API is not available
+          const mockPages = [
+            { page_id: '269054096290372', name: 'Happiness Boutique', platform: 'facebook' },
+            { page_id: '17841400455970028', name: 'Instagram Business', platform: 'instagram' }
+          ];
+          setConnectedPages(mockPages);
+          setSelectedPage(mockPages[0]);
+        }
       }
       setLoading(false);
     } catch (error) {
       console.error('Error checking connected pages:', error);
-      setError('Failed to load connected pages');
+      // Fall back to localStorage check on error
+      const hasConnectedPages = localStorage.getItem('facebook_connected') === 'true';
+      if (hasConnectedPages) {
+        const mockPages = [
+          { page_id: '269054096290372', name: 'Happiness Boutique', platform: 'facebook' }
+        ];
+        setConnectedPages(mockPages);
+        setSelectedPage(mockPages[0]);
+      }
       setLoading(false);
     }
   };

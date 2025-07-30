@@ -42,6 +42,7 @@ func main() {
 	router.HandleFunc("/activate-page", corsMiddleware(handleActivatePage))
 	router.HandleFunc("/deactivate-page", corsMiddleware(handleDeactivatePage))
 	router.HandleFunc("/insights", corsMiddleware(handleInsights))
+	router.HandleFunc("/pages", corsMiddleware(handleListPages))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -1302,4 +1303,45 @@ func getPageInsights(pageID, accessToken, period, pageName, platform string) (*I
 		pageName, len(response.Metrics), len(response.TimeSeries))
 
 	return response, nil
+}
+
+func handleListPages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get all connected pages (active and pending)
+	rows, err := DB.Query(`
+		SELECT page_id, name, platform
+		FROM pages 
+		WHERE status IN ('active', 'pending')
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		log.Printf("❌ Error querying pages: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var pages []map[string]string
+	for rows.Next() {
+		var pageID, name, platform string
+		if err := rows.Scan(&pageID, &name, &platform); err != nil {
+			log.Printf("❌ Error scanning page row: %v", err)
+			continue
+		}
+		pages = append(pages, map[string]string{
+			"page_id":  pageID,
+			"name":     name,
+			"platform": platform,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"pages": pages,
+		"count": len(pages),
+	})
 }
