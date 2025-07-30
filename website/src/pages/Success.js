@@ -58,6 +58,8 @@ function Success() {
             setTimeout(() => {
               setSetupProgress(prev => ({ ...prev, handoverConfig: 'success' }));
               setSyncStatus('success');
+              // Mark Facebook as connected for insights page
+              localStorage.setItem('facebook_connected', 'true');
             }, 1000);
           }, 1000);
         }, 1500);
@@ -131,8 +133,31 @@ function Success() {
                 <li>📲 Webhooks Instagram configurados a nivel de app</li>
                 <li>📨 Protocolo de mensajería activado (Facebook)</li>
                 <li>🤖 Bot listo para responder mensajes en ambas plataformas</li>
+                <li>📊 Insights de página disponibles para análisis</li>
                 <li>📝 <em>Instagram funciona automáticamente vía configuración central</em></li>
               </ul>
+            </div>
+            
+            <div className="next-steps" style={{ margin: '20px 0' }}>
+              <a 
+                href="/insights" 
+                className="insights-btn"
+                style={{
+                  display: 'inline-block',
+                  background: '#667eea',
+                  color: 'white',
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  fontWeight: '600',
+                  marginRight: '15px',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseOver={(e) => e.target.style.background = '#5a6fd8'}
+                onMouseOut={(e) => e.target.style.background = '#667eea'}
+              >
+                <i className="fas fa-chart-bar"></i> Ver Insights de Página
+              </a>
             </div>
           </>
         ) : (

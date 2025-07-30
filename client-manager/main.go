@@ -41,6 +41,7 @@ func main() {
 	router.HandleFunc("/activate-form", corsMiddleware(handleActivateForm))
 	router.HandleFunc("/activate-page", corsMiddleware(handleActivatePage))
 	router.HandleFunc("/deactivate-page", corsMiddleware(handleDeactivatePage))
+	router.HandleFunc("/insights", corsMiddleware(handleInsights))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -1103,4 +1104,202 @@ func setupWebhookSubscriptions(pageID, pageToken, pageName, platform string) err
 
 	log.Printf("✅ Facebook webhook setup completed for %s page: %s", platform, pageName)
 	return nil
+}
+
+// =============================================================================
+// FACEBOOK PAGE INSIGHTS - For legitimate pages_read_engagement usage
+// =============================================================================
+
+type InsightsResponse struct {
+	PageName   string                 `json:"page_name"`
+	PageID     string                 `json:"page_id"`
+	Platform   string                 `json:"platform"`
+	Metrics    map[string]interface{} `json:"metrics"`
+	TimeSeries []TimeSeriesPoint      `json:"time_series"`
+	Period     string                 `json:"period"`
+}
+
+type TimeSeriesPoint struct {
+	Date  string      `json:"date"`
+	Value interface{} `json:"value"`
+}
+
+type FacebookInsightsData struct {
+	Data []struct {
+		Name   string `json:"name"`
+		Period string `json:"period"`
+		Values []struct {
+			Value   interface{} `json:"value"`
+			EndTime string      `json:"end_time"`
+		} `json:"values"`
+	} `json:"data"`
+}
+
+func handleInsights(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pageID := r.URL.Query().Get("pageId")
+	period := r.URL.Query().Get("period")
+	
+	// Default to last 7 days if no period specified
+	if period == "" {
+		period = "week"
+	}
+
+	if pageID == "" {
+		http.Error(w, "pageId parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("📊 Fetching insights for page %s (period: %s)", pageID, period)
+
+	// Get page info and access token from database
+	var pageName, platform, accessToken string
+	err := DB.QueryRow(`
+		SELECT name, platform, access_token 
+		FROM pages 
+		WHERE page_id = $1 AND status IN ('active', 'pending')
+	`, pageID).Scan(&pageName, &platform, &accessToken)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Page not found or not connected", http.StatusNotFound)
+		} else {
+			log.Printf("❌ Error querying page: %v", err)
+			http.Error(w, "Database error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	log.Printf("📄 Found page: %s (%s) - Platform: %s", pageName, pageID, platform)
+
+	// Get insights data from Facebook API
+	insights, err := getPageInsights(pageID, accessToken, period, pageName, platform)
+	if err != nil {
+		log.Printf("❌ Error fetching insights: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to fetch insights: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(insights)
+}
+
+func getPageInsights(pageID, accessToken, period, pageName, platform string) (*InsightsResponse, error) {
+	// Define metrics based on what's currently available in Facebook API
+	metrics := []string{
+		"page_post_engagements",
+		"page_impressions", 
+		"page_daily_follows",
+		"page_fans_locale",
+	}
+
+	// Add platform-specific metrics
+	if platform == "facebook" {
+		metrics = append(metrics, "page_video_views")
+	}
+
+	metricsParam := fmt.Sprintf("[%s]", fmt.Sprintf(`"%s"`, metrics[0]))
+	for i := 1; i < len(metrics); i++ {
+		metricsParam = metricsParam[:len(metricsParam)-1] + fmt.Sprintf(`,"%s"]`, metrics[i])
+	}
+
+	// Determine period parameter for Facebook API
+	var fbPeriod string
+	switch period {
+	case "day":
+		fbPeriod = "day"
+	case "week":
+		fbPeriod = "week" 
+	case "month", "28days":
+		fbPeriod = "days_28"
+	default:
+		fbPeriod = "week"
+	}
+
+	// Call Facebook Insights API
+	insightsURL := fmt.Sprintf(
+		"https://graph.facebook.com/v23.0/%s/insights?metric=%s&period=%s&access_token=%s",
+		pageID, metricsParam, fbPeriod, accessToken,
+	)
+
+	log.Printf("🔍 Facebook Insights API call: %s", insightsURL)
+
+	resp, err := http.Get(insightsURL)
+	if err != nil {
+		return nil, fmt.Errorf("error calling Facebook API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading Facebook response: %w", err)
+	}
+
+	log.Printf("📥 Facebook Insights response: %d - %s", resp.StatusCode, string(bodyBytes))
+
+	if resp.StatusCode != http.StatusOK {
+		var fbError struct {
+			Error struct {
+				Message   string `json:"message"`
+				Type      string `json:"type"`
+				Code      int    `json:"code"`
+				FbtraceID string `json:"fbtrace_id"`
+			} `json:"error"`
+		}
+		
+		if json.Unmarshal(bodyBytes, &fbError) == nil && fbError.Error.Message != "" {
+			return nil, fmt.Errorf("Facebook API error: %s (Code: %d, Trace: %s)", 
+				fbError.Error.Message, fbError.Error.Code, fbError.Error.FbtraceID)
+		}
+		return nil, fmt.Errorf("Facebook API error: status %d - %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var fbData FacebookInsightsData
+	if err := json.Unmarshal(bodyBytes, &fbData); err != nil {
+		return nil, fmt.Errorf("error parsing Facebook insights data: %w", err)
+	}
+
+	// Process and format the data
+	response := &InsightsResponse{
+		PageName:   pageName,
+		PageID:     pageID,
+		Platform:   platform,
+		Metrics:    make(map[string]interface{}),
+		TimeSeries: []TimeSeriesPoint{},
+		Period:     period,
+	}
+
+	// Process each metric
+	for _, metric := range fbData.Data {
+		if len(metric.Values) > 0 {
+			// Get the latest value for summary metrics
+			latestValue := metric.Values[len(metric.Values)-1].Value
+			response.Metrics[metric.Name] = latestValue
+
+			// Create time series data
+			for _, value := range metric.Values {
+				response.TimeSeries = append(response.TimeSeries, TimeSeriesPoint{
+					Date:  value.EndTime,
+					Value: value.Value,
+				})
+			}
+		}
+	}
+
+	// Add some calculated metrics for better UX
+	if engagements, ok := response.Metrics["page_post_engagements"].(float64); ok {
+		if impressions, ok := response.Metrics["page_impressions"].(float64); ok && impressions > 0 {
+			engagementRate := (engagements / impressions) * 100
+			response.Metrics["engagement_rate"] = fmt.Sprintf("%.2f%%", engagementRate)
+		}
+	}
+
+	log.Printf("✅ Successfully processed insights for %s: %d metrics, %d time series points", 
+		pageName, len(response.Metrics), len(response.TimeSeries))
+
+	return response, nil
 }

@@ -11,6 +11,7 @@ import Footer from './components/Footer';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Success from './pages/Success';
+import Insights from './pages/Insights';
 import { Outlet } from 'react-router-dom';
 import TerminosServicio from './pages/TerminosServicio';
 import PoliticaPrivacidad from './pages/PoliticaPrivacidad';
@@ -108,6 +109,7 @@ const router = createBrowserRouter(
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/success" element={<Success />} />
+      <Route path="/insights" element={<Insights />} />
       <Route path="/terminos-de-servicio" element={<TerminosServicio />} />
       <Route path="/politica-de-privacidad" element={<PoliticaPrivacidad />} />
     </Route>
