@@ -22,7 +22,7 @@ function Navbar() {
           </li>
           <li className="nav-item">
             <Link to="/insights" className="nav-link" onClick={() => setIsOpen(false)}>
-              <i className="fas fa-chart-bar"></i> Insights
+              <i className="fas fa-rss"></i> Latest Posts
             </Link>
           </li>
           <li className="nav-item">

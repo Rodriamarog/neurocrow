@@ -43,6 +43,7 @@ func main() {
 	router.HandleFunc("/activate-page", corsMiddleware(handleActivatePage))
 	router.HandleFunc("/deactivate-page", corsMiddleware(handleDeactivatePage))
 	router.HandleFunc("/insights", corsMiddleware(handleInsights))
+	router.HandleFunc("/posts", corsMiddleware(handlePagePosts))
 	router.HandleFunc("/pages", corsMiddleware(handleListPages))
 
 	port := os.Getenv("PORT")
@@ -1389,4 +1390,156 @@ func handleListPages(w http.ResponseWriter, r *http.Request) {
 		"count": len(pages),
 		"debug": "This endpoint returns ALL pages from ALL users - needs user filtering",
 	})
+}
+
+// =============================================================================
+// FACEBOOK PAGE POSTS - For legitimate pages_read_engagement usage
+// =============================================================================
+
+type PagePost struct {
+	ID          string            `json:"id"`
+	Message     string            `json:"message,omitempty"`
+	Story       string            `json:"story,omitempty"`
+	CreatedTime string            `json:"created_time"`
+	From        PagePostFrom      `json:"from"`
+	Likes       PagePostMetric    `json:"likes"`
+	Comments    PagePostMetric    `json:"comments"`
+	Shares      PagePostShares    `json:"shares,omitempty"`
+}
+
+type PagePostFrom struct {
+	Name string `json:"name"`
+	ID   string `json:"id"`
+}
+
+type PagePostMetric struct {
+	Summary PagePostSummary `json:"summary"`
+}
+
+type PagePostSummary struct {
+	TotalCount int `json:"total_count"`
+}
+
+type PagePostShares struct {
+	Count int `json:"count"`
+}
+
+type PagePostsResponse struct {
+	PageName string     `json:"page_name"`
+	PageID   string     `json:"page_id"`
+	Platform string     `json:"platform"`
+	Posts    []PagePost `json:"posts"`
+	Count    int        `json:"count"`
+}
+
+func handlePagePosts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pageID := r.URL.Query().Get("pageId")
+	limit := r.URL.Query().Get("limit")
+	if limit == "" {
+		limit = "10"
+	}
+
+	if pageID == "" {
+		http.Error(w, "pageId parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("📱 Fetching posts for page %s (limit: %s)", pageID, limit)
+
+	// Get page info and access token from database
+	var pageName, platform, accessToken string
+	err := DB.QueryRow(`
+		SELECT name, platform, access_token 
+		FROM pages 
+		WHERE page_id = $1 AND status IN ('active', 'pending')
+	`, pageID).Scan(&pageName, &platform, &accessToken)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Page not found or not connected", http.StatusNotFound)
+		} else {
+			log.Printf("❌ Error querying page: %v", err)
+			http.Error(w, "Database error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	log.Printf("📄 Found page: %s (%s) - Platform: %s", pageName, pageID, platform)
+
+	// Get posts data from Facebook API
+	posts, err := getPagePosts(pageID, accessToken, limit, pageName, platform)
+	if err != nil {
+		log.Printf("❌ Error fetching posts: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to fetch posts: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(posts)
+}
+
+func getPagePosts(pageID, accessToken, limit, pageName, platform string) (*PagePostsResponse, error) {
+	// Call Facebook Feed API - exactly like your working Graph API Explorer call
+	postsURL := fmt.Sprintf(
+		"https://graph.facebook.com/v23.0/%s/feed?fields=id,message,story,created_time,from,likes.summary(true),comments.summary(true),shares&limit=%s&access_token=%s",
+		pageID, limit, accessToken,
+	)
+
+	log.Printf("🔍 Facebook Posts API call: %s", postsURL)
+
+	resp, err := http.Get(postsURL)
+	if err != nil {
+		return nil, fmt.Errorf("error calling Facebook API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading Facebook response: %w", err)
+	}
+
+	log.Printf("📥 Facebook Posts response: %d - %s", resp.StatusCode, string(bodyBytes))
+
+	if resp.StatusCode != http.StatusOK {
+		var fbError struct {
+			Error struct {
+				Message   string `json:"message"`
+				Type      string `json:"type"`
+				Code      int    `json:"code"`
+				FbtraceID string `json:"fbtrace_id"`
+			} `json:"error"`
+		}
+		
+		if json.Unmarshal(bodyBytes, &fbError) == nil && fbError.Error.Message != "" {
+			return nil, fmt.Errorf("Facebook API error: %s (Code: %d, Trace: %s)", 
+				fbError.Error.Message, fbError.Error.Code, fbError.Error.FbtraceID)
+		}
+		return nil, fmt.Errorf("Facebook API error: status %d - %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var fbData struct {
+		Data []PagePost `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &fbData); err != nil {
+		return nil, fmt.Errorf("error parsing Facebook posts data: %w", err)
+	}
+
+	// Build response
+	response := &PagePostsResponse{
+		PageName: pageName,
+		PageID:   pageID,
+		Platform: platform,
+		Posts:    fbData.Data,
+		Count:    len(fbData.Data),
+	}
+
+	log.Printf("✅ Successfully processed posts for %s: %d posts found", 
+		pageName, len(fbData.Data))
+
+	return response, nil
 }

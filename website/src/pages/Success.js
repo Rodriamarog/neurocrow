@@ -133,7 +133,7 @@ function Success() {
                 <li>📲 Webhooks Instagram configurados a nivel de app</li>
                 <li>📨 Protocolo de mensajería activado (Facebook)</li>
                 <li>🤖 Bot listo para responder mensajes en ambas plataformas</li>
-                <li>📊 Insights de página disponibles para análisis</li>
+                <li>📱 Posts y contenido de página disponibles</li>
                 <li>📝 <em>Instagram funciona automáticamente vía configuración central</em></li>
               </ul>
             </div>
@@ -156,7 +156,7 @@ function Success() {
                 onMouseOver={(e) => e.target.style.background = '#5a6fd8'}
                 onMouseOut={(e) => e.target.style.background = '#667eea'}
               >
-                <i className="fas fa-chart-bar"></i> Ver Insights de Página
+                <i className="fas fa-rss"></i> Ver Últimos Posts
               </a>
             </div>
           </>
