@@ -44,41 +44,39 @@ function Insights() {
 
   const checkConnectedPages = async () => {
     try {
+      console.log('🔍 Fetching connected pages from API...');
       const response = await fetch(
         'https://neurocrow-client-manager.onrender.com/pages'
       );
       
+      console.log('📡 Pages API response status:', response.status);
+      const responseText = await response.text();
+      console.log('📡 Pages API raw response:', responseText);
+      
       if (response.ok) {
-        const data = await response.json();
-        setConnectedPages(data.pages || []);
-        if (data.pages && data.pages.length > 0) {
-          setSelectedPage(data.pages[0]);
+        let data;
+        try {
+          data = JSON.parse(responseText);
+          console.log('✅ Pages API parsed data:', data);
+          setConnectedPages(data.pages || []);
+          if (data.pages && data.pages.length > 0) {
+            setSelectedPage(data.pages[0]);
+            console.log('📄 Selected first page:', data.pages[0]);
+          } else {
+            console.log('⚠️ No pages found in API response');
+          }
+        } catch (parseError) {
+          console.error('❌ Failed to parse pages API response:', parseError);
+          setConnectedPages([]);
         }
       } else {
-        // If API call fails, fall back to localStorage check
-        const hasConnectedPages = localStorage.getItem('facebook_connected') === 'true';
-        if (hasConnectedPages) {
-          // Mock pages for demo when API is not available
-          const mockPages = [
-            { page_id: '269054096290372', name: 'Happiness Boutique', platform: 'facebook' },
-            { page_id: '17841400455970028', name: 'Instagram Business', platform: 'instagram' }
-          ];
-          setConnectedPages(mockPages);
-          setSelectedPage(mockPages[0]);
-        }
+        console.error('❌ Pages API call failed:', response.status, responseText);
+        setConnectedPages([]);
       }
       setLoading(false);
     } catch (error) {
-      console.error('Error checking connected pages:', error);
-      // Fall back to localStorage check on error
-      const hasConnectedPages = localStorage.getItem('facebook_connected') === 'true';
-      if (hasConnectedPages) {
-        const mockPages = [
-          { page_id: '269054096290372', name: 'Happiness Boutique', platform: 'facebook' }
-        ];
-        setConnectedPages(mockPages);
-        setSelectedPage(mockPages[0]);
-      }
+      console.error('❌ Error checking connected pages:', error);
+      setConnectedPages([]);
       setLoading(false);
     }
   };
@@ -88,18 +86,31 @@ function Insights() {
     setError(null);
     
     try {
+      console.log(`🔍 Fetching insights for page ${pageId}, period ${period}...`);
       const response = await fetch(
         `https://neurocrow-client-manager.onrender.com/insights?pageId=${pageId}&period=${period}`
       );
       
+      console.log('📊 Insights API response status:', response.status);
+      const responseText = await response.text();
+      console.log('📊 Insights API raw response:', responseText);
+      
       if (!response.ok) {
-        throw new Error(`Failed to fetch insights: ${response.statusText}`);
+        throw new Error(`API Error (${response.status}): ${responseText}`);
       }
       
-      const data = await response.json();
-      setInsightsData(data);
+      // Try to parse as JSON
+      let data;
+      try {
+        data = JSON.parse(responseText);
+        console.log('✅ Insights API parsed data:', data);
+        setInsightsData(data);
+      } catch (parseError) {
+        console.error('❌ JSON Parse Error:', parseError);
+        throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}...`);
+      }
     } catch (error) {
-      console.error('Error fetching insights:', error);
+      console.error('❌ Error fetching insights:', error);
       setError(error.message);
     } finally {
       setLoading(false);

@@ -1311,12 +1311,15 @@ func handleListPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all connected pages (active and pending)
+	log.Printf("📋 Listing pages request received")
+
+	// Get all connected pages with client info for debugging
 	rows, err := DB.Query(`
-		SELECT page_id, name, platform
-		FROM pages 
-		WHERE status IN ('active', 'pending')
-		ORDER BY created_at DESC
+		SELECT p.page_id, p.name, p.platform, p.client_id, c.name as client_name, p.status
+		FROM pages p
+		LEFT JOIN clients c ON p.client_id = c.id
+		WHERE p.status IN ('active', 'pending')
+		ORDER BY p.created_at DESC
 	`)
 	if err != nil {
 		log.Printf("❌ Error querying pages: %v", err)
@@ -1327,21 +1330,32 @@ func handleListPages(w http.ResponseWriter, r *http.Request) {
 
 	var pages []map[string]string
 	for rows.Next() {
-		var pageID, name, platform string
-		if err := rows.Scan(&pageID, &name, &platform); err != nil {
+		var pageID, name, platform, clientID, clientName, status string
+		if err := rows.Scan(&pageID, &name, &platform, &clientID, &clientName, &status); err != nil {
 			log.Printf("❌ Error scanning page row: %v", err)
 			continue
 		}
-		pages = append(pages, map[string]string{
-			"page_id":  pageID,
-			"name":     name,
-			"platform": platform,
-		})
+		
+		pageInfo := map[string]string{
+			"page_id":     pageID,
+			"name":        name,
+			"platform":    platform,
+			"client_id":   clientID,
+			"client_name": clientName,
+			"status":      status,
+		}
+		pages = append(pages, pageInfo)
+		
+		log.Printf("📄 Found page: %s (%s) - Client: %s (%s) - Status: %s", 
+			name, platform, clientName, clientID, status)
 	}
+
+	log.Printf("📊 Total pages found: %d", len(pages))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"pages": pages,
 		"count": len(pages),
+		"debug": "This endpoint returns ALL pages from ALL users - needs user filtering",
 	})
 }
