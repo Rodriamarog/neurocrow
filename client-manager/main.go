@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -1190,23 +1191,24 @@ func handleInsights(w http.ResponseWriter, r *http.Request) {
 }
 
 func getPageInsights(pageID, accessToken, period, pageName, platform string) (*InsightsResponse, error) {
-	// Define metrics based on what's currently available in Facebook API
+	// Use simpler, more reliable metrics that are less likely to be deprecated
+	// Based on 2024 Facebook API changes, many metrics have been deprecated
 	metrics := []string{
-		"page_post_engagements",
-		"page_impressions", 
-		"page_daily_follows",
-		"page_fans_locale",
+		"page_fans",           // Total page likes (lifetime metric)
+		"page_impressions",    // Still available but limited
 	}
 
-	// Add platform-specific metrics
+	// For testing, let's also try some basic metrics
 	if platform == "facebook" {
-		metrics = append(metrics, "page_video_views")
+		metrics = append(metrics, "page_views_total") // Basic page views
 	}
 
-	metricsParam := fmt.Sprintf("[%s]", fmt.Sprintf(`"%s"`, metrics[0]))
-	for i := 1; i < len(metrics); i++ {
-		metricsParam = metricsParam[:len(metricsParam)-1] + fmt.Sprintf(`,"%s"]`, metrics[i])
+	// Build metrics parameter correctly
+	var quotedMetrics []string
+	for _, metric := range metrics {
+		quotedMetrics = append(quotedMetrics, fmt.Sprintf(`"%s"`, metric))
 	}
+	metricsParam := fmt.Sprintf("[%s]", strings.Join(quotedMetrics, ","))
 
 	// Determine period parameter for Facebook API
 	var fbPeriod string
@@ -1228,6 +1230,8 @@ func getPageInsights(pageID, accessToken, period, pageName, platform string) (*I
 	)
 
 	log.Printf("🔍 Facebook Insights API call: %s", insightsURL)
+	log.Printf("🔍 Requesting metrics: %s", metricsParam)
+	log.Printf("🔍 Using period: %s", fbPeriod)
 
 	resp, err := http.Get(insightsURL)
 	if err != nil {
@@ -1274,28 +1278,55 @@ func getPageInsights(pageID, accessToken, period, pageName, platform string) (*I
 		Period:     period,
 	}
 
-	// Process each metric
-	for _, metric := range fbData.Data {
-		if len(metric.Values) > 0 {
-			// Get the latest value for summary metrics
-			latestValue := metric.Values[len(metric.Values)-1].Value
-			response.Metrics[metric.Name] = latestValue
-
-			// Create time series data
-			for _, value := range metric.Values {
-				response.TimeSeries = append(response.TimeSeries, TimeSeriesPoint{
-					Date:  value.EndTime,
-					Value: value.Value,
-				})
+	// Check if we got any data
+	if len(fbData.Data) == 0 {
+		log.Printf("⚠️ Facebook Insights returned empty data array - trying basic page info instead")
+		
+		// Try to get basic page information as fallback
+		pageInfoURL := fmt.Sprintf(
+			"https://graph.facebook.com/v23.0/%s?fields=id,name,fan_count,followers_count&access_token=%s",
+			pageID, accessToken,
+		)
+		
+		log.Printf("🔍 Trying basic page info: %s", pageInfoURL)
+		
+		pageResp, err := http.Get(pageInfoURL)
+		if err == nil {
+			defer pageResp.Body.Close()
+			pageBody, _ := io.ReadAll(pageResp.Body)
+			log.Printf("📄 Basic page info response: %d - %s", pageResp.StatusCode, string(pageBody))
+			
+			if pageResp.StatusCode == http.StatusOK {
+				var pageInfo struct {
+					ID             string `json:"id"`
+					Name           string `json:"name"`
+					FanCount       int    `json:"fan_count"`
+					FollowersCount int    `json:"followers_count"`
+				}
+				
+				if json.Unmarshal(pageBody, &pageInfo) == nil {
+					response.Metrics["page_fans"] = pageInfo.FanCount
+					response.Metrics["followers_count"] = pageInfo.FollowersCount
+					log.Printf("✅ Added basic page metrics: fans=%d, followers=%d", pageInfo.FanCount, pageInfo.FollowersCount)
+				}
 			}
 		}
-	}
+	} else {
+		// Process each metric normally
+		for _, metric := range fbData.Data {
+			if len(metric.Values) > 0 {
+				// Get the latest value for summary metrics
+				latestValue := metric.Values[len(metric.Values)-1].Value
+				response.Metrics[metric.Name] = latestValue
 
-	// Add some calculated metrics for better UX
-	if engagements, ok := response.Metrics["page_post_engagements"].(float64); ok {
-		if impressions, ok := response.Metrics["page_impressions"].(float64); ok && impressions > 0 {
-			engagementRate := (engagements / impressions) * 100
-			response.Metrics["engagement_rate"] = fmt.Sprintf("%.2f%%", engagementRate)
+				// Create time series data
+				for _, value := range metric.Values {
+					response.TimeSeries = append(response.TimeSeries, TimeSeriesPoint{
+						Date:  value.EndTime,
+						Value: value.Value,
+					})
+				}
+			}
 		}
 	}
 
