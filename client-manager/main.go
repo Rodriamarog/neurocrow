@@ -1345,14 +1345,15 @@ func handleListPages(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("📋 Listing pages request received")
 
-	// Get all connected pages with client info for debugging
+	// Get pages filtered by specific client_id for Test User
 	rows, err := DB.Query(`
 		SELECT p.page_id, p.name, p.platform, p.client_id, c.name as client_name, p.status
 		FROM pages p
 		LEFT JOIN clients c ON p.client_id = c.id
-		WHERE p.status IN ('active', 'pending')
+		WHERE p.status IN ('active', 'pending') 
+		AND p.client_id = $1
 		ORDER BY p.created_at DESC
-	`)
+	`, "d35f63a2-b265-4bba-9cb9-84f885a8b186")
 	if err != nil {
 		log.Printf("❌ Error querying pages: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -1397,14 +1398,16 @@ func handleListPages(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 type PagePost struct {
-	ID          string            `json:"id"`
-	Message     string            `json:"message,omitempty"`
-	Story       string            `json:"story,omitempty"`
-	CreatedTime string            `json:"created_time"`
-	From        PagePostFrom      `json:"from"`
-	Likes       PagePostMetric    `json:"likes"`
-	Comments    PagePostMetric    `json:"comments"`
-	Shares      PagePostShares    `json:"shares,omitempty"`
+	ID          string               `json:"id"`
+	Message     string               `json:"message,omitempty"`
+	Story       string               `json:"story,omitempty"`
+	CreatedTime string               `json:"created_time"`
+	From        PagePostFrom         `json:"from"`
+	Likes       PagePostMetric       `json:"likes"`
+	Comments    PagePostMetric       `json:"comments"`
+	Shares      PagePostShares       `json:"shares,omitempty"`
+	FullPicture string               `json:"full_picture,omitempty"`
+	Attachments PagePostAttachments  `json:"attachments,omitempty"`
 }
 
 type PagePostFrom struct {
@@ -1424,12 +1427,38 @@ type PagePostShares struct {
 	Count int `json:"count"`
 }
 
+type PagePostAttachments struct {
+	Data []PagePostAttachment `json:"data,omitempty"`
+}
+
+type PagePostAttachment struct {
+	Media       PagePostMedia `json:"media,omitempty"`
+	Title       string        `json:"title,omitempty"`
+	Description string        `json:"description,omitempty"`
+	URL         string        `json:"url,omitempty"`
+}
+
+type PagePostMedia struct {
+	Image PagePostImage `json:"image,omitempty"`
+}
+
+type PagePostImage struct {
+	Height int    `json:"height,omitempty"`
+	Width  int    `json:"width,omitempty"`
+	Src    string `json:"src,omitempty"`
+}
+
 type PagePostsResponse struct {
-	PageName string     `json:"page_name"`
-	PageID   string     `json:"page_id"`
-	Platform string     `json:"platform"`
-	Posts    []PagePost `json:"posts"`
-	Count    int        `json:"count"`
+	PageName        string       `json:"page_name"`
+	PageID          string       `json:"page_id"`
+	Platform        string       `json:"platform"`
+	Posts           []PagePost   `json:"posts"`
+	Count           int          `json:"count"`
+	ProfilePicture  string       `json:"profile_picture,omitempty"`
+	FollowerCount   int64        `json:"follower_count,omitempty"`
+	LikeCount       int64        `json:"like_count,omitempty"`
+	About           string       `json:"about,omitempty"`
+	Website         string       `json:"website,omitempty"`
 }
 
 func handlePagePosts(w http.ResponseWriter, r *http.Request) {
@@ -1484,9 +1513,45 @@ func handlePagePosts(w http.ResponseWriter, r *http.Request) {
 }
 
 func getPagePosts(pageID, accessToken, limit, pageName, platform string) (*PagePostsResponse, error) {
-	// Call Facebook Feed API - exactly like your working Graph API Explorer call
+	// First get page basic info
+	pageInfoURL := fmt.Sprintf(
+		"https://graph.facebook.com/v23.0/%s?fields=name,picture,fan_count,followers_count,about,website&access_token=%s",
+		pageID, accessToken,
+	)
+
+	log.Printf("🔍 Facebook Page Info API call: %s", pageInfoURL)
+
+	pageResp, err := http.Get(pageInfoURL)
+	if err != nil {
+		log.Printf("⚠️ Error calling Facebook Page Info API (continuing with posts): %v", err)
+	}
+	
+	var pageInfo struct {
+		Name          string `json:"name"`
+		Picture       struct {
+			Data struct {
+				URL string `json:"url"`
+			} `json:"data"`
+		} `json:"picture"`
+		FanCount       int64  `json:"fan_count"`
+		FollowersCount int64  `json:"followers_count"`
+		About          string `json:"about"`
+		Website        string `json:"website"`
+	}
+	
+	if pageResp != nil {
+		defer pageResp.Body.Close()
+		if pageResp.StatusCode == http.StatusOK {
+			if pageBody, err := io.ReadAll(pageResp.Body); err == nil {
+				json.Unmarshal(pageBody, &pageInfo)
+				log.Printf("✅ Page info loaded: %s, followers: %d", pageInfo.Name, pageInfo.FollowersCount)
+			}
+		}
+	}
+
+	// Call Facebook Feed API with enhanced fields including images
 	postsURL := fmt.Sprintf(
-		"https://graph.facebook.com/v23.0/%s/feed?fields=id,message,story,created_time,from,likes.summary(true),comments.summary(true),shares&limit=%s&access_token=%s",
+		"https://graph.facebook.com/v23.0/%s/feed?fields=id,message,story,created_time,from,likes.summary(true),comments.summary(true),shares,full_picture,attachments{media,url,title,description}&limit=%s&access_token=%s",
 		pageID, limit, accessToken,
 	)
 
@@ -1531,11 +1596,16 @@ func getPagePosts(pageID, accessToken, limit, pageName, platform string) (*PageP
 
 	// Build response
 	response := &PagePostsResponse{
-		PageName: pageName,
-		PageID:   pageID,
-		Platform: platform,
-		Posts:    fbData.Data,
-		Count:    len(fbData.Data),
+		PageName:       pageName,
+		PageID:         pageID,
+		Platform:       platform,
+		Posts:          fbData.Data,
+		Count:          len(fbData.Data),
+		ProfilePicture: pageInfo.Picture.Data.URL,
+		FollowerCount:  pageInfo.FollowersCount,
+		LikeCount:      pageInfo.FanCount,
+		About:          pageInfo.About,
+		Website:        pageInfo.Website,
 	}
 
 	log.Printf("✅ Successfully processed posts for %s: %d posts found", 

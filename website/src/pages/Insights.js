@@ -100,6 +100,19 @@ function Insights() {
     window.location.href = '/login';
   };
 
+  const handleLogout = () => {
+    if (window.confirm('Are you sure you want to disconnect your Facebook pages?')) {
+      // Clear all state
+      setConnectedPages([]);
+      setSelectedPage(null);
+      setPostsData(null);
+      setLoading(false);
+      setError(null);
+      // Clear any localStorage flags
+      localStorage.removeItem('facebook_connected');
+    }
+  };
+
 
   if (loading && connectedPages.length === 0) {
     return (
@@ -137,35 +150,40 @@ function Insights() {
 
   return (
     <div className="insights-container">
-      <div className="insights-header">
-        <h1>📱 Latest Posts</h1>
-        <div className="insights-controls">
-          <select 
-            value={selectedPage?.page_id || ''} 
-            onChange={(e) => {
-              const page = connectedPages.find(p => p.page_id === e.target.value);
-              setSelectedPage(page);
-            }}
-            className="page-selector"
-          >
-            {connectedPages.map(page => (
-              <option key={page.page_id} value={page.page_id}>
-                {page.name} ({page.platform})
-              </option>
-            ))}
-          </select>
-          
-          <select 
-            value={selectedLimit} 
-            onChange={(e) => setSelectedLimit(e.target.value)}
-            className="period-selector"
-          >
-            <option value="5">Last 5 Posts</option>
-            <option value="10">Last 10 Posts</option>
-            <option value="20">Last 20 Posts</option>
-          </select>
+      <div className="insights-content-wrapper">
+        <div className="insights-header">
+          <h1>📱 Latest Posts</h1>
+          <div className="insights-controls">
+            <select 
+              value={selectedPage?.page_id || ''} 
+              onChange={(e) => {
+                const page = connectedPages.find(p => p.page_id === e.target.value);
+                setSelectedPage(page);
+              }}
+              className="page-selector"
+            >
+              {connectedPages.map(page => (
+                <option key={page.page_id} value={page.page_id}>
+                  {page.name} ({page.platform})
+                </option>
+              ))}
+            </select>
+            
+            <select 
+              value={selectedLimit} 
+              onChange={(e) => setSelectedLimit(e.target.value)}
+              className="period-selector"
+            >
+              <option value="5">Last 5 Posts</option>
+              <option value="10">Last 10 Posts</option>
+              <option value="20">Last 20 Posts</option>
+            </select>
+
+            <button onClick={handleLogout} className="logout-btn">
+              <i className="fas fa-sign-out-alt"></i> Disconnect
+            </button>
+          </div>
         </div>
-      </div>
 
       {error && (
         <div className="error-state">
@@ -184,10 +202,56 @@ function Insights() {
         </div>
       ) : postsData ? (
         <div className="insights-content">
-          {/* Page Summary */}
+          {/* Enhanced Page Summary */}
           <div className="page-summary">
-            <h2>📄 {postsData.page_name}</h2>
-            <p>Platform: {postsData.platform} • Total Posts Found: {postsData.count}</p>
+            <div className="page-profile">
+              {postsData.profile_picture ? (
+                <img 
+                  src={postsData.profile_picture} 
+                  alt={`${postsData.page_name} profile`}
+                  className="page-avatar"
+                />
+              ) : (
+                <div className="page-avatar-placeholder">
+                  <i className="fab fa-facebook"></i>
+                </div>
+              )}
+              <div className="page-info">
+                <h2>{postsData.page_name}</h2>
+                <div className="page-stats">
+                  {postsData.follower_count > 0 && (
+                    <span className="page-stat">
+                      <i className="fas fa-users"></i>
+                      {postsData.follower_count.toLocaleString()} followers
+                    </span>
+                  )}
+                  {postsData.like_count > 0 && (
+                    <span className="page-stat">
+                      <i className="fas fa-thumbs-up"></i>
+                      {postsData.like_count.toLocaleString()} likes
+                    </span>
+                  )}
+                  <span className="page-stat">
+                    <i className="fas fa-rss"></i>
+                    {postsData.count} posts shown
+                  </span>
+                </div>
+                {postsData.about && (
+                  <p className="page-about">{postsData.about}</p>
+                )}
+                {postsData.website && (
+                  <a 
+                    href={postsData.website} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="page-website"
+                  >
+                    <i className="fas fa-external-link-alt"></i>
+                    Visit Website
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Posts Feed */}
@@ -197,7 +261,15 @@ function Insights() {
                 <div key={post.id} className="post-card">
                   <div className="post-header">
                     <div className="post-author">
-                      <i className="fab fa-facebook"></i>
+                      {postsData.profile_picture ? (
+                        <img 
+                          src={postsData.profile_picture} 
+                          alt={post.from.name}
+                          className="post-author-avatar"
+                        />
+                      ) : (
+                        <i className="fab fa-facebook"></i>
+                      )}
                       <span>{post.from.name}</span>
                     </div>
                     <div className="post-date">
@@ -220,6 +292,40 @@ function Insights() {
                         <i className="fas fa-info-circle"></i>
                         {post.story}
                       </p>
+                    )}
+                    
+                    {/* Post Image */}
+                    {post.full_picture && (
+                      <div className="post-image-container">
+                        <img 
+                          src={post.full_picture} 
+                          alt="Post content"
+                          className="post-image"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Attachment Images */}
+                    {post.attachments && post.attachments.data && post.attachments.data.length > 0 && (
+                      <div className="post-attachments">
+                        {post.attachments.data.map((attachment, i) => (
+                          <div key={i} className="post-attachment">
+                            {attachment.media && attachment.media.image && (
+                              <img 
+                                src={attachment.media.image.src} 
+                                alt={attachment.title || "Attachment"}
+                                className="post-attachment-image"
+                              />
+                            )}
+                            {attachment.title && (
+                              <p className="attachment-title">{attachment.title}</p>
+                            )}
+                            {attachment.description && (
+                              <p className="attachment-description">{attachment.description}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                   
@@ -250,19 +356,9 @@ function Insights() {
             )}
           </div>
 
-          <div className="feature-note">
-            <h4>💡 About This Feature</h4>
-            <p>This dashboard demonstrates the legitimate business use of Facebook's <code>pages_read_engagement</code> permission:</p>
-            <ul>
-              <li><strong>Get content posted by your Page</strong> - View recent posts and updates</li>
-              <li><strong>Read engagement metrics</strong> - See likes, comments, and shares</li>
-              <li><strong>Manage Page content</strong> - Monitor post performance and engagement</li>
-              <li><strong>Page administration</strong> - Help Page Admins manage their content effectively</li>
-            </ul>
-            <p>All data is retrieved directly from Facebook's Pages API using legitimate page management permissions.</p>
-          </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
