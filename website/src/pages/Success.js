@@ -132,38 +132,34 @@ function Success() {
           <>
             <i className="fas fa-check-circle success-icon"></i>
             <h1>¡Configuración Completada!</h1>
-            <p>Tu cuenta ha sido configurada automáticamente. Tus páginas de Facebook e Instagram ya están listas para recibir mensajes y usar el chatbot de Neurocrow.</p>
+            <p>Tu cuenta ha sido configurada automáticamente. Tus páginas ya están listas para recibir mensajes y usar el chatbot de Neurocrow.</p>
             
-            <div className="setup-summary" style={{ margin: '20px 0', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px', textAlign: 'left' }}>
-              <h3 style={{ margin: '0 0 10px 0', color: '#28a745' }}>✅ Configuración completada:</h3>
-              <ul style={{ margin: '0', paddingLeft: '20px' }}>
-                <li>📱 Páginas de Facebook e Instagram conectadas</li>
-                <li>🔗 Webhooks Facebook configurados vía API</li>
-                <li>📲 Webhooks Instagram configurados a nivel de app</li>
-                <li>📨 Protocolo de mensajería activado (Facebook)</li>
-                <li>🤖 Bot listo para responder mensajes en ambas plataformas</li>
-                <li>📱 Posts y contenido de página disponibles</li>
-                <li>📝 <em>Instagram funciona automáticamente vía configuración central</em></li>
-              </ul>
-            </div>
-            
-            <div className="next-steps" style={{ margin: '20px 0' }}>
+            <div className="next-steps" style={{ margin: '30px 0' }}>
               <a 
                 href="/insights" 
                 className="insights-btn"
                 style={{
                   display: 'inline-block',
-                  background: '#667eea',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                   color: 'white',
-                  padding: '12px 24px',
-                  borderRadius: '8px',
+                  padding: '15px 30px',
+                  borderRadius: '12px',
                   textDecoration: 'none',
                   fontWeight: '600',
-                  marginRight: '15px',
+                  fontSize: '16px',
+                  boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)',
                   transition: 'all 0.3s ease'
                 }}
-                onMouseOver={(e) => e.target.style.background = '#5a6fd8'}
-                onMouseOut={(e) => e.target.style.background = '#667eea'}
+                onMouseOver={(e) => {
+                  e.target.style.background = 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)';
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+                }}
+                onMouseOut={(e) => {
+                  e.target.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.3)';
+                }}
               >
                 <i className="fas fa-rss"></i> Ver Últimos Posts
               </a>

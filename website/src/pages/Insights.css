@@ -101,22 +101,30 @@
 }
 
 .connect-btn {
-  background: var(--color-accent);
+  background: linear-gradient(135deg, #1877F2 0%, #166FE5 100%);
   color: white;
   border: none;
-  padding: 15px 30px;
-  border-radius: 8px;
-  font-size: 16px;
+  padding: 18px 40px;
+  border-radius: 12px;
+  font-size: 18px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  margin-top: 20px;
+  margin-top: 30px;
+  box-shadow: 0 4px 20px rgba(24, 119, 242, 0.3);
+  position: relative;
+  overflow: hidden;
 }
 
 .connect-btn:hover {
-  background: #0051BC;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, #166FE5 0%, #1460D1 100%);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(24, 119, 242, 0.4);
+}
+
+.connect-btn:active {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(24, 119, 242, 0.3);
 }
 
 .connect-btn i {
