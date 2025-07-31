@@ -3,7 +3,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -12,11 +14,26 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 var tmpl *template.Template
+
+// Session management for demo authentication
+type Session struct {
+	Token     string
+	ClientID  string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+var (
+	sessions     = make(map[string]*Session)
+	sessionMutex = sync.RWMutex{}
+)
 
 func init() {
 	tmpl = template.Must(template.ParseGlob("templates/*.html"))
@@ -36,15 +53,16 @@ func main() {
 	// Wrap ALL routes with CORS middleware
 	router := http.NewServeMux()
 
-	// Apply CORS to all routes
+	// Apply CORS to all routes - protected routes require authentication
 	router.HandleFunc("/", corsMiddleware(handlePages))
 	router.HandleFunc("/facebook-token", corsMiddleware(handleFacebookToken))
-	router.HandleFunc("/activate-form", corsMiddleware(handleActivateForm))
-	router.HandleFunc("/activate-page", corsMiddleware(handleActivatePage))
-	router.HandleFunc("/deactivate-page", corsMiddleware(handleDeactivatePage))
-	router.HandleFunc("/insights", corsMiddleware(handleInsights))
-	router.HandleFunc("/posts", corsMiddleware(handlePagePosts))
-	router.HandleFunc("/pages", corsMiddleware(handleListPages))
+	router.HandleFunc("/activate-form", corsMiddleware(requireAuth(handleActivateForm)))
+	router.HandleFunc("/activate-page", corsMiddleware(requireAuth(handleActivatePage)))
+	router.HandleFunc("/deactivate-page", corsMiddleware(requireAuth(handleDeactivatePage)))
+	router.HandleFunc("/insights", corsMiddleware(requireAuth(handleInsights)))
+	router.HandleFunc("/posts", corsMiddleware(requireAuth(handlePagePosts)))
+	router.HandleFunc("/pages", corsMiddleware(requireAuth(handleListPages)))
+	router.HandleFunc("/logout", corsMiddleware(handleLogout))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -62,6 +80,86 @@ type PageData struct {
 	ClientName  string
 	BotpressURL string
 	Status      string
+}
+
+// Session management functions
+func generateSessionToken() string {
+	bytes := make([]byte, 32)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
+func createSession(clientID string) string {
+	sessionMutex.Lock()
+	defer sessionMutex.Unlock()
+	
+	token := generateSessionToken()
+	sessions[token] = &Session{
+		Token:     token,
+		ClientID:  clientID,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(24 * time.Hour), // 24 hour expiry
+	}
+	
+	log.Printf("🔐 Created session for client %s: %s", clientID, token[:16]+"...")
+	return token
+}
+
+func validateSession(token string) (*Session, bool) {
+	sessionMutex.RLock()
+	defer sessionMutex.RUnlock()
+	
+	session, exists := sessions[token]
+	if !exists {
+		return nil, false
+	}
+	
+	if time.Now().After(session.ExpiresAt) {
+		// Session expired, clean it up
+		delete(sessions, token)
+		return nil, false
+	}
+	
+	return session, true
+}
+
+func deleteSession(token string) {
+	sessionMutex.Lock()
+	defer sessionMutex.Unlock()
+	
+	delete(sessions, token)
+	log.Printf("🔐 Deleted session: %s", token[:16]+"...")
+}
+
+func requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		if token == "" {
+			// Try cookie as fallback
+			if cookie, err := r.Cookie("session_token"); err == nil {
+				token = cookie.Value
+			}
+		} else {
+			// Remove "Bearer " prefix if present
+			token = strings.TrimPrefix(token, "Bearer ")
+		}
+		
+		if token == "" {
+			log.Printf("🚫 No session token provided for %s", r.URL.Path)
+			http.Error(w, "Authentication required", http.StatusUnauthorized)
+			return
+		}
+		
+		session, valid := validateSession(token)
+		if !valid {
+			log.Printf("🚫 Invalid session token for %s: %s", r.URL.Path, token[:16]+"...")
+			http.Error(w, "Invalid or expired session", http.StatusUnauthorized)
+			return
+		}
+		
+		log.Printf("✅ Valid session for %s: client %s", r.URL.Path, session.ClientID)
+		next(w, r)
+	}
 }
 
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -455,12 +553,51 @@ func handleFacebookToken(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("🎯 Webhook automation summary: %d/%d pages configured successfully", webhookSuccessCount, len(pages))
 	
+	// Create session for the authenticated user
+	sessionToken := createSession(clientID)
+	
 	if socialTx != nil {
 		log.Printf("✅ Successfully completed Facebook token request with webhook automation. Changes committed to both pages and social_pages tables.")
 	} else {
 		log.Printf("✅ Successfully completed Facebook token request with webhook automation. Changes committed to pages table only.")
 	}
-	w.WriteHeader(http.StatusOK)
+	
+	// Return session token to client
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"session_token": sessionToken,
+		"client_id":    clientID,
+		"message":      "Authentication successful",
+	})
+}
+
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	// Get session token from header or cookie
+	token := r.Header.Get("Authorization")
+	if token == "" {
+		if cookie, err := r.Cookie("session_token"); err == nil {
+			token = cookie.Value
+		}
+	} else {
+		token = strings.TrimPrefix(token, "Bearer ")
+	}
+	
+	if token != "" {
+		deleteSession(token)
+		log.Printf("🔐 User logged out, session deleted")
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Logged out successfully",
+	})
 }
 
 // Enhanced getFacebookUser function

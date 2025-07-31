@@ -40,30 +40,39 @@ function Success() {
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
-      
-      // Simulate progress through the setup steps
-      setSetupProgress(prev => ({ ...prev, pageConnection: 'success' }));
-      
-      // Simulate webhook setup (in reality this happens in backend)
-      setTimeout(() => {
-        setSetupProgress(prev => ({ ...prev, webhookSetup: 'in_progress' }));
+      return response.json();
+    })
+    .then(data => {
+      if (data.success && data.session_token) {
+        // Store session token for authenticated requests
+        localStorage.setItem('session_token', data.session_token);
+        localStorage.setItem('client_id', data.client_id);
+        localStorage.setItem('facebook_connected', 'true');
         
+        // Simulate progress through the setup steps
+        setSetupProgress(prev => ({ ...prev, pageConnection: 'success' }));
+        
+        // Simulate webhook setup (in reality this happens in backend)
         setTimeout(() => {
-          setSetupProgress(prev => ({ ...prev, webhookSetup: 'success' }));
+          setSetupProgress(prev => ({ ...prev, webhookSetup: 'in_progress' }));
           
-          // Simulate handover protocol setup
           setTimeout(() => {
-            setSetupProgress(prev => ({ ...prev, handoverConfig: 'in_progress' }));
+            setSetupProgress(prev => ({ ...prev, webhookSetup: 'success' }));
             
+            // Simulate handover protocol setup
             setTimeout(() => {
-              setSetupProgress(prev => ({ ...prev, handoverConfig: 'success' }));
-              setSyncStatus('success');
-              // Mark Facebook as connected for insights page
-              localStorage.setItem('facebook_connected', 'true');
+              setSetupProgress(prev => ({ ...prev, handoverConfig: 'in_progress' }));
+              
+              setTimeout(() => {
+                setSetupProgress(prev => ({ ...prev, handoverConfig: 'success' }));
+                setSyncStatus('success');
+              }, 1000);
             }, 1000);
-          }, 1000);
-        }, 1500);
-      }, 1000);
+          }, 1500);
+        }, 1000);
+      } else {
+        throw new Error('Authentication failed - no session token received');
+      }
     })
     .catch(error => {
       console.error('Error syncing pages:', error);

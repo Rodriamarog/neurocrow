@@ -9,9 +9,28 @@ function Insights() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Helper function to get authentication headers
+  const getAuthHeaders = () => {
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+      return {};
+    }
+    
+    return {
+      'Authorization': `Bearer ${sessionToken}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
   // Check for connected pages on component mount
   useEffect(() => {
-    checkConnectedPages();
+    // Only check for pages if we have a session token
+    const sessionToken = localStorage.getItem('session_token');
+    if (sessionToken) {
+      checkConnectedPages();
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   // Fetch posts when page or limit changes
@@ -24,8 +43,21 @@ function Insights() {
   const checkConnectedPages = async () => {
     try {
       console.log('🔍 Fetching connected pages from API...');
+      const authHeaders = getAuthHeaders();
+      
+      if (!authHeaders.Authorization) {
+        console.log('❌ No session token found, user not authenticated');
+        setConnectedPages([]);
+        setLoading(false);
+        return;
+      }
+      
       const response = await fetch(
-        'https://neurocrow-client-manager.onrender.com/pages'
+        'https://neurocrow-client-manager.onrender.com/pages',
+        {
+          method: 'GET',
+          headers: authHeaders
+        }
       );
       
       console.log('📡 Pages API response status:', response.status);
@@ -66,8 +98,18 @@ function Insights() {
     
     try {
       console.log(`🔍 Fetching posts for page ${pageId}, limit ${limit}...`);
+      const authHeaders = getAuthHeaders();
+      
+      if (!authHeaders.Authorization) {
+        throw new Error('No authentication token available');
+      }
+      
       const response = await fetch(
-        `https://neurocrow-client-manager.onrender.com/posts?pageId=${pageId}&limit=${limit}`
+        `https://neurocrow-client-manager.onrender.com/posts?pageId=${pageId}&limit=${limit}`,
+        {
+          method: 'GET',
+          headers: authHeaders
+        }
       );
       
       console.log('📱 Posts API response status:', response.status);
@@ -100,16 +142,37 @@ function Insights() {
     window.location.href = '/login';
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (window.confirm('Are you sure you want to disconnect your Facebook pages?')) {
-      // Clear all state
+      const authHeaders = getAuthHeaders();
+      
+      // Call backend logout endpoint if we have a session token
+      if (authHeaders.Authorization) {
+        try {
+          await fetch('https://neurocrow-client-manager.onrender.com/logout', {
+            method: 'POST',
+            headers: authHeaders
+          });
+          console.log('✅ Successfully logged out from server');
+        } catch (error) {
+          console.error('⚠️ Error logging out from server:', error);
+          // Continue with local logout anyway
+        }
+      }
+      
+      // Clear all local state and storage
       setConnectedPages([]);
       setSelectedPage(null);
       setPostsData(null);
       setLoading(false);
       setError(null);
-      // Clear any localStorage flags
+      
+      // Clear localStorage
       localStorage.removeItem('facebook_connected');
+      localStorage.removeItem('session_token');
+      localStorage.removeItem('client_id');
+      
+      console.log('🔐 Local logout completed');
     }
   };
 
@@ -152,7 +215,7 @@ function Insights() {
     <div className="insights-container">
       <div className="insights-content-wrapper">
         <div className="insights-header">
-          <h1>📱 Latest Posts</h1>
+          <h1>Latest Posts</h1>
           <div className="insights-controls">
             <select 
               value={selectedPage?.page_id || ''} 
