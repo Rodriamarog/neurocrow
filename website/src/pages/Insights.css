@@ -100,35 +100,41 @@
   color: var(--color-text-light);
 }
 
+.no-pages-state .connect-btn,
 .connect-btn {
-  background: linear-gradient(135deg, #1877F2 0%, #166FE5 100%);
-  color: white;
-  border: none;
-  padding: 18px 40px;
-  border-radius: 12px;
-  font-size: 18px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin-top: 30px;
-  box-shadow: 0 4px 20px rgba(24, 119, 242, 0.3);
-  position: relative;
-  overflow: hidden;
+  background: linear-gradient(135deg, #1877F2 0%, #166FE5 100%) !important;
+  color: white !important;
+  border: none !important;
+  padding: 18px 40px !important;
+  border-radius: 12px !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.3s ease !important;
+  margin-top: 30px !important;
+  box-shadow: 0 4px 20px rgba(24, 119, 242, 0.3) !important;
+  position: relative !important;
+  overflow: hidden !important;
+  text-decoration: none !important;
+  display: inline-block !important;
 }
 
+.no-pages-state .connect-btn:hover,
 .connect-btn:hover {
-  background: linear-gradient(135deg, #166FE5 0%, #1460D1 100%);
-  transform: translateY(-3px);
-  box-shadow: 0 8px 25px rgba(24, 119, 242, 0.4);
+  background: linear-gradient(135deg, #166FE5 0%, #1460D1 100%) !important;
+  transform: translateY(-3px) !important;
+  box-shadow: 0 8px 25px rgba(24, 119, 242, 0.4) !important;
 }
 
+.no-pages-state .connect-btn:active,
 .connect-btn:active {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 15px rgba(24, 119, 242, 0.3);
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 15px rgba(24, 119, 242, 0.3) !important;
 }
 
+.no-pages-state .connect-btn i,
 .connect-btn i {
-  margin-right: 8px;
+  margin-right: 8px !important;
 }
 
 .logout-btn {
