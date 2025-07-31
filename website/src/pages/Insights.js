@@ -203,7 +203,7 @@ function Insights() {
             <li>📝 Post content and page updates</li>
             <li>📊 Engagement metrics per post</li>
           </ul>
-          <button onClick={handleConnectFacebook} className="connect-btn">
+          <button onClick={handleConnectFacebook} className="facebook-login-btn">
             <i className="fab fa-facebook"></i> Connect Facebook Pages
           </button>
         </div>
