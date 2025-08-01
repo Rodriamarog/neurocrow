@@ -10,13 +10,13 @@ import (
 )
 
 func getOrCreateConversation(ctx context.Context, pageID, threadID, platform string) (*ConversationState, error) {
-	// Get UUID for database operations
+	// Get UUID for database operations - FIXED: Include platform to avoid conflicts
 	var pageUUID string
 	err := db.QueryRowContext(ctx, `
         SELECT id 
         FROM social_pages 
-        WHERE page_id = $1
-    `, pageID).Scan(&pageUUID)
+        WHERE page_id = $1 AND platform = $2
+    `, pageID, platform).Scan(&pageUUID)
 	if err != nil {
 		return nil, fmt.Errorf("error finding page: %v", err)
 	}
@@ -252,13 +252,13 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, platform string) error {
 	log.Printf("🔍 Updating conversation for human agent message: pageID=%s, threadID=%s, platform=%s", pageID, threadID, platform)
 
-	// Get UUID for database operations
+	// Get UUID for database operations - FIXED: Include platform to avoid conflicts
 	var pageUUID string
 	err := db.QueryRowContext(ctx, `
         SELECT id 
         FROM social_pages 
-        WHERE page_id = $1
-    `, pageID).Scan(&pageUUID)
+        WHERE page_id = $1 AND platform = $2
+    `, pageID, platform).Scan(&pageUUID)
 	if err != nil {
 		return fmt.Errorf("error finding page: %v", err)
 	}

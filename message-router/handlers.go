@@ -209,7 +209,7 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent, requestID st
 				continue
 			}
 
-			pageInfo, err := getPageInfo(ctx, entry.ID)
+			pageInfo, err := getPageInfo(ctx, entry.ID, platform)
 			if err != nil {
 				LogError("[%s] Failed to get page info for %s: %v", requestID, entry.ID, err)
 				continue
@@ -377,9 +377,9 @@ func handleBotpressResponse(w http.ResponseWriter, r *http.Request) {
 
 		pageID, senderID := parts[0], parts[1]
 
-		// Get page info to determine platform
+		// Get page info to determine platform (legacy Botpress - try to get any active page)
 		ctx := context.Background()
-		pageInfo, err := getPageInfo(ctx, pageID)
+		pageInfo, err := getPageInfoLegacy(ctx, pageID)
 		if err != nil {
 			log.Printf("❌ Error getting page info: %v", err)
 			w.WriteHeader(http.StatusOK)
@@ -549,14 +549,14 @@ func getBotpressURL(ctx context.Context, pageID string) (string, error) {
 
 // getDifyApiKey retrieves the Dify API key for a specific page from database
 // Each client/page has their own Dify app with unique API key (multi-tenant)
-func getDifyApiKey(ctx context.Context, pageID string) (string, error) {
+func getDifyApiKey(ctx context.Context, pageID string, platform string) (string, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var difyAPIKey string
 	err := db.QueryRowContext(queryCtx,
-		"SELECT dify_api_key FROM social_pages WHERE page_id = $1 AND status = 'active'",
-		pageID,
+		"SELECT dify_api_key FROM social_pages WHERE page_id = $1 AND platform = $2 AND status = 'active'",
+		pageID, platform,
 	).Scan(&difyAPIKey)
 
 	if err != nil {
@@ -603,7 +603,7 @@ func forwardToDify(ctx context.Context, pageID string, msg MessagingEntry, platf
 	}
 
 	// Get Dify API key
-	apiKey, err := getDifyApiKey(ctx, pageID)
+	apiKey, err := getDifyApiKey(ctx, pageID, platform)
 	if err != nil {
 		return fmt.Errorf("error getting Dify API key: %v", err)
 	}
@@ -721,7 +721,7 @@ func handleDifyResponseDirect(ctx context.Context, pageID, senderID, platform st
 	}
 
 	// Get page info to determine platform details
-	pageInfo, err := getPageInfo(ctx, pageID)
+	pageInfo, err := getPageInfo(ctx, pageID, platform)
 	if err != nil {
 		return fmt.Errorf("error getting page info: %v", err)
 	}
@@ -817,11 +817,31 @@ func processHandoverEvents(ctx context.Context, entry EntryData, requestID strin
 	LogDebug("[%s] ✅ Handover events processed", requestID)
 }
 
-func getPageInfo(ctx context.Context, pageID string) (*PageInfo, error) {
+func getPageInfo(ctx context.Context, pageID string, platform string) (*PageInfo, error) {
 	var info PageInfo
 	info.PageID = pageID
 	err := db.QueryRowContext(ctx,
-		"SELECT platform, access_token FROM social_pages WHERE page_id = $1 AND status = 'active'",
+		"SELECT platform, access_token FROM social_pages WHERE page_id = $1 AND platform = $2 AND status = 'active'",
+		pageID, platform,
+	).Scan(&info.Platform, &info.AccessToken)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no active page found for ID %s with platform %s", pageID, platform)
+		}
+		return nil, fmt.Errorf("database error: %v", err)
+	}
+
+	return &info, nil
+}
+
+// getPageInfoLegacy is a fallback function for legacy Botpress code that doesn't have platform context
+// It returns the first active page found for the given pageID (could be Facebook or Instagram)
+func getPageInfoLegacy(ctx context.Context, pageID string) (*PageInfo, error) {
+	var info PageInfo
+	info.PageID = pageID
+	err := db.QueryRowContext(ctx,
+		"SELECT platform, access_token FROM social_pages WHERE page_id = $1 AND status = 'active' LIMIT 1",
 		pageID,
 	).Scan(&info.Platform, &info.AccessToken)
 
@@ -832,6 +852,7 @@ func getPageInfo(ctx context.Context, pageID string) (*PageInfo, error) {
 		return nil, fmt.Errorf("database error: %v", err)
 	}
 
+	log.Printf("⚠️ Legacy getPageInfo used for pageID %s, returned platform: %s", pageID, info.Platform)
 	return &info, nil
 }
 
@@ -938,7 +959,7 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get page info for access token
-	pageInfo, err := getPageInfo(r.Context(), req.PageID)
+	pageInfo, err := getPageInfo(r.Context(), req.PageID, req.Platform)
 	if err != nil {
 		log.Printf("❌ Error getting page info: %v", err)
 		http.Error(w, "Error getting page info", http.StatusInternalServerError)
