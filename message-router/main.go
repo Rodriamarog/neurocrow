@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -103,6 +104,10 @@ var (
 	}
 	config            Config
 	sentimentAnalyzer *sentiment.Analyzer
+	
+	// Instagram bot flag system - tracks which messages are bot responses
+	botFlags      = make(map[string]bool) // conversation_id -> is_bot_message
+	botFlagsMutex = sync.RWMutex{}
 )
 
 func init() {
@@ -294,14 +299,19 @@ func setupRouter() *http.ServeMux {
 
 	// New endpoint for sending messages from the dashboard
 	router.HandleFunc("/send-message", logMiddleware(recoverMiddleware(handleSendMessage)))
+	
+	// Instagram bot flag endpoint for Dify integration
+	router.HandleFunc("/api/mark-bot-response", logMiddleware(recoverMiddleware(handleMarkBotResponse)))
 
 	// Log registered routes
 	log.Printf("📍 Registered routes:")
 	log.Printf("   - GET/POST/HEAD / (Health Check)")
 	log.Printf("   - GET/POST /webhook (Facebook/Instagram Webhook)")
 	log.Printf("   - POST /send-message (Dashboard Message Sender)")
+	log.Printf("   - POST /api/mark-bot-response (Instagram Bot Flag)")
 	log.Printf("🤖 AI Integration: Dify (per-page API keys)")
 	log.Printf("📊 Database: Multi-tenant client support")
+	log.Printf("📱 Instagram: Bot flag system for reliable human/bot detection")
 
 	return router
 }
@@ -311,6 +321,55 @@ func cleanup() {
 		log.Printf("🧹 Closing database connection...")
 		db.Close()
 	}
+}
+
+// =============================================================================
+// INSTAGRAM BOT FLAG SYSTEM
+// =============================================================================
+
+// setBotFlag marks a conversation as having a bot response pending
+func setBotFlag(conversationID string) {
+	botFlagsMutex.Lock()
+	defer botFlagsMutex.Unlock()
+	botFlags[conversationID] = true
+	log.Printf("🤖 Bot flag SET for conversation: %s", conversationID)
+}
+
+// hasBotFlag checks if a conversation has a bot response flag
+func hasBotFlag(conversationID string) bool {
+	botFlagsMutex.RLock()
+	defer botFlagsMutex.RUnlock()
+	hasFlag := botFlags[conversationID]
+	log.Printf("🔍 Bot flag CHECK for conversation %s: %v", conversationID, hasFlag)
+	return hasFlag
+}
+
+// clearBotFlag removes the bot response flag for a conversation
+func clearBotFlag(conversationID string) {
+	botFlagsMutex.Lock()
+	defer botFlagsMutex.Unlock()
+	delete(botFlags, conversationID)
+	log.Printf("🗑️ Bot flag CLEARED for conversation: %s", conversationID)
+}
+
+// handleMarkBotResponse handles the API endpoint for Dify to mark bot responses
+func handleMarkBotResponse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	conversationID := r.URL.Query().Get("conversation_id")
+	if conversationID == "" {
+		http.Error(w, "Missing conversation_id parameter", http.StatusBadRequest)
+		return
+	}
+	
+	setBotFlag(conversationID)
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status":"success","conversation_id":"%s","message":"Bot flag set"}`, conversationID)
 }
 
 // Bot reactivation system: 12-hour rule with message-triggered checks

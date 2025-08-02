@@ -150,36 +150,69 @@ func processMessagesAsync(ctx context.Context, event FacebookEvent, requestID st
 			if msg.Message.IsEcho {
 				LogInfo("[%s] 🔍 Echo message detected - analyzing app_id and sender", requestID)
 				
-				// Check if this is a bot echo (our own bot responses)
-				if msg.Message.AppId == 1195277397801905 {
-					LogInfo("[%s] 🤖 Bot echo message detected (app_id: %d) - skipping", requestID, msg.Message.AppId)
-					continue
+				// Normalize platform name
+				platform := event.Object
+				if platform == "page" {
+					platform = "facebook"
 				}
 				
-				// Check if this is a human agent message (sender = page)
-				if msg.Sender.ID == entry.ID {
-					LogInfo("[%s] 👤 HUMAN AGENT MESSAGE DETECTED! sender=%s matches page=%s, app_id=%d", 
-						requestID, msg.Sender.ID, entry.ID, msg.Message.AppId)
+				// Instagram-specific logic using bot flag system
+				if platform == "instagram" {
+					LogInfo("[%s] 📱 Instagram echo message - checking bot flag", requestID)
 					
-					// Auto-disable bot for human agent intervention
-					platform := event.Object
-					if platform == "page" {
-						platform = "facebook"
-					}
+					// Construct conversation ID (pageID-senderID, but for echo messages sender=page, recipient=user)
+					conversationID := fmt.Sprintf("%s-%s", entry.ID, msg.Recipient.ID)
 					
-					LogInfo("[%s] 🔴 Auto-disabling bot due to human agent intervention", requestID)
-					err := updateConversationForHumanMessage(ctx, entry.ID, msg.Recipient.ID, platform)
-					if err != nil {
-						LogError("[%s] ❌ Failed to disable bot for human agent: %v", requestID, err)
+					// Check if this message has a bot flag
+					if hasBotFlag(conversationID) {
+						LogInfo("[%s] 🤖 Instagram bot message confirmed by flag - skipping", requestID)
+						clearBotFlag(conversationID) // Clear the flag after use
+						continue
 					} else {
-						LogInfo("[%s] ✅ Bot successfully disabled for human agent", requestID)
+						LogInfo("[%s] 👤 Instagram human agent message detected (no bot flag) - disabling bot", requestID)
+						
+						// Auto-disable bot for human agent intervention
+						err := updateConversationForHumanMessage(ctx, entry.ID, msg.Recipient.ID, platform)
+						if err != nil {
+							LogError("[%s] ❌ Failed to disable bot for human agent: %v", requestID, err)
+						} else {
+							LogInfo("[%s] ✅ Bot successfully disabled for human agent", requestID)
+						}
+						continue
 					}
+				}
+				
+				// Facebook logic (unchanged)
+				if platform == "facebook" {
+					// Check if this is a bot echo (our own bot responses)
+					if msg.Message.AppId == 1195277397801905 {
+						LogInfo("[%s] 🤖 Facebook bot echo message detected (app_id: %d) - skipping", requestID, msg.Message.AppId)
+						continue
+					}
+					
+					// Check if this is a human agent message (sender = page)
+					if msg.Sender.ID == entry.ID {
+						LogInfo("[%s] 👤 Facebook human agent message detected! sender=%s matches page=%s, app_id=%d", 
+							requestID, msg.Sender.ID, entry.ID, msg.Message.AppId)
+						
+						LogInfo("[%s] 🔴 Auto-disabling bot due to human agent intervention", requestID)
+						err := updateConversationForHumanMessage(ctx, entry.ID, msg.Recipient.ID, platform)
+						if err != nil {
+							LogError("[%s] ❌ Failed to disable bot for human agent: %v", requestID, err)
+						} else {
+							LogInfo("[%s] ✅ Bot successfully disabled for human agent", requestID)
+						}
+						continue
+					}
+					
+					// Unknown Facebook echo message pattern
+					LogWarn("[%s] ⚠️ Unknown Facebook echo pattern: sender=%s, page=%s, app_id=%d", 
+						requestID, msg.Sender.ID, entry.ID, msg.Message.AppId)
 					continue
 				}
 				
-				// Unknown echo message pattern
-				LogWarn("[%s] ⚠️ Unknown echo pattern: sender=%s, page=%s, app_id=%d", 
-					requestID, msg.Sender.ID, entry.ID, msg.Message.AppId)
+				// Unknown platform
+				LogWarn("[%s] ⚠️ Unknown platform echo message: platform=%s", requestID, platform)
 				continue
 			}
 

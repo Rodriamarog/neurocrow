@@ -1,0 +1,96 @@
+{
+  "workflow_name": "Instagram Bot with Flag System",
+  "description": "Example Dify workflow that uses the bot flag system for Instagram",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "name": "Start",
+      "data": {
+        "title": "Start",
+        "desc": "Workflow starts here"
+      }
+    },
+    {
+      "id": "set_bot_flag",
+      "type": "http-request",
+      "name": "Set Bot Flag",
+      "data": {
+        "title": "Mark as Bot Response",
+        "desc": "Tell message-router this will be a bot response",
+        "method": "POST",
+        "url": "https://your-message-router-domain.com/api/mark-bot-response",
+        "params": [
+          {
+            "key": "conversation_id",
+            "value": "{{#start.conversation_id#}}"
+          }
+        ],
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "timeout": 10,
+        "wait_for_response": true
+      }
+    },
+    {
+      "id": "llm_response",
+      "type": "llm",
+      "name": "Generate Response",
+      "data": {
+        "title": "AI Response",
+        "desc": "Generate response using LLM",
+        "model": "gpt-4",
+        "prompt": "You are a helpful customer service assistant. Respond to the user's message: {{#start.user_message#}}",
+        "temperature": 0.7,
+        "max_tokens": 500
+      }
+    },
+    {
+      "id": "send_response",
+      "type": "end",
+      "name": "Send Response",
+      "data": {
+        "title": "Send to Instagram",
+        "desc": "Send the generated response back to Instagram",
+        "outputs": [
+          {
+            "key": "response",
+            "value": "{{#llm_response.text#}}"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "start",
+      "target": "set_bot_flag"
+    },
+    {
+      "source": "set_bot_flag",
+      "target": "llm_response"
+    },
+    {
+      "source": "llm_response",
+      "target": "send_response"
+    }
+  ],
+  "variables": [
+    {
+      "key": "conversation_id",
+      "name": "Conversation ID",
+      "type": "string",
+      "description": "Format: pageID-userID"
+    },
+    {
+      "key": "user_message",
+      "name": "User Message",
+      "type": "string",
+      "description": "The message from the Instagram user"
+    }
+  ]
+}
