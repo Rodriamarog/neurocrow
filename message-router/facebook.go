@@ -105,6 +105,9 @@ func sendInstagramMessage(ctx context.Context, pageID string, pageToken string, 
 	// Instagram uses a different endpoint format
 	igURL := fmt.Sprintf("https://graph.facebook.com/v23.0/me/messages?access_token=%s", pageToken)
 
+	// Log message details for debugging
+	log.Printf("📤 Instagram message (length: %d chars): %q", len(message), message)
+
 	igPayload := map[string]interface{}{
 		"recipient": map[string]string{
 			"id": recipientID,
@@ -138,6 +141,7 @@ func sendInstagramMessage(ctx context.Context, pageID string, pageToken string, 
 
 	igResp, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("❌ Instagram API error for message (length: %d): %q", len(message), message)
 		return fmt.Errorf("instagram error (status %d): %s", resp.StatusCode, string(igResp))
 	}
 
