@@ -86,17 +86,15 @@ func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 		return
 	}
 
-	// Count handover events across all entries
-	totalHandoverEvents := 0
+	// Count total messages across all entries
 	totalMessages := 0
 	for _, entry := range event.Entry {
-		totalHandoverEvents += len(entry.MessagingHandovers)
 		totalMessages += len(entry.Messaging)
 	}
 	
 	// Single consolidated log for webhook details
-	LogInfo("[%s] 📝 Webhook: %s, %d entries, %d messages, %d handovers", 
-		requestID, event.Object, len(event.Entry), totalMessages, totalHandoverEvents)
+	LogInfo("[%s] 📝 Webhook: %s, %d entries, %d messages", 
+		requestID, event.Object, len(event.Entry), totalMessages)
 	
 	// Additional debug logging for entries
 	for i, entry := range event.Entry {
@@ -777,78 +775,11 @@ func isDifyRequest(r *http.Request) bool {
 }
 
 // =============================================================================
-// FACEBOOK HANDOVER PROTOCOL EVENT PROCESSING - For thread control management
+// SIMPLIFIED BOT CONTROL - Using bot_enabled flag instead of handover protocol
 // =============================================================================
 
-// processHandoverEvents handles Facebook handover protocol events  
-func processHandoverEvents(ctx context.Context, entry EntryData, requestID string) {
-	if len(entry.MessagingHandovers) == 0 {
-		return
-	}
-
-	LogDebug("[%s] 🔄 Processing %d handover events", requestID, len(entry.MessagingHandovers))
-
-	for _, handover := range entry.MessagingHandovers {
-		threadID := handover.Sender.ID
-
-		// Handle PassThreadControl events
-		if handover.PassThreadControl != nil {
-			newOwnerAppID := handover.PassThreadControl.NewOwnerAppID
-			prevOwnerAppID := handover.PassThreadControl.PreviousOwnerAppID
-			metadata := handover.PassThreadControl.Metadata
-
-			LogInfo("[%s] ⚡ Control: app_%d -> app_%d (%s)", requestID, prevOwnerAppID, newOwnerAppID, metadata)
-
-			if newOwnerAppID == config.FacebookBotAppID {
-				// Control passed back to our bot
-				err := updateThreadControlStatus(ctx, threadID, "bot", "control_returned")
-				if err != nil {
-					LogError("[%s] Status update failed (bot): %v", requestID, err)
-				} else {
-					LogInfo("[%s] ✅ Bot control restored", requestID)
-				}
-			} else if newOwnerAppID == config.FacebookPageInboxAppID {
-				// Control passed to Facebook Page Inbox
-				err := updateThreadControlStatus(ctx, threadID, "human", "passed_to_inbox")
-				if err != nil {
-					LogError("[%s] Status update failed (human): %v", requestID, err)
-				} else {
-					LogInfo("[%s] ✅ Human control active", requestID)
-				}
-			} else {
-				// Control passed to unknown app
-				LogWarn("[%s] Unknown app control: %d", requestID, newOwnerAppID)
-				updateThreadControlStatus(ctx, threadID, "system", "unknown_app_control")
-			}
-		}
-
-		// Handle TakeThreadControl events
-		if handover.TakeThreadControl != nil {
-			prevOwnerAppID := handover.TakeThreadControl.PreviousOwnerAppID
-			metadata := handover.TakeThreadControl.Metadata
-
-			LogInfo("[%s] ⚡ Control taken from app_%d (%s)", requestID, prevOwnerAppID, metadata)
-
-			// Another app took control from us or from Facebook inbox
-			err := updateThreadControlStatus(ctx, threadID, "system", "control_taken")
-			if err != nil {
-				LogError("[%s] Status update failed (taken): %v", requestID, err)
-			} else {
-				LogInfo("[%s] ✅ Control taken logged", requestID)
-			}
-		}
-
-		// Handle RequestThreadControl events
-		if handover.RequestThreadControl != nil {
-			requestedOwnerAppID := handover.RequestThreadControl.RequestedOwnerAppID
-			metadata := handover.RequestThreadControl.Metadata
-
-			LogDebug("[%s] Control requested by app_%d (%s)", requestID, requestedOwnerAppID, metadata)
-		}
-	}
-
-	LogDebug("[%s] ✅ Handover events processed", requestID)
-}
+// The handover protocol functions have been removed since we use a simple
+// bot_enabled boolean flag for controlling message processing instead.
 
 func getPageInfo(ctx context.Context, pageID string, platform string) (*PageInfo, error) {
 	var info PageInfo
