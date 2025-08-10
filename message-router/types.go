@@ -17,10 +17,8 @@ type FacebookEvent struct {
 type EntryData struct {
 	ID   string `json:"id"`
 	Time int64  `json:"time"`
-	// Handle both types of messaging
+	// Handle messaging events
 	Messaging []MessagingEntry `json:"messaging"`
-	// Facebook Handover Protocol events
-	MessagingHandovers []HandoverEvent `json:"messaging_handovers"`
 }
 
 // MessagingEntry represents a message in the Facebook webhook
@@ -114,9 +112,9 @@ type ConversationState struct {
 	ThreadID           string
 	PageID             string
 	Platform           string
-	BotEnabled         bool      // DEPRECATED: Use shouldBotProcessMessage() instead. Kept for fallback compatibility.
+	BotEnabled         bool // Current bot control flag - true=bot enabled, false=human agent has control
 	LastBotMessage     time.Time
-	LastHumanMessage   time.Time // DEPRECATED: Kept for analytics. Thread control transitions tracked via handover events.
+	LastHumanMessage   time.Time // DEPRECATED: Kept for analytics.
 	LastUserMessage    time.Time
 	MessageCount       int
 	DifyConversationID string // Dify conversation ID for maintaining context
@@ -268,55 +266,4 @@ type DifyConversationState struct {
 	LastMessageId  string    // Last message ID from Dify
 	CreatedAt      time.Time // When this conversation started
 	UpdatedAt      time.Time // Last activity
-}
-
-// =============================================================================
-// FACEBOOK HANDOVER PROTOCOL TYPES - For thread control management
-// =============================================================================
-
-// HandoverEvent represents Facebook handover protocol events in webhooks
-type HandoverEvent struct {
-	Sender struct {
-		ID string `json:"id"`
-	} `json:"sender"`
-	Recipient struct {
-		ID string `json:"id"`
-	} `json:"recipient"`
-	Timestamp         int64                      `json:"timestamp"`
-	PassThreadControl *PassThreadControlData    `json:"pass_thread_control,omitempty"`
-	TakeThreadControl *TakeThreadControlData    `json:"take_thread_control,omitempty"`
-	RequestThreadControl *RequestThreadControlData `json:"request_thread_control,omitempty"`
-}
-
-// PassThreadControlData represents data when control is passed to another app
-type PassThreadControlData struct {
-	NewOwnerAppID      int64  `json:"new_owner_app_id"`
-	PreviousOwnerAppID int64  `json:"previous_owner_app_id"`
-	Metadata           string `json:"metadata"`
-}
-
-// TakeThreadControlData represents data when control is taken from another app
-type TakeThreadControlData struct {
-	PreviousOwnerAppID int64  `json:"previous_owner_app_id"`
-	Metadata           string `json:"metadata"`
-}
-
-// RequestThreadControlData represents data when another app requests control
-type RequestThreadControlData struct {
-	RequestedOwnerAppID int64  `json:"requested_owner_app_id"`
-	Metadata            string `json:"metadata"`
-}
-
-// ThreadControlResponse represents Facebook's response to thread control API calls
-type ThreadControlResponse struct {
-	Success bool `json:"success"`
-}
-
-// ThreadOwnerResponse represents Facebook's response when querying thread owner
-type ThreadOwnerResponse struct {
-	Data []struct {
-		ThreadOwner struct {
-			AppID int64 `json:"app_id"`
-		} `json:"thread_owner"`
-	} `json:"data"`
 }

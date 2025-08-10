@@ -77,7 +77,66 @@ func getOrCreateConversation(ctx context.Context, pageID, threadID, platform str
 	return conv, nil
 }
 
-// updateConversationState updates the conversation state in the database
+// updateConversationState updates the conversation state in the database.
+//
+// This function manages the bot enable/disable state for conversations and logs
+// all state transitions as system messages for auditing and debugging purposes.
+// It implements atomic database operations with row-level locking to prevent
+// race conditions during concurrent message processing.
+//
+// State Management:
+//
+// The function handles bot state transitions for conversation management:
+//   - Enables bot when users need automated assistance
+//   - Disables bot when human agents take control or users are frustrated
+//   - Updates conversation metadata including message counts and timestamps
+//   - Logs state changes as system messages for audit trails
+//
+// Database Operations:
+//
+// The function uses database transactions with row-level locking:
+//   - BEGIN transaction with row-level locking (FOR UPDATE)
+//   - Update conversation state and metadata
+//   - Insert system message documenting the state change
+//   - Update bot_enabled flag for immediate effect
+//   - COMMIT transaction to ensure atomicity
+//
+// Concurrency Safety:
+//
+// Row-level locking prevents race conditions when multiple messages arrive
+// simultaneously for the same conversation:
+//   - Locks conversation row during state updates
+//   - Prevents conflicting state changes from concurrent operations
+//   - Ensures consistent state transitions and audit logging
+//
+// Multi-tenant Support:
+//
+// The function handles multi-tenant database structure:
+//   - Resolves page_id to internal UUID for database operations
+//   - Handles client_id associations for proper message storage
+//   - Supports NULL client_id for system-level operations
+//   - Maintains data isolation between different clients
+//
+// System Message Logging:
+//
+// All bot state changes are logged as system messages:
+//   - Includes human-readable reason for the state change
+//   - Sets requires_attention flag for disabled states
+//   - Associates messages with appropriate client and page
+//   - Provides audit trail for conversation management
+//
+// Parameters:
+//   - ctx: Context for database operations with timeout and cancellation
+//   - conv: ConversationState containing thread and page information
+//   - botEnabled: Target state for bot processing (true=enabled, false=disabled)
+//   - reason: Human-readable explanation for the state change
+//
+// Returns:
+//   - nil: State successfully updated and logged
+//   - error: Database operation failed with detailed error information
+//
+// The function ensures conversation state consistency and provides comprehensive
+// logging for debugging bot behavior and human agent interventions.
 func updateConversationState(ctx context.Context, conv *ConversationState, botEnabled bool, reason string) error {
 	// Add debug logging at the start
 	log.Printf("🔍 Updating conversation state: pageID=%s, platform=%s, threadID=%s, botEnabled=%v",
@@ -100,7 +159,7 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 	if err != nil {
 		return fmt.Errorf("error locking conversation: %v", err)
 	}
-	
+
 	log.Printf("🔒 Conversation state locked - current: %v, target: %v", currentBotState, botEnabled)
 
 	// Update conversations table
@@ -245,10 +304,9 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 	return nil
 }
 
-// updateConversationForHumanMessage updates the conversation when a human agent sends a message
-// This disables the bot for 6 hours to prevent double responses
-// DEPRECATED: Used only as fallback when handover protocol fails. 
-// New handover protocol should use Facebook's native thread control instead.
+// updateConversationForHumanMessage updates the conversation when a human agent sends a message.
+// This disables the bot to prevent conflicts between human agents and automated responses.
+// The bot will be automatically re-enabled after 12 hours of human agent inactivity.
 func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, platform string) error {
 	log.Printf("🔍 Updating conversation for human agent message: pageID=%s, threadID=%s, platform=%s", pageID, threadID, platform)
 
@@ -280,11 +338,11 @@ func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, pl
 	if err != nil {
 		return fmt.Errorf("error locking conversation: %v", err)
 	}
-	
+
 	log.Printf("🔒 Conversation locked - current bot state: %v", currentBotState)
 
 	// Update the conversation to record human message and disable bot
-	// This refreshes the 6-hour timer every time a human agent sends a message
+	// The bot will be automatically reactivated after 12 hours of inactivity
 	_, err = tx.ExecContext(ctx, `
         UPDATE conversations 
         SET last_human_message_at = NOW(),
@@ -310,7 +368,7 @@ func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, pl
 	}
 
 	// Insert system message to log the bot disable
-	stateMsg := "Bot disabled for 6 hours due to human agent activity (timer refreshes with each human message)"
+	stateMsg := "Bot disabled due to human agent intervention (will reactivate after 12 hours of inactivity)"
 	var insertErr error
 	if clientID.Valid {
 		_, insertErr = tx.ExecContext(ctx, `
@@ -381,14 +439,16 @@ func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, pl
 	return nil
 }
 
-// Legacy 6-hour timer functions removed - thread control now managed by Facebook Handover Protocol
-
 // =============================================================================
-// FACEBOOK HANDOVER PROTOCOL DATABASE FUNCTIONS - For thread control management
+// BOT CONTROL DATABASE FUNCTIONS - For simple bot enable/disable management
 // =============================================================================
 
-// updateThreadControlStatus updates the thread control status in database
+// updateThreadControlStatus is a legacy function that was intended for Facebook Handover Protocol.
+// It's kept for compatibility but the actual bot control uses the bot_enabled flag.
+// This function updates unused database columns and should be removed in future cleanup.
 func updateThreadControlStatus(ctx context.Context, threadID string, status string, reason string) error {
+	// This function exists for backward compatibility but doesn't affect actual bot behavior
+	// The real bot control is managed via the bot_enabled boolean flag
 	query := `
         UPDATE conversations 
         SET thread_control_status = $1, 
@@ -410,11 +470,12 @@ func updateThreadControlStatus(ctx context.Context, threadID string, status stri
 		return fmt.Errorf("no conversation found with thread_id: %s", threadID)
 	}
 
-	LogDebug("✅ Thread control: %s -> %s (%s)", threadID, status, reason)
+	LogDebug("✅ Thread control status updated (unused): %s -> %s (%s)", threadID, status, reason)
 	return nil
 }
 
-// getThreadControlStatus retrieves current thread control status from database
+// getThreadControlStatus retrieves the unused thread_control_status from database.
+// This is a legacy function - the actual bot control uses shouldBotProcessMessage().
 func getThreadControlStatus(ctx context.Context, threadID string) (string, error) {
 	var status string
 	query := "SELECT COALESCE(thread_control_status, 'bot') FROM conversations WHERE thread_id = $1"
@@ -428,15 +489,16 @@ func getThreadControlStatus(ctx context.Context, threadID string) (string, error
 		return "", fmt.Errorf("failed to get thread control status: %v", err)
 	}
 
-	LogDebug("Thread control status for %s: %s", threadID, status)
+	LogDebug("Thread control status (unused) for %s: %s", threadID, status)
 	return status, nil
 }
 
-// shouldBotProcessMessage determines if bot should process message based on bot_enabled flag
+// shouldBotProcessMessage determines if bot should process message based on bot_enabled flag.
+// This is the actual function used for bot control - returns true if bot should respond.
 func shouldBotProcessMessage(ctx context.Context, threadID string) (bool, error) {
 	var botEnabled bool
 	query := "SELECT COALESCE(bot_enabled, true) FROM conversations WHERE thread_id = $1"
-	
+
 	err := db.QueryRowContext(ctx, query, threadID).Scan(&botEnabled)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -451,7 +513,8 @@ func shouldBotProcessMessage(ctx context.Context, threadID string) (bool, error)
 	return botEnabled, nil
 }
 
-// getThreadControlStatusWithTimestamp retrieves thread control status with handover info
+// getThreadControlStatusWithTimestamp retrieves unused thread control status with timestamps.
+// This is a legacy function for the unused handover protocol system.
 func getThreadControlStatusWithTimestamp(ctx context.Context, threadID string) (string, *time.Time, string, error) {
 	var status, reason string
 	var timestamp *time.Time
@@ -481,12 +544,12 @@ func getThreadControlStatusWithTimestamp(ctx context.Context, threadID string) (
 func checkAndReactivateBots(ctx context.Context, requestID string) {
 	var reactivatedCount int
 	err := db.QueryRowContext(ctx, "SELECT reenable_disabled_bots()").Scan(&reactivatedCount)
-	
+
 	if err != nil {
 		LogError("[%s] Bot reactivation check failed: %v", requestID, err)
 		return
 	}
-	
+
 	// Only log when bots are actually reactivated to avoid spam
 	if reactivatedCount > 0 {
 		LogInfo("[%s] 🔄 Reactivated %d bots (12-hour rule)", requestID, reactivatedCount)

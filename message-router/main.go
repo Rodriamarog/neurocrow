@@ -1,3 +1,54 @@
+// Package main implements the Neurocrow Message Router service.
+//
+// This service processes Facebook Messenger and Instagram Direct Message webhooks,
+// analyzes message sentiment, and intelligently routes conversations between users
+// and AI chatbots. It serves as the core messaging infrastructure for the Neurocrow
+// platform, handling multi-tenant client configurations and automated conversation management.
+//
+// Key Features:
+//
+//   - Facebook/Instagram webhook processing with signature validation
+//   - Sentiment analysis using Fireworks AI to determine routing decisions
+//   - Simple bot enable/disable control based on user requests and human agent activity
+//   - AI chatbot integration through Dify API (multi-tenant with per-page API keys)
+//   - Multi-tenant architecture supporting multiple clients and social media pages
+//   - Automatic bot reactivation after 12 hours of human agent inactivity
+//   - Comprehensive logging and error handling with request correlation
+//
+// Architecture:
+//
+// The service follows a webhook-driven architecture where incoming messages flow through:
+//  1. Webhook validation and parsing
+//  2. Message filtering and echo detection
+//  3. Sentiment analysis for routing decisions
+//  4. Bot enable/disable control (simple boolean flag system)
+//  5. Response generation via AI or human escalation
+//
+// Database Schema:
+//
+// Multi-tenant structure: clients → social_pages → conversations → messages
+//   - clients: Top-level client organizations
+//   - social_pages: Facebook/Instagram pages with API credentials and Dify keys
+//   - conversations: User conversation threads with bot control state
+//   - messages: Individual messages with source tracking and routing metadata
+//
+// Bot Control:
+//
+// The service uses a simple bot enable/disable system:
+//   - bot_enabled: Boolean flag controlling whether the bot processes messages
+//   - Disabled when users request human help or agents intervene
+//   - Automatically re-enabled after 12 hours of human agent inactivity
+//
+// Integration Points:
+//
+//   - Facebook Graph API: Message sending operations
+//   - Fireworks AI API: Sentiment analysis for routing decisions
+//   - Dify AI API: Chatbot response generation (per-tenant API keys)
+//   - PostgreSQL: Multi-tenant conversation and message storage
+//
+// The service is designed for high availability with graceful error handling,
+// automatic retries, and fallback mechanisms to ensure reliable message delivery
+// and conversation continuity.
 package main
 
 import (
@@ -35,7 +86,7 @@ const (
 
 var (
 	currentLogLevel LogLevel = LogLevelInfo // Default to info level
-	logLevelNames   = map[LogLevel]string{
+	logLevelNames            = map[LogLevel]string{
 		LogLevelError: "ERROR",
 		LogLevelWarn:  "WARN",
 		LogLevelInfo:  "INFO",
@@ -113,10 +164,10 @@ var (
 func init() {
 	// Set up logging with microsecond precision
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
-	
+
 	// Configure log level from environment
 	setLogLevelFromEnv()
-	
+
 	LogInfo("🚀 Starting Neurocrow Message Router...")
 
 	loadConfig()
