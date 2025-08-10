@@ -41,27 +41,22 @@ function Login() {
   };
 
   const handleFacebookLogin = () => {
-    let scopeArray = [];
-    if (connectionType === 'fb' || connectionType === 'both') {
+    let scopeArray = [
+      'pages_show_list',
+      'pages_manage_metadata',
+      'pages_messaging',
+      'pages_read_engagement',
+      'public_profile'
+    ];
+    
+    if (connectionType === 'both') {
       scopeArray = scopeArray.concat([
-        'pages_show_list',
-        'pages_manage_metadata',
-        'pages_messaging',
-        'pages_read_engagement',
-        'public_profile',
-        'business_management'
-      ]);
-    }
-    if (connectionType === 'ig' || connectionType === 'both') {
-      scopeArray = scopeArray.concat([
-        'pages_show_list',
-        'pages_manage_metadata',
+        'business_management',
         'instagram_basic',
-        'instagram_manage_messages',
-        'pages_read_engagement',
-        'public_profile'
+        'instagram_manage_messages'
       ]);
     }
+    
     const scope = Array.from(new Set(scopeArray)).join(',');
     
     console.log('🔍 Requesting Facebook permissions:', scope);
@@ -116,16 +111,6 @@ function Login() {
                 <span className="radio-custom-button"></span>
                 <span className="radio-button-text">Connect Facebook Pages only</span>
               </label>
-              <label className={connectionType === 'ig' ? 'selected' : ''}>
-                <input 
-                  type="radio" 
-                  value="ig" 
-                  checked={connectionType === 'ig'} 
-                  onChange={() => setConnectionType('ig')} 
-                />
-                <span className="radio-custom-button"></span>
-                <span className="radio-button-text">Connect Instagram Accounts only</span>
-              </label>
               <label className={connectionType === 'both' ? 'selected' : ''}>
                 <input 
                   type="radio" 
@@ -134,8 +119,14 @@ function Login() {
                   onChange={() => setConnectionType('both')} 
                 />
                 <span className="radio-custom-button"></span>
-                <span className="radio-button-text">Connect both</span>
+                <span className="radio-button-text">Connect Facebook Pages + Instagram Business accounts</span>
               </label>
+              <div className="instagram-info">
+                <small>
+                  <i className="fas fa-info-circle"></i>
+                  Instagram accounts must be Business accounts linked to your Facebook Pages
+                </small>
+              </div>
             </div>
             <button onClick={handleFacebookLogin} className="facebook-login-btn">
               <i className="fab fa-facebook"></i> Continuar con Facebook

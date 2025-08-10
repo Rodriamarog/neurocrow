@@ -961,17 +961,44 @@ func getConnectedPages(userToken string) ([]FacebookPage, error) {
 
 		// If this page has a connected Instagram account, add it
 		if page.Instagram.ID != "" {
+			// Validate Instagram Business account
+			if page.Instagram.Username == "" {
+				log.Printf("⚠️ Instagram account %s (%s) appears to be missing username - may not be a Business account", 
+					page.Instagram.Name, page.Instagram.ID)
+			}
+			
 			allPages = append(allPages, FacebookPage{
 				ID:          page.Instagram.ID,
 				Name:        page.Instagram.Name,
 				AccessToken: page.AccessToken, // Use same permanent page token
 				Platform:    "instagram",
 			})
-			log.Printf("Added connected Instagram account: %s", page.Instagram.Name)
+			log.Printf("Added connected Instagram Business account: %s (@%s)", page.Instagram.Name, page.Instagram.Username)
 		}
 	}
 
-	log.Printf("Found total of %d pages/accounts", len(allPages))
+	// Count Facebook vs Instagram accounts for user feedback
+	fbCount := 0
+	igCount := 0
+	for _, page := range allPages {
+		if page.Platform == "facebook" {
+			fbCount++
+		} else if page.Platform == "instagram" {
+			igCount++
+		}
+	}
+	
+	log.Printf("Found total of %d pages/accounts: %d Facebook pages, %d Instagram Business accounts", 
+		len(allPages), fbCount, igCount)
+		
+	// Provide helpful messaging for common scenarios
+	if fbCount > 0 && igCount == 0 {
+		log.Printf("ℹ️ No Instagram Business accounts found. To connect Instagram:")
+		log.Printf("   1. Convert your Instagram account to a Business account")
+		log.Printf("   2. Connect it to one of your Facebook Pages")
+		log.Printf("   3. Ensure you have admin access to the connected Facebook Page")
+	}
+	
 	return allPages, nil
 }
 
