@@ -56,6 +56,7 @@ func main() {
 	// Apply CORS to all routes - protected routes require authentication
 	router.HandleFunc("/", corsMiddleware(handlePages))
 	router.HandleFunc("/facebook-token", corsMiddleware(handleFacebookToken))
+	router.HandleFunc("/instagram-token-exchange", corsMiddleware(handleInstagramTokenExchange))
 	router.HandleFunc("/activate-form", corsMiddleware(requireAuth(handleActivateForm)))
 	router.HandleFunc("/activate-page", corsMiddleware(requireAuth(handleActivatePage)))
 	router.HandleFunc("/deactivate-page", corsMiddleware(requireAuth(handleDeactivatePage)))
@@ -1776,4 +1777,121 @@ func getPagePosts(pageID, accessToken, limit, pageName, platform string) (*PageP
 		pageName, len(fbData.Data))
 
 	return response, nil
+}
+
+// handleInstagramTokenExchange handles the Instagram OAuth code exchange for access token
+func handleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Printf("=== Starting Instagram token exchange ===")
+
+	var data struct {
+		Code        string `json:"code"`
+		RedirectURI string `json:"redirect_uri"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		log.Printf("❌ Error decoding Instagram token exchange request: %v", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if data.Code == "" || data.RedirectURI == "" {
+		log.Printf("❌ Missing required fields: code=%s, redirect_uri=%s", data.Code, data.RedirectURI)
+		http.Error(w, "Missing code or redirect_uri", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("📥 Instagram token exchange request: code=%s, redirect_uri=%s", data.Code, data.RedirectURI)
+
+	// Exchange authorization code for access token using Facebook Graph API
+	clientId := os.Getenv("FACEBOOK_APP_ID")
+	clientSecret := os.Getenv("FACEBOOK_APP_SECRET")
+	
+	if clientId == "" || clientSecret == "" {
+		log.Printf("❌ Missing Facebook app credentials")
+		http.Error(w, "Server configuration error", http.StatusInternalServerError)
+		return
+	}
+
+	// Build token exchange request
+	tokenURL := fmt.Sprintf(
+		"https://graph.facebook.com/v18.0/oauth/access_token?client_id=%s&client_secret=%s&redirect_uri=%s&code=%s",
+		clientId, clientSecret, data.RedirectURI, data.Code,
+	)
+
+	log.Printf("🔗 Making token exchange request to Facebook")
+
+	// Make the token exchange request
+	resp, err := http.Get(tokenURL)
+	if err != nil {
+		log.Printf("❌ Error making token exchange request: %v", err)
+		http.Error(w, "Failed to exchange token", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("❌ Error reading token exchange response: %v", err)
+		http.Error(w, "Failed to read token response", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("📥 Facebook token exchange response: %d - %s", resp.StatusCode, string(bodyBytes))
+
+	if resp.StatusCode != http.StatusOK {
+		var fbError struct {
+			Error struct {
+				Message   string `json:"message"`
+				Type      string `json:"type"`
+				Code      int    `json:"code"`
+				FbtraceID string `json:"fbtrace_id"`
+			} `json:"error"`
+		}
+		
+		if json.Unmarshal(bodyBytes, &fbError) == nil && fbError.Error.Message != "" {
+			log.Printf("❌ Facebook token exchange error: %s (Code: %d, Trace: %s)", 
+				fbError.Error.Message, fbError.Error.Code, fbError.Error.FbtraceID)
+			http.Error(w, fmt.Sprintf("Facebook API error: %s", fbError.Error.Message), http.StatusBadRequest)
+		} else {
+			log.Printf("❌ Facebook token exchange failed with status %d", resp.StatusCode)
+			http.Error(w, "Token exchange failed", http.StatusBadRequest)
+		}
+		return
+	}
+
+	// Parse successful token response
+	var tokenResponse struct {
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &tokenResponse); err != nil {
+		log.Printf("❌ Error parsing token response: %v", err)
+		http.Error(w, "Failed to parse token response", http.StatusInternalServerError)
+		return
+	}
+
+	if tokenResponse.AccessToken == "" {
+		log.Printf("❌ No access token in response")
+		http.Error(w, "No access token received", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ Successfully exchanged Instagram authorization code for access token")
+
+	// Return the access token to the client
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"access_token": tokenResponse.AccessToken,
+		"token_type":   tokenResponse.TokenType,
+		"expires_in":   tokenResponse.ExpiresIn,
+		"success":      true,
+	})
 }

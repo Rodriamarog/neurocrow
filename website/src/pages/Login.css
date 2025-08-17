@@ -13,7 +13,7 @@
   border-radius: 12px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   text-align: center;
-  max-width: 400px;
+  max-width: 600px;
   width: 100%;
 }
 
@@ -167,4 +167,188 @@
 
 .instagram-info i {
   color: #FB923C;
+}
+
+/* New two-button authentication layout */
+.auth-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+@media (max-width: 768px) {
+  .auth-options {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+}
+
+.auth-option {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: left;
+  transition: all 0.3s ease;
+}
+
+.auth-option:hover {
+  border-color: #CBD5E0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.auth-option h3 {
+  color: #2D3748;
+  margin-bottom: 0.75rem;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auth-option h3 i {
+  font-size: 1.4rem;
+}
+
+.auth-option h3 .fa-facebook {
+  color: #1877F2;
+}
+
+.auth-option h3 .fa-instagram {
+  background: linear-gradient(45deg, #F58529, #DD2A7B, #8134AF);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.auth-option p {
+  color: #4A5568;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.auth-option ul {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 1.5rem 0;
+}
+
+.auth-option ul li {
+  color: #2D3748;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.instagram-login-btn {
+  background: linear-gradient(45deg, #F58529, #DD2A7B, #8134AF);
+  color: white;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+.instagram-login-btn:hover {
+  background: linear-gradient(45deg, #E8791C, #C91F69, #6A2C91);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 133, 41, 0.3);
+}
+
+.facebook-login-btn {
+  background: #1877F2;
+  color: white;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+.facebook-login-btn:hover {
+  background: #166FE5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.3);
+}
+
+.cancel-btn {
+  background: #E53E3E;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-top: 1rem;
+  transition: background-color 0.3s ease;
+}
+
+.cancel-btn:hover {
+  background: #C53030;
+}
+
+.error-message {
+  text-align: center;
+  color: #E53E3E;
+}
+
+.error-message h3 {
+  color: #E53E3E;
+  margin-bottom: 1rem;
+}
+
+.error-message i {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  color: #E53E3E;
+}
+
+.retry-btn {
+  background: #1877F2;
+  color: white;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 1rem;
+  transition: background-color 0.3s ease;
+}
+
+.retry-btn:hover {
+  background: #166FE5;
+}
+
+.success-message {
+  text-align: center;
+  color: #38A169;
+}
+
+.success-message h3 {
+  color: #38A169;
+  margin-bottom: 1rem;
+}
+
+.success-message i {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  color: #38A169;
 }

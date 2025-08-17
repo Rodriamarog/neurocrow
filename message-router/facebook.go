@@ -101,7 +101,7 @@ func sendFacebookMessage(ctx context.Context, pageID string, pageToken string, r
 	return nil
 }
 
-func sendInstagramMessage(ctx context.Context, pageID string, pageToken string, recipientID string, message string) error {
+func sendInstagramMessage(ctx context.Context, pageToken string, recipientID string, message string) error {
 	// Instagram uses a different endpoint format
 	igURL := fmt.Sprintf("https://graph.facebook.com/v23.0/me/messages?access_token=%s", pageToken)
 

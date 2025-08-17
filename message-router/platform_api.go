@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -32,26 +31,6 @@ func getPageInfo(ctx context.Context, pageID string, platform string) (*PageInfo
 	return &info, nil
 }
 
-// getPageInfoLegacy is a fallback function for legacy Botpress code that doesn't have platform context
-// It returns the first active page found for the given pageID (could be Facebook or Instagram)
-func getPageInfoLegacy(ctx context.Context, pageID string) (*PageInfo, error) {
-	var info PageInfo
-	info.PageID = pageID
-	err := db.QueryRowContext(ctx,
-		"SELECT platform, access_token FROM social_pages WHERE page_id = $1 AND status = 'active' LIMIT 1",
-		pageID,
-	).Scan(&info.Platform, &info.AccessToken)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no active page found for ID %s", pageID)
-		}
-		return nil, fmt.Errorf("database error: %v", err)
-	}
-
-	log.Printf("⚠️ Legacy getPageInfo used for pageID %s, returned platform: %s", pageID, info.Platform)
-	return &info, nil
-}
 
 // sendPlatformResponse routes message sending to the appropriate platform API
 func sendPlatformResponse(ctx context.Context, pageInfo *PageInfo, senderID, message string) error {
@@ -59,7 +38,7 @@ func sendPlatformResponse(ctx context.Context, pageInfo *PageInfo, senderID, mes
 	case "facebook":
 		return sendFacebookMessage(ctx, pageInfo.PageID, pageInfo.AccessToken, senderID, message)
 	case "instagram":
-		return sendInstagramMessage(ctx, pageInfo.PageID, pageInfo.AccessToken, senderID, message)
+		return sendInstagramMessage(ctx, pageInfo.AccessToken, senderID, message)
 	default:
 		return fmt.Errorf("unsupported platform: %s", pageInfo.Platform)
 	}
@@ -166,7 +145,7 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	case "facebook":
 		sendErr = sendFacebookMessage(r.Context(), req.PageID, pageInfo.AccessToken, req.RecipientID, req.Message)
 	case "instagram":
-		sendErr = sendInstagramMessage(r.Context(), req.PageID, pageInfo.AccessToken, req.RecipientID, req.Message)
+		sendErr = sendInstagramMessage(r.Context(), pageInfo.AccessToken, req.RecipientID, req.Message)
 	default:
 		sendErr = fmt.Errorf("unsupported platform: %s", req.Platform)
 	}
@@ -181,9 +160,3 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
-// isBotpressRequest checks if an incoming request is from Botpress (legacy function)
-func isBotpressRequest(r *http.Request) bool {
-	userAgent := r.Header.Get("User-Agent")
-	return userAgent == "axios/1.6.8" || // Botpress uses axios
-		strings.Contains(strings.ToLower(userAgent), "botpress")
-}

@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"time"
 )
 
 // =============================================================================
@@ -514,82 +513,3 @@ func checkAndReactivateBots(ctx context.Context, requestID string) {
 	}
 }
 
-// =============================================================================
-// LEGACY BOT CONTROL FUNCTIONS - Unused but kept for compatibility
-// =============================================================================
-
-// updateThreadControlStatus is a legacy function that was intended for Facebook Handover Protocol.
-// It's kept for compatibility but the actual bot control uses the bot_enabled flag.
-// This function updates unused database columns and should be removed in future cleanup.
-func updateThreadControlStatus(ctx context.Context, threadID string, status string, reason string) error {
-	// This function exists for backward compatibility but doesn't affect actual bot behavior
-	// The real bot control is managed via the bot_enabled boolean flag
-	query := `
-        UPDATE conversations 
-        SET thread_control_status = $1, 
-            handover_timestamp = CURRENT_TIMESTAMP,
-            handover_reason = $2,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE thread_id = $3`
-
-	result, err := db.ExecContext(ctx, query, status, reason, threadID)
-	if err != nil {
-		return fmt.Errorf("failed to update thread control status: %v", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		LogWarn("Could not get rows affected count: %v", err)
-	} else if rowsAffected == 0 {
-		LogWarn("No conversation found with thread_id: %s", threadID)
-		return fmt.Errorf("no conversation found with thread_id: %s", threadID)
-	}
-
-	LogDebug("✅ Thread control status updated (unused): %s -> %s (%s)", threadID, status, reason)
-	return nil
-}
-
-// getThreadControlStatus retrieves the unused thread_control_status from database.
-// This is a legacy function - the actual bot control uses shouldBotProcessMessage().
-func getThreadControlStatus(ctx context.Context, threadID string) (string, error) {
-	var status string
-	query := "SELECT COALESCE(thread_control_status, 'bot') FROM conversations WHERE thread_id = $1"
-
-	err := db.QueryRowContext(ctx, query, threadID).Scan(&status)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			LogDebug("No conversation found for thread_id: %s, defaulting to 'bot'", threadID)
-			return "bot", nil // Graceful degradation
-		}
-		return "", fmt.Errorf("failed to get thread control status: %v", err)
-	}
-
-	LogDebug("Thread control status (unused) for %s: %s", threadID, status)
-	return status, nil
-}
-
-// getThreadControlStatusWithTimestamp retrieves unused thread control status with timestamps.
-// This is a legacy function for the unused handover protocol system.
-func getThreadControlStatusWithTimestamp(ctx context.Context, threadID string) (string, *time.Time, string, error) {
-	var status, reason string
-	var timestamp *time.Time
-
-	query := `
-        SELECT 
-            COALESCE(thread_control_status, 'bot') as status,
-            handover_timestamp,
-            COALESCE(handover_reason, '') as reason
-        FROM conversations 
-        WHERE thread_id = $1`
-
-	err := db.QueryRowContext(ctx, query, threadID).Scan(&status, &timestamp, &reason)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			LogDebug("No conversation found for thread_id: %s, defaulting to 'bot'", threadID)
-			return "bot", nil, "", nil // Graceful degradation
-		}
-		return "", nil, "", fmt.Errorf("failed to get thread control status with timestamp: %v", err)
-	}
-
-	return status, timestamp, reason, nil
-}

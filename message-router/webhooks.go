@@ -98,11 +98,11 @@ func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	// Process the webhook data asynchronously
-	handlePlatformMessage(w, r, body)
+	handlePlatformMessage(body)
 }
 
 // handlePlatformMessage processes Facebook/Instagram webhook messages
-func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) {
+func handlePlatformMessage(body []byte) {
 	// Generate request ID for log correlation
 	requestID := generateRequestID()
 
@@ -120,6 +120,12 @@ func handlePlatformMessage(w http.ResponseWriter, r *http.Request, body []byte) 
 	totalMessages := 0
 	for _, entry := range event.Entry {
 		totalMessages += len(entry.Messaging)
+	}
+
+	// Validate webhook object type
+	if !isValidFacebookObject(event.Object) {
+		LogError("[%s] Unsupported webhook object: %s", requestID, event.Object)
+		return
 	}
 
 	// Single consolidated log for webhook details

@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -202,13 +201,6 @@ func handleDifyResponseDirect(ctx context.Context, pageID, senderID, platform st
 	return nil
 }
 
-// isDifyRequest checks if an incoming request is from Dify (replaces isBotpressRequest)
-// Note: This might not be needed since Dify responses are handled directly, not via webhook
-func isDifyRequest(r *http.Request) bool {
-	userAgent := r.Header.Get("User-Agent")
-	// Dify doesn't send webhooks back, so this is mainly for future compatibility
-	return strings.Contains(strings.ToLower(userAgent), "dify")
-}
 
 // updateDifyConversationID stores the Dify conversation ID for maintaining context
 func updateDifyConversationID(ctx context.Context, threadID string, difyConversationID string) error {

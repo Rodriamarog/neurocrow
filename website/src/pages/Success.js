@@ -12,6 +12,7 @@ function Success() {
   });
   const location = useLocation();
   const accessToken = location.state?.accessToken;
+  const authType = location.state?.authType || 'facebook';
 
   useEffect(() => {
     if (!accessToken) {
@@ -111,12 +112,12 @@ function Success() {
           <>
             <i className="fas fa-spinner fa-spin success-icon"></i>
             <h1>Configurando tu cuenta...</h1>
-            <p>Estamos configurando automáticamente tus cuentas para que funcionen con Neurocrow.</p>
+            <p>Estamos configurando automáticamente tu{authType === 'instagram' ? 's cuentas de Instagram Business' : 's páginas de Facebook'} para que funcionen con Neurocrow.</p>
             
             <div className="setup-progress" style={{ margin: '20px 0', textAlign: 'left' }}>
               <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
                 {getStatusIcon(setupProgress.pageConnection)}
-                <span style={{ marginLeft: '10px' }}>Conectando páginas de Facebook/Instagram</span>
+                <span style={{ marginLeft: '10px' }}>Conectando {authType === 'instagram' ? 'cuentas de Instagram Business' : 'páginas de Facebook'}</span>
               </div>
               <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
                 {getStatusIcon(setupProgress.webhookSetup)}

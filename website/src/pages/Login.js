@@ -7,7 +7,7 @@ function Login() {
   const navigate = useNavigate();
   const [isVerifying, setIsVerifying] = useState(false);
   const [pollInterval, setPollInterval] = useState(null);
-  const [connectionType, setConnectionType] = useState('both');
+  const [authType, setAuthType] = useState(null); // 'facebook' or 'instagram'
 
   useEffect(() => {
     return () => {
@@ -41,7 +41,9 @@ function Login() {
   };
 
   const handleFacebookLogin = () => {
-    let scopeArray = [
+    setAuthType('facebook');
+    
+    const scopeArray = [
       'pages_show_list',
       'pages_manage_metadata',
       'pages_messaging',
@@ -50,39 +52,50 @@ function Login() {
       'business_management'
     ];
     
-    if (connectionType === 'both') {
-      scopeArray = scopeArray.concat([
-        'instagram_basic',
-        'instagram_business_basic',
-        'instagram_manage_messages',
-        'instagram_business_manage_messages'
-      ]);
-    }
+    const scope = scopeArray.join(',');
     
-    const scope = Array.from(new Set(scopeArray)).join(',');
-    
-    console.log('🔍 Requesting Facebook permissions:', scope);
-    console.log('🔍 Connection type selected:', connectionType);
+    console.log('🔍 Requesting Facebook-only permissions:', scope);
 
     window.FB.login(function(response) {
-      console.log('Login response:', response);
+      console.log('Facebook login response:', response);
       
       if (response.status === 'connected') {
         const token = response.authResponse.accessToken;
-        console.log('Successfully logged in with token');
+        console.log('Successfully logged in with Facebook token');
         navigate('/success', { state: { accessToken: token } });
       } else if (response.status === 'not_authorized') {
-        console.log('Awaiting device verification...');
+        console.log('Awaiting Facebook device verification...');
         setIsVerifying(true);
         startPolling();
       } else {
-        console.log('User cancelled login or did not fully authorize.');
+        console.log('User cancelled Facebook login or did not fully authorize.');
         setIsVerifying(false);
+        setAuthType(null);
       }
     }, {
       scope: scope,
       auth_type: 'rerequest'
     });
+  };
+
+  const handleInstagramLogin = () => {
+    setAuthType('instagram');
+    
+    const clientId = '1195277397801905'; // Facebook App ID
+    const redirectUri = encodeURIComponent(window.location.origin + '/instagram-callback');
+    const scope = encodeURIComponent('instagram_business_basic,instagram_business_manage_messages');
+    
+    const instagramAuthUrl = `https://www.facebook.com/v18.0/dialog/oauth?` +
+      `client_id=${clientId}&` +
+      `redirect_uri=${redirectUri}&` +
+      `scope=${scope}&` +
+      `response_type=code&` +
+      `state=instagram_business_auth`;
+    
+    console.log('🔍 Redirecting to Instagram Business authorization:', instagramAuthUrl);
+    
+    // Redirect to Instagram Business authorization
+    window.location.href = instagramAuthUrl;
   };
 
   return (
@@ -93,46 +106,62 @@ function Login() {
           <>
             <div className="verification-message">
               <h2>Verificación pendiente</h2>
-              <p>Por favor, aprueba el inicio de sesión en tu aplicación de Facebook.</p>
+              <p>Por favor, aprueba el inicio de sesión en tu aplicación de {authType === 'facebook' ? 'Facebook' : 'Instagram Business'}.</p>
               <div className="loading-spinner">
                 <i className="fas fa-spinner fa-spin"></i>
               </div>
+              <button 
+                onClick={() => {
+                  setIsVerifying(false);
+                  setAuthType(null);
+                  if (pollInterval) {
+                    clearInterval(pollInterval);
+                    setPollInterval(null);
+                  }
+                }} 
+                className="cancel-btn"
+              >
+                Cancelar
+              </button>
             </div>
           </>
         ) : (
           <>
             <p>Para comenzar, conecta tus cuentas de redes sociales a nuestra app</p>
-            <div className="connection-type-selector">
-              <label className={connectionType === 'fb' ? 'selected' : ''}>
-                <input 
-                  type="radio" 
-                  value="fb" 
-                  checked={connectionType === 'fb'} 
-                  onChange={() => setConnectionType('fb')} 
-                />
-                <span className="radio-custom-button"></span>
-                <span className="radio-button-text">Connect Facebook Pages only</span>
-              </label>
-              <label className={connectionType === 'both' ? 'selected' : ''}>
-                <input 
-                  type="radio" 
-                  value="both" 
-                  checked={connectionType === 'both'} 
-                  onChange={() => setConnectionType('both')} 
-                />
-                <span className="radio-custom-button"></span>
-                <span className="radio-button-text">Connect Facebook Pages + Instagram Business accounts</span>
-              </label>
-              <div className="instagram-info">
-                <small>
-                  <i className="fas fa-info-circle"></i>
-                  Instagram accounts must be Business accounts linked to your Facebook Pages
-                </small>
+            
+            <div className="auth-options">
+              <div className="auth-option">
+                <h3><i className="fab fa-facebook"></i> Facebook Pages</h3>
+                <p>Conecta tus páginas de Facebook para gestionar mensajes y automatizar respuestas.</p>
+                <ul>
+                  <li>✓ Gestión de mensajes de Facebook Messenger</li>
+                  <li>✓ Automatización de respuestas</li>
+                  <li>✓ Estadísticas de engagement</li>
+                </ul>
+                <button onClick={handleFacebookLogin} className="facebook-login-btn">
+                  <i className="fab fa-facebook"></i> Conectar Facebook Pages
+                </button>
+              </div>
+
+              <div className="auth-option">
+                <h3><i className="fab fa-instagram"></i> Instagram Business</h3>
+                <p>Conecta tus cuentas de Instagram Business para gestionar mensajes directos.</p>
+                <ul>
+                  <li>✓ Gestión de mensajes directos de Instagram</li>
+                  <li>✓ Automatización de respuestas</li>
+                  <li>✓ Integración con páginas de Facebook</li>
+                </ul>
+                <div className="instagram-info">
+                  <small>
+                    <i className="fas fa-info-circle"></i>
+                    Requiere cuenta de Instagram Business vinculada a una página de Facebook
+                  </small>
+                </div>
+                <button onClick={handleInstagramLogin} className="instagram-login-btn">
+                  <i className="fab fa-instagram"></i> Conectar Instagram Business
+                </button>
               </div>
             </div>
-            <button onClick={handleFacebookLogin} className="facebook-login-btn">
-              <i className="fab fa-facebook"></i> Continuar con Facebook
-            </button>
           </>
         )}
       </div>
