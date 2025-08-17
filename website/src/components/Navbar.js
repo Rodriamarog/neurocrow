@@ -21,11 +21,6 @@ function Navbar() {
             </Link>
           </li>
           <li className="nav-item">
-            <Link to="/insights" className="nav-link" onClick={() => setIsOpen(false)}>
-              <i className="fas fa-rss"></i> Latest Posts
-            </Link>
-          </li>
-          <li className="nav-item">
             <Link to="/terminos-de-servicio" className="nav-link" onClick={() => setIsOpen(false)}>
               Términos de Servicio
             </Link>
