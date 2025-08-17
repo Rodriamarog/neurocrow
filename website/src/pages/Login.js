@@ -46,14 +46,16 @@ function Login() {
       'pages_manage_metadata',
       'pages_messaging',
       'pages_read_engagement',
-      'public_profile'
+      'public_profile',
+      'business_management'
     ];
     
     if (connectionType === 'both') {
       scopeArray = scopeArray.concat([
-        'business_management',
         'instagram_basic',
-        'instagram_manage_messages'
+        'instagram_business_basic',
+        'instagram_manage_messages',
+        'instagram_business_manage_messages'
       ]);
     }
     
