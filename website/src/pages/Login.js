@@ -81,12 +81,13 @@ function Login() {
   const handleInstagramLogin = () => {
     setAuthType('instagram');
     
-    const clientId = '1195277397801905'; // Facebook App ID
+    const instagramAppId = '1087630639166741'; // Instagram App ID
     const redirectUri = encodeURIComponent(window.location.origin + '/instagram-callback');
-    const scope = encodeURIComponent('instagram_business_basic,instagram_business_manage_messages');
+    const scope = encodeURIComponent('instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights');
     
-    const instagramAuthUrl = `https://www.facebook.com/v18.0/dialog/oauth?` +
-      `client_id=${clientId}&` +
+    const instagramAuthUrl = `https://www.instagram.com/oauth/authorize?` +
+      `force_reauth=true&` +
+      `client_id=${instagramAppId}&` +
       `redirect_uri=${redirectUri}&` +
       `scope=${scope}&` +
       `response_type=code&` +

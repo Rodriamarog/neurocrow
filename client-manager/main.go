@@ -1807,26 +1807,29 @@ func handleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("📥 Instagram token exchange request: code=%s, redirect_uri=%s", data.Code, data.RedirectURI)
 
-	// Exchange authorization code for access token using Facebook Graph API
-	clientId := os.Getenv("FACEBOOK_APP_ID")
-	clientSecret := os.Getenv("FACEBOOK_APP_SECRET")
+	// Exchange authorization code for access token using Instagram API
+	instagramAppId := os.Getenv("INSTAGRAM_APP_ID")
+	instagramAppSecret := os.Getenv("INSTAGRAM_APP_SECRET_KEY")
 	
-	if clientId == "" || clientSecret == "" {
-		log.Printf("❌ Missing Facebook app credentials")
+	if instagramAppId == "" || instagramAppSecret == "" {
+		log.Printf("❌ Missing Instagram app credentials")
 		http.Error(w, "Server configuration error", http.StatusInternalServerError)
 		return
 	}
 
-	// Build token exchange request
-	tokenURL := fmt.Sprintf(
-		"https://graph.facebook.com/v18.0/oauth/access_token?client_id=%s&client_secret=%s&redirect_uri=%s&code=%s",
-		clientId, clientSecret, data.RedirectURI, data.Code,
+	// Build token exchange request for Instagram
+	tokenURL := "https://api.instagram.com/oauth/access_token"
+	
+	// Prepare form data for POST request
+	formData := fmt.Sprintf(
+		"client_id=%s&client_secret=%s&grant_type=authorization_code&redirect_uri=%s&code=%s",
+		instagramAppId, instagramAppSecret, data.RedirectURI, data.Code,
 	)
 
-	log.Printf("🔗 Making token exchange request to Facebook")
+	log.Printf("🔗 Making token exchange request to Instagram API")
 
-	// Make the token exchange request
-	resp, err := http.Get(tokenURL)
+	// Make the token exchange request (POST with form data)
+	resp, err := http.Post(tokenURL, "application/x-www-form-urlencoded", strings.NewReader(formData))
 	if err != nil {
 		log.Printf("❌ Error making token exchange request: %v", err)
 		http.Error(w, "Failed to exchange token", http.StatusInternalServerError)
@@ -1842,24 +1845,33 @@ func handleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("📥 Facebook token exchange response: %d - %s", resp.StatusCode, string(bodyBytes))
+	log.Printf("📥 Instagram token exchange response: %d - %s", resp.StatusCode, string(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
-		var fbError struct {
+		var igError struct {
 			Error struct {
-				Message   string `json:"message"`
-				Type      string `json:"type"`
-				Code      int    `json:"code"`
-				FbtraceID string `json:"fbtrace_id"`
+				Message string `json:"error_message"`
+				Type    string `json:"error_type"`
+				Code    int    `json:"code"`
 			} `json:"error"`
+			ErrorMessage string `json:"error_message"`
+			ErrorType    string `json:"error_type"`
 		}
 		
-		if json.Unmarshal(bodyBytes, &fbError) == nil && fbError.Error.Message != "" {
-			log.Printf("❌ Facebook token exchange error: %s (Code: %d, Trace: %s)", 
-				fbError.Error.Message, fbError.Error.Code, fbError.Error.FbtraceID)
-			http.Error(w, fmt.Sprintf("Facebook API error: %s", fbError.Error.Message), http.StatusBadRequest)
+		if json.Unmarshal(bodyBytes, &igError) == nil {
+			errorMsg := igError.ErrorMessage
+			if errorMsg == "" && igError.Error.Message != "" {
+				errorMsg = igError.Error.Message
+			}
+			if errorMsg != "" {
+				log.Printf("❌ Instagram token exchange error: %s (Type: %s)", errorMsg, igError.ErrorType)
+				http.Error(w, fmt.Sprintf("Instagram API error: %s", errorMsg), http.StatusBadRequest)
+			} else {
+				log.Printf("❌ Instagram token exchange failed with status %d", resp.StatusCode)
+				http.Error(w, "Token exchange failed", http.StatusBadRequest)
+			}
 		} else {
-			log.Printf("❌ Facebook token exchange failed with status %d", resp.StatusCode)
+			log.Printf("❌ Instagram token exchange failed with status %d", resp.StatusCode)
 			http.Error(w, "Token exchange failed", http.StatusBadRequest)
 		}
 		return
