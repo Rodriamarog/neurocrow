@@ -1,24 +1,6 @@
-:root {
-  /* Main colors */
-  --color-background: #FFFFFF;
-  --color-primary: #2D3748;
-  --color-secondary: #4A5568;
-  --color-accent: #0070F3;
-  
-  /* Text colors */
-  --color-text: #2D3748;
-  --color-text-light: #4A5568;
-  --color-text-white: #FFFFFF;
-  
-  /* UI elements */
-  --color-border: #E2E8F0;
-  --color-card-bg: #FFFFFF;
-  --color-hover: #EDF2F7;
-  
-  /* Accent colors */
-  --color-success: #48BB78;
-  --color-error: #F56565;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 * {
   margin: 0;

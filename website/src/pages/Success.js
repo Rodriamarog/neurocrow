@@ -116,20 +116,20 @@ function Success() {
           <>
             <i className="fas fa-spinner fa-spin success-icon"></i>
             <h1>Configurando tu cuenta...</h1>
-            <p>Estamos configurando automáticamente tu{authType === 'instagram' ? 's cuentas de Instagram Business' : 's páginas de Facebook'} para que funcionen con Neurocrow.</p>
+            <p>Estamos configurando automáticamente tu cuenta para que funcione con Neurocrow.</p>
             
             <div className="setup-progress" style={{ margin: '20px 0', textAlign: 'left' }}>
               <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
                 {getStatusIcon(setupProgress.pageConnection)}
-                <span style={{ marginLeft: '10px' }}>Conectando {authType === 'instagram' ? 'cuentas de Instagram Business' : 'páginas de Facebook'}</span>
+                <span style={{ marginLeft: '10px' }}>Conectando tu cuenta...</span>
               </div>
               <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
                 {getStatusIcon(setupProgress.webhookSetup)}
-                <span style={{ marginLeft: '10px' }}>Configurando webhooks (Facebook API + Instagram app-level)</span>
+                <span style={{ marginLeft: '10px' }}>Configurando mensajería automática...</span>
               </div>
               <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
                 {getStatusIcon(setupProgress.handoverConfig)}
-                <span style={{ marginLeft: '10px' }}>Configurando protocolo avanzado (solo Facebook)</span>
+                <span style={{ marginLeft: '10px' }}>Finalizando configuración...</span>
               </div>
             </div>
           </>

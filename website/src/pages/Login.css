@@ -3,28 +3,52 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #F7FAFC 0%, #EDF2F7 100%);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
+  position: relative;
+}
+
+.login-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><defs><radialGradient id="a" cx="50%" cy="50%"><stop offset="0%" stop-color="%23ffffff" stop-opacity="0.1"/><stop offset="100%" stop-color="%23ffffff" stop-opacity="0"/></radialGradient></defs><circle cx="200" cy="200" r="300" fill="url(%23a)"/><circle cx="800" cy="800" r="250" fill="url(%23a)"/></svg>');
+  pointer-events: none;
 }
 
 .login-box {
-  background: white;
-  padding: 2.5rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  padding: 3rem;
+  border-radius: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   text-align: center;
-  max-width: 600px;
+  max-width: 480px;
   width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  position: relative;
+  z-index: 1;
 }
 
 .login-box h1 {
-  color: var(--color-primary);
-  margin-bottom: 1rem;
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.02em;
 }
 
 .login-box p {
-  color: var(--color-text-light);
-  margin-bottom: 2rem;
+  color: #6B7280;
+  margin-bottom: 3rem;
+  font-size: 1.1rem;
+  font-weight: 400;
+  line-height: 1.6;
 }
 
 .connection-type-selector {
@@ -116,35 +140,143 @@
   background: #166FE5;
 }
 
-/* New verification styles that match your design system */
+/* Modern verification styles */
 .verification-message {
   text-align: center;
+  padding: 2rem 0;
 }
 
 .verification-message h2 {
-  color: var(--color-primary);
-  font-size: 1.5rem;
+  font-size: 1.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
   margin-bottom: 1rem;
+  letter-spacing: -0.01em;
 }
 
 .verification-message p {
-  color: var(--color-text-light);
+  color: #6B7280;
   margin-bottom: 2rem;
+  font-size: 1rem;
+  line-height: 1.6;
 }
 
 .loading-spinner {
-  color: #1877F2;
-  font-size: 2rem;
-  margin-top: 1.5rem;
+  margin: 2rem 0;
+  position: relative;
 }
 
 .loading-spinner i {
+  font-size: 3rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
   animation: spin 1.5s linear infinite;
 }
 
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Modern cancel button */
+.cancel-btn {
+  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+  color: white;
+  border: none;
+  padding: 0.75rem 2rem;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+}
+
+.cancel-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+  background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+}
+
+/* Responsive design */
+@media (max-width: 640px) {
+  .login-container {
+    padding: 1rem;
+  }
+  
+  .login-box {
+    padding: 2rem;
+    border-radius: 20px;
+    max-width: 100%;
+  }
+  
+  .login-box h1 {
+    font-size: 2rem;
+  }
+  
+  .login-box p {
+    font-size: 1rem;
+    margin-bottom: 2rem;
+  }
+  
+  .facebook-login-btn,
+  .instagram-login-btn {
+    padding: 1rem;
+    font-size: 1rem;
+    min-height: 56px;
+  }
+  
+  .verification-message h2 {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-box h1 {
+    font-size: 1.75rem;
+  }
+  
+  .facebook-login-btn,
+  .instagram-login-btn {
+    gap: 0.5rem;
+  }
+}
+
+/* Focus states for accessibility */
+.facebook-login-btn:focus,
+.instagram-login-btn:focus,
+.cancel-btn:focus {
+  outline: none;
+  ring: 3px;
+  ring-color: rgba(59, 130, 246, 0.5);
+  ring-offset: 2px;
+}
+
+/* Loading state animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.loading-spinner::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: #667eea;
+  animation: spin 1s linear infinite;
 }
 
 .instagram-info {
@@ -169,124 +301,98 @@
   color: #FB923C;
 }
 
-/* New two-button authentication layout */
+/* Modern authentication layout */
 .auth-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  margin-top: 2rem;
-}
-
-@media (max-width: 768px) {
-  .auth-options {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0;
 }
 
 .auth-option {
-  background: #F8FAFC;
-  border: 1px solid #E2E8F0;
-  border-radius: 12px;
-  padding: 1.5rem;
-  text-align: left;
-  transition: all 0.3s ease;
+  width: 100%;
 }
 
-.auth-option:hover {
-  border-color: #CBD5E0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.auth-option h3 {
-  color: #2D3748;
-  margin-bottom: 0.75rem;
-  font-size: 1.2rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.auth-option h3 i {
-  font-size: 1.4rem;
-}
-
-.auth-option h3 .fa-facebook {
-  color: #1877F2;
-}
-
-.auth-option h3 .fa-instagram {
-  background: linear-gradient(45deg, #F58529, #DD2A7B, #8134AF);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.auth-option p {
-  color: #4A5568;
-  margin-bottom: 1rem;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.auth-option ul {
-  list-style: none;
-  padding: 0;
-  margin: 1rem 0 1.5rem 0;
-}
-
-.auth-option ul li {
-  color: #2D3748;
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
+/* Modern button base styles */
+.facebook-login-btn,
 .instagram-login-btn {
-  background: linear-gradient(45deg, #F58529, #DD2A7B, #8134AF);
-  color: white;
+  width: 100%;
   border: none;
-  padding: 0.8rem 1.5rem;
-  border-radius: 8px;
-  font-size: 1rem;
+  padding: 1rem 1.5rem;
+  border-radius: 16px;
+  font-size: 1.1rem;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  gap: 0.5rem;
-  transition: all 0.3s ease;
-  font-weight: 600;
+  gap: 0.75rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.025em;
+  min-height: 64px;
 }
 
-.instagram-login-btn:hover {
-  background: linear-gradient(45deg, #E8791C, #C91F69, #6A2C91);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(245, 133, 41, 0.3);
-}
-
+/* Facebook button */
 .facebook-login-btn {
-  background: #1877F2;
+  background: linear-gradient(135deg, #1877F2 0%, #42A5F5 100%);
   color: white;
-  border: none;
-  padding: 0.8rem 1.5rem;
-  border-radius: 8px;
-  font-size: 1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  gap: 0.5rem;
-  transition: all 0.3s ease;
-  font-weight: 600;
+  box-shadow: 0 8px 32px rgba(24, 119, 242, 0.3);
 }
 
 .facebook-login-btn:hover {
-  background: #166FE5;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(24, 119, 242, 0.4);
+  background: linear-gradient(135deg, #166FE5 0%, #2196F3 100%);
+}
+
+.facebook-login-btn:active {
+  transform: translateY(0);
+}
+
+/* Instagram button */
+.instagram-login-btn {
+  background: linear-gradient(135deg, #E1306C 0%, #F56040 50%, #FCAF45 100%);
+  color: white;
+  box-shadow: 0 8px 32px rgba(225, 48, 108, 0.3);
+}
+
+.instagram-login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(225, 48, 108, 0.4);
+  background: linear-gradient(135deg, #C13584 0%, #E1306C 50%, #F56040 100%);
+}
+
+.instagram-login-btn:active {
+  transform: translateY(0);
+}
+
+/* Icon styling */
+.facebook-login-btn i,
+.instagram-login-btn i {
+  font-size: 1.3rem;
+}
+
+/* Ripple effect */
+.facebook-login-btn::before,
+.instagram-login-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.facebook-login-btn:active::before,
+.instagram-login-btn:active::before {
+  width: 300px;
+  height: 300px;
 }
 
 .cancel-btn {

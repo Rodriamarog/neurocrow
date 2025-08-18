@@ -1,7 +1,6 @@
 // Login.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import './Login.css';
 
 function Login() {
   const navigate = useNavigate();
@@ -100,70 +99,58 @@ function Login() {
   };
 
   return (
-    <div className="login-container">
-      <div className="login-box">
-        <h1>Conecta tus cuentas</h1>
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white border border-slate-200 p-8 space-y-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-slate-900">Conecta tus cuentas</h1>
+        </div>
         {isVerifying ? (
-          <>
-            <div className="verification-message">
-              <h2>Verificación pendiente</h2>
-              <p>Por favor, aprueba el inicio de sesión en tu aplicación de {authType === 'facebook' ? 'Facebook' : 'Instagram Business'}.</p>
-              <div className="loading-spinner">
-                <i className="fas fa-spinner fa-spin"></i>
+          <div className="space-y-6">
+            <div className="text-center">
+              <div className="w-12 h-12 mx-auto mb-4 text-slate-600">
+                <i className="fas fa-spinner fa-spin text-2xl"></i>
               </div>
+              <h2 className="text-xl font-semibold text-slate-900 mb-2">Verificación pendiente</h2>
+              <p className="text-slate-600">Por favor, aprueba el inicio de sesión en tu aplicación de {authType === 'facebook' ? 'Facebook' : 'Instagram'}.</p>
+            </div>
+            <button 
+              onClick={() => {
+                setIsVerifying(false);
+                setAuthType(null);
+                if (pollInterval) {
+                  clearInterval(pollInterval);
+                  setPollInterval(null);
+                }
+              }} 
+              className="w-full px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="text-center">
+              <p className="text-slate-600">Para comenzar, conecta tus cuentas de redes sociales</p>
+            </div>
+            
+            <div className="space-y-3">
               <button 
-                onClick={() => {
-                  setIsVerifying(false);
-                  setAuthType(null);
-                  if (pollInterval) {
-                    clearInterval(pollInterval);
-                    setPollInterval(null);
-                  }
-                }} 
-                className="cancel-btn"
+                onClick={handleFacebookLogin} 
+                className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
-                Cancelar
+                <i className="fab fa-facebook text-lg"></i>
+                Conectar Facebook
+              </button>
+
+              <button 
+                onClick={handleInstagramLogin} 
+                className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-medium transition-all focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+              >
+                <i className="fab fa-instagram text-lg"></i>
+                Conectar Instagram
               </button>
             </div>
-          </>
-        ) : (
-          <>
-            <p>Para comenzar, conecta tus cuentas de redes sociales a nuestra app</p>
-            
-            <div className="auth-options">
-              <div className="auth-option">
-                <h3><i className="fab fa-facebook"></i> Facebook Pages</h3>
-                <p>Conecta tus páginas de Facebook para gestionar mensajes y automatizar respuestas.</p>
-                <ul>
-                  <li>✓ Gestión de mensajes de Facebook Messenger</li>
-                  <li>✓ Automatización de respuestas</li>
-                  <li>✓ Estadísticas de engagement</li>
-                </ul>
-                <button onClick={handleFacebookLogin} className="facebook-login-btn">
-                  <i className="fab fa-facebook"></i> Conectar Facebook Pages
-                </button>
-              </div>
-
-              <div className="auth-option">
-                <h3><i className="fab fa-instagram"></i> Instagram Business</h3>
-                <p>Conecta tus cuentas de Instagram Business para gestionar mensajes directos.</p>
-                <ul>
-                  <li>✓ Gestión de mensajes directos de Instagram</li>
-                  <li>✓ Automatización de respuestas</li>
-                  <li>✓ Integración con páginas de Facebook</li>
-                </ul>
-                <div className="instagram-info">
-                  <small>
-                    <i className="fas fa-info-circle"></i>
-                    Requiere cuenta de Instagram Business vinculada a una página de Facebook
-                  </small>
-                </div>
-                <button onClick={handleInstagramLogin} className="instagram-login-btn">
-                  <i className="fab fa-instagram"></i> Conectar Instagram Business
-                </button>
-              </div>
-            </div>
-          </>
+          </div>
         )}
       </div>
     </div>
