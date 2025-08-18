@@ -139,36 +139,6 @@ function Success() {
             <h1>¡Configuración Completada!</h1>
             <p>Tu cuenta ha sido configurada automáticamente. Tus páginas ya están listas para recibir mensajes y usar el chatbot de Neurocrow.</p>
             
-            <div className="next-steps" style={{ margin: '30px 0' }}>
-              <a 
-                href="/insights" 
-                className="insights-btn"
-                style={{
-                  display: 'inline-block',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  padding: '15px 30px',
-                  borderRadius: '12px',
-                  textDecoration: 'none',
-                  fontWeight: '600',
-                  fontSize: '16px',
-                  boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)',
-                  transition: 'all 0.3s ease'
-                }}
-                onMouseOver={(e) => {
-                  e.target.style.background = 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)';
-                  e.target.style.transform = 'translateY(-2px)';
-                  e.target.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
-                }}
-                onMouseOut={(e) => {
-                  e.target.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-                  e.target.style.transform = 'translateY(0)';
-                  e.target.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.3)';
-                }}
-              >
-                <i className="fas fa-rss"></i> Ver Últimos Posts
-              </a>
-            </div>
           </>
         ) : (
           <>
