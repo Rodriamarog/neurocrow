@@ -19,11 +19,26 @@
   padding: 0 20px;
 }
 
+.navbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .menu-icon {
   display: none;
   color: var(--color-primary);
   font-size: 1.8rem;
   cursor: pointer;
+}
+
+@media screen and (min-width: 961px) {
+  .navbar-controls {
+    order: 2;
+  }
+  .nav-menu {
+    order: 1;
+  }
 }
 
 .nav-menu {

@@ -9,6 +9,11 @@
   height: 80px;
   width: auto;
   object-fit: contain;
+  transition: filter 0.3s ease;
+}
+
+[data-theme="dark"] .logo-image {
+  filter: brightness(0) invert(1);
 }
 
 @media screen and (max-width: 768px) {

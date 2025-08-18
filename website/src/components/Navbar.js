@@ -1,18 +1,24 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import Logo from './Logo';
+import DarkModeToggle from './DarkModeToggle';
+import { useDarkMode } from '../contexts/DarkModeContext';
 import './Navbar.css';
 
 function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const { isDark, toggleDarkMode } = useDarkMode();
   
   return (
     <nav className="navbar">
       <div className="navbar-container">
         <Logo />
         
-        <div className="menu-icon" onClick={() => setIsOpen(!isOpen)}>
-          <i className={isOpen ? 'fas fa-times' : 'fas fa-bars'} />
+        <div className="navbar-controls">
+          <DarkModeToggle isDark={isDark} onToggle={toggleDarkMode} />
+          <div className="menu-icon" onClick={() => setIsOpen(!isOpen)}>
+            <i className={isOpen ? 'fas fa-times' : 'fas fa-bars'} />
+          </div>
         </div>
         <ul className={isOpen ? 'nav-menu active' : 'nav-menu'}>
           <li className="nav-item">

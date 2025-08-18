@@ -15,6 +15,7 @@ import InstagramCallback from './pages/InstagramCallback';
 import { Outlet } from 'react-router-dom';
 import TerminosServicio from './pages/TerminosServicio';
 import PoliticaPrivacidad from './pages/PoliticaPrivacidad';
+import { DarkModeProvider } from './contexts/DarkModeContext';
 import './index.css';
 
 // Loading component
@@ -123,7 +124,11 @@ const router = createBrowserRouter(
 );
 
 function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <DarkModeProvider>
+      <RouterProvider router={router} />
+    </DarkModeProvider>
+  );
 }
 
 export default App;

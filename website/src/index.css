@@ -12,6 +12,16 @@
   --color-border: #e2e8f0;
 }
 
+[data-theme="dark"] {
+  --color-background: #0f172a;
+  --color-text: #f1f5f9;
+  --color-text-light: #94a3b8;
+  --color-primary: #f8fafc;
+  --color-accent: #3b82f6;
+  --color-card-bg: #1e293b;
+  --color-border: #334155;
+}
+
 * {
   margin: 0;
   padding: 0;
