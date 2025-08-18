@@ -56,6 +56,7 @@ func main() {
 	// Apply CORS to all routes - protected routes require authentication
 	router.HandleFunc("/", corsMiddleware(handlePages))
 	router.HandleFunc("/facebook-token", corsMiddleware(handleFacebookToken))
+	router.HandleFunc("/instagram-token", corsMiddleware(handleInstagramToken))
 	router.HandleFunc("/instagram-token-exchange", corsMiddleware(handleInstagramTokenExchange))
 	router.HandleFunc("/activate-form", corsMiddleware(requireAuth(handleActivateForm)))
 	router.HandleFunc("/activate-page", corsMiddleware(requireAuth(handleActivatePage)))
@@ -1906,4 +1907,298 @@ func handleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 		"expires_in":   tokenResponse.ExpiresIn,
 		"success":      true,
 	})
+}
+
+// handleInstagramToken handles Instagram access tokens and sets up Instagram Business accounts
+func handleInstagramToken(w http.ResponseWriter, r *http.Request) {
+	log.Printf("=== Starting Instagram token request handling ===")
+
+	var data struct {
+		UserToken string `json:"userToken"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		log.Printf("❌ Error decoding request: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 1. Get Instagram user details
+	instagramUser, err := getInstagramUser(data.UserToken)
+	if err != nil {
+		log.Printf("❌ Error getting Instagram user details: %v", err)
+		http.Error(w, fmt.Sprintf("Could not verify Instagram user: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Get Instagram Business accounts
+	accounts, err := getInstagramBusinessAccounts(data.UserToken)
+	if err != nil {
+		log.Printf("❌ Error getting Instagram accounts: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("✅ Found %d Instagram Business accounts", len(accounts))
+
+	// 3. Start transactions for both databases
+	tx, err := DB.Begin()
+	if err != nil {
+		log.Printf("❌ Error starting client-manager transaction: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	var socialTx *sql.Tx
+	if SocialDB != nil {
+		socialTx, err = SocialDB.Begin()
+		if err != nil {
+			log.Printf("❌ Error starting social dashboard transaction: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer socialTx.Rollback()
+	}
+
+	// 4. Create or update client in client-manager database
+	var clientID string
+	err = tx.QueryRow(`
+        INSERT INTO clients (name, facebook_user_id)
+        VALUES ($1, $2)
+        ON CONFLICT (facebook_user_id) DO UPDATE
+        SET name = EXCLUDED.name
+        RETURNING id
+    `, instagramUser.Username, instagramUser.ID).Scan(&clientID)
+	if err != nil {
+		log.Printf("❌ Error upserting client in client-manager database: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("✅ Upserted client in client-manager database with ID: %s", clientID)
+
+	// 4b. Also create or update client in social dashboard database
+	if socialTx != nil {
+		_, err = socialTx.Exec(`
+            INSERT INTO clients (id, name, facebook_user_id, created_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                facebook_user_id = EXCLUDED.facebook_user_id
+        `, clientID, instagramUser.Username, instagramUser.ID)
+		if err != nil {
+			log.Printf("❌ Error upserting client in social dashboard database: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("✅ Upserted client in social dashboard database with ID: %s", clientID)
+	}
+
+	// 5. Disable client's previous Instagram accounts
+	result, err := tx.Exec(`
+        UPDATE pages 
+        SET status = 'disabled'
+        WHERE client_id = $1 
+        AND platform = 'instagram'
+    `, clientID)
+	if err != nil {
+		log.Printf("❌ Error disabling previous Instagram accounts: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ Disabled %d previous Instagram accounts", rowsAffected)
+
+	// 6. Insert/update new Instagram accounts in BOTH tables
+	for _, account := range accounts {
+		log.Printf("📝 Processing Instagram account %s (ID: %s)", account.Name, account.ID)
+
+		// Insert/update in pages table (for client-manager)
+		result, err := tx.Exec(`
+            INSERT INTO pages (
+                client_id,
+                page_id, 
+                name, 
+                access_token, 
+                platform,
+                status
+            ) VALUES (
+                $1, $2, $3, $4, 'instagram',
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1 FROM pages 
+                        WHERE platform = 'instagram' 
+                        AND page_id = $2 
+                        AND status = 'active'
+                    ) THEN 'active'
+                    ELSE 'pending'
+                END
+            )
+            ON CONFLICT (platform, page_id) 
+            DO UPDATE SET 
+                client_id = EXCLUDED.client_id,
+                name = EXCLUDED.name,
+                access_token = EXCLUDED.access_token,
+                status = CASE 
+                    WHEN pages.status = 'active' THEN 'active'
+                    ELSE 'pending'
+                END
+        `, clientID, account.ID, account.Name, account.AccessToken)
+
+		if err != nil {
+			log.Printf("❌ Error processing Instagram account in pages table %s: %v", account.Name, err)
+			continue
+		}
+
+		rowsAffected, _ := result.RowsAffected()
+		log.Printf("✅ Successfully processed Instagram account in pages table %s (rows affected: %d)", account.Name, rowsAffected)
+
+		// Also insert/update in social_pages table (for message-router) if social database is available
+		if socialTx != nil {
+			socialResult, err := socialTx.Exec(`
+                INSERT INTO social_pages (
+                    client_id,
+                    platform,
+                    page_id, 
+                    page_name, 
+                    access_token,
+                    created_at
+                ) VALUES (
+                    $1, 'instagram', $2, $3, $4, NOW()
+                )
+                ON CONFLICT (platform, page_id) 
+                DO UPDATE SET 
+                    client_id = EXCLUDED.client_id,
+                    page_name = EXCLUDED.page_name,
+                    access_token = EXCLUDED.access_token
+            `, clientID, account.ID, account.Name, account.AccessToken)
+
+			if err != nil {
+				log.Printf("❌ Error processing Instagram account in social_pages table %s: %v", account.Name, err)
+				continue
+			}
+
+			socialRowsAffected, _ := socialResult.RowsAffected()
+			log.Printf("✅ Successfully processed Instagram account in social_pages table %s (rows affected: %d)", account.Name, socialRowsAffected)
+		} else {
+			log.Printf("⚠️ Social database not available, skipping social_pages update for %s", account.Name)
+		}
+	}
+
+	// 7. Commit both transactions
+	if err = tx.Commit(); err != nil {
+		log.Printf("❌ Error committing client-manager transaction: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("✅ Client-manager transaction committed successfully")
+
+	if socialTx != nil {
+		if err = socialTx.Commit(); err != nil {
+			log.Printf("❌ Error committing social dashboard transaction: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("✅ Social dashboard transaction committed successfully")
+	}
+
+	// 8. Note: Instagram webhook setup is handled at app level, not per-account
+	log.Printf("ℹ️ Instagram webhooks are configured at app level in Facebook App Dashboard")
+
+	// Create session for the authenticated user
+	sessionToken := createSession(clientID)
+	
+	log.Printf("✅ Successfully completed Instagram token request.")
+	
+	// Return session token to client
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"session_token": sessionToken,
+		"client_id":    clientID,
+		"message":      "Instagram authentication successful",
+	})
+}
+
+// InstagramUser represents an Instagram user
+type InstagramUser struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+// InstagramAccount represents an Instagram Business account
+type InstagramAccount struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Username    string `json:"username"`
+	AccessToken string `json:"access_token"`
+}
+
+// getInstagramUser gets Instagram user information
+func getInstagramUser(accessToken string) (*InstagramUser, error) {
+	url := fmt.Sprintf("https://graph.instagram.com/me?fields=id,username&access_token=%s", accessToken)
+	log.Printf("📡 Getting Instagram user info from: %s", url)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("error making request to Instagram API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading Instagram API response: %w", err)
+	}
+
+	log.Printf("📥 Instagram user API response: %d - %s", resp.StatusCode, string(bodyBytes))
+
+	if resp.StatusCode != http.StatusOK {
+		var igError struct {
+			Error struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+				Code    int    `json:"code"`
+			} `json:"error"`
+		}
+		
+		if json.Unmarshal(bodyBytes, &igError) == nil && igError.Error.Message != "" {
+			return nil, fmt.Errorf("Instagram API error: %s", igError.Error.Message)
+		}
+		return nil, fmt.Errorf("Instagram API error: status %d", resp.StatusCode)
+	}
+
+	var user InstagramUser
+	if err := json.Unmarshal(bodyBytes, &user); err != nil {
+		return nil, fmt.Errorf("error parsing Instagram user response: %w", err)
+	}
+
+	if user.ID == "" || user.Username == "" {
+		return nil, fmt.Errorf("incomplete user data from Instagram API")
+	}
+
+	log.Printf("✅ Successfully got Instagram user: %s (%s)", user.Username, user.ID)
+	return &user, nil
+}
+
+// getInstagramBusinessAccounts gets Instagram Business accounts for the user
+func getInstagramBusinessAccounts(accessToken string) ([]InstagramAccount, error) {
+	// Note: Instagram Business API typically requires getting accounts through 
+	// Facebook Pages that have connected Instagram Business accounts
+	// For now, we'll create a basic account entry using the user's info
+	
+	user, err := getInstagramUser(accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("error getting user info: %w", err)
+	}
+
+	// Create an account entry for the authenticated Instagram Business account
+	account := InstagramAccount{
+		ID:          user.ID,
+		Name:        user.Username,
+		Username:    user.Username,
+		AccessToken: accessToken,
+	}
+
+	log.Printf("✅ Created Instagram Business account entry: %s (%s)", account.Name, account.ID)
+	
+	return []InstagramAccount{account}, nil
 }

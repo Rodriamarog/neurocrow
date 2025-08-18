@@ -29,8 +29,12 @@ function Success() {
     // Update progress indicators step by step
     setSetupProgress(prev => ({ ...prev, pageConnection: 'in_progress' }));
 
-    // Send token to your backend
-    fetch('https://neurocrow-client-manager.onrender.com/facebook-token', {
+    // Send token to your backend (different endpoints for Facebook vs Instagram)
+    const endpoint = authType === 'instagram' 
+      ? 'https://neurocrow-client-manager.onrender.com/instagram-token'
+      : 'https://neurocrow-client-manager.onrender.com/facebook-token';
+    
+    fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -84,7 +88,7 @@ function Success() {
         handoverConfig: 'error'
       }));
     });
-  }, [accessToken]);
+  }, [accessToken, authType]);
 
   const handleContactClick = () => {
     window.open('https://m.me/413548765185533', '_blank');
