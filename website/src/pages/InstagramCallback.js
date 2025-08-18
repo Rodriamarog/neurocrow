@@ -1,7 +1,6 @@
 // InstagramCallback.js
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import './Login.css';
 
 function InstagramCallback() {
   const navigate = useNavigate();
@@ -86,35 +85,37 @@ function InstagramCallback() {
   };
 
   return (
-    <div className="login-container">
-      <div className="login-box">
-        <h1>Autorización Instagram Business</h1>
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white border border-slate-200 p-8 space-y-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-slate-900">Autorización Instagram Business</h1>
+        </div>
         
         {status === 'processing' && (
-          <div className="verification-message">
-            <div className="loading-spinner">
-              <i className="fas fa-spinner fa-spin"></i>
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 mx-auto mb-4 text-slate-600">
+              <i className="fas fa-spinner fa-spin text-2xl"></i>
             </div>
-            <p>{message}</p>
+            <p className="text-slate-600">{message}</p>
           </div>
         )}
 
         {status === 'error' && (
-          <div className="error-message">
-            <i className="fas fa-exclamation-triangle"></i>
-            <h3>Error de Autorización</h3>
-            <p>{message}</p>
-            <button onClick={handleRetry} className="retry-btn">
+          <div className="text-center space-y-4">
+            <i className="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+            <h3 className="text-lg font-semibold text-slate-900">Error de Autorización</h3>
+            <p className="text-slate-600">{message}</p>
+            <button onClick={handleRetry} className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
               Intentar de nuevo
             </button>
           </div>
         )}
 
         {status === 'success' && (
-          <div className="success-message">
-            <i className="fas fa-check-circle"></i>
-            <h3>¡Autorización Exitosa!</h3>
-            <p>Redirigiendo a la aplicación...</p>
+          <div className="text-center space-y-4">
+            <i className="fas fa-check-circle text-3xl text-green-500 mb-4"></i>
+            <h3 className="text-lg font-semibold text-slate-900">¡Autorización Exitosa!</h3>
+            <p className="text-slate-600">Redirigiendo a la aplicación...</p>
           </div>
         )}
       </div>
