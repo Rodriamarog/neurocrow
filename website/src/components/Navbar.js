@@ -36,7 +36,7 @@ function Navbar() {
               className="nav-link login-button" 
               onClick={() => setIsOpen(false)}
             >
-              <i className="fab fa-facebook"></i> Conectar Facebook
+              <i className="fas fa-link"></i> Conectar Paginas
             </Link>
           </li>
         </ul>

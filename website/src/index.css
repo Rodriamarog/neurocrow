@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-background: #ffffff;
+  --color-text: #334155;
+  --color-text-light: #64748b;
+  --color-primary: #1e293b;
+  --color-accent: #3b82f6;
+  --color-card-bg: #ffffff;
+  --color-border: #e2e8f0;
+}
+
 * {
   margin: 0;
   padding: 0;
