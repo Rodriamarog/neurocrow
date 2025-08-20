@@ -56,6 +56,7 @@ func main() {
 	// Apply CORS to all routes - protected routes require authentication
 	router.HandleFunc("/", corsMiddleware(handlePages))
 	router.HandleFunc("/facebook-token", corsMiddleware(handleFacebookToken))
+	router.HandleFunc("/facebook-business-token", corsMiddleware(handleFacebookBusinessToken))
 	router.HandleFunc("/instagram-token", corsMiddleware(handleInstagramToken))
 	router.HandleFunc("/instagram-token-exchange", corsMiddleware(handleInstagramTokenExchange))
 	router.HandleFunc("/activate-form", corsMiddleware(requireAuth(handleActivateForm)))
@@ -1780,6 +1781,89 @@ func getPagePosts(pageID, accessToken, limit, pageName, platform string) (*PageP
 	return response, nil
 }
 
+// handleFacebookBusinessToken handles Facebook Business tokens that include both Facebook pages and Instagram Business accounts
+func handleFacebookBusinessToken(w http.ResponseWriter, r *http.Request) {
+	log.Printf("=== Starting Facebook Business token request handling ===")
+
+	var data struct {
+		UserToken string `json:"userToken"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		log.Printf("❌ Error decoding request: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 1. Get user details from Facebook
+	fbUser, err := getFacebookUser(data.UserToken)
+	if err != nil {
+		log.Printf("❌ Error getting Facebook user details: %v", err)
+		http.Error(w, fmt.Sprintf("Could not verify Facebook user: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ Facebook Business user authenticated: %s (ID: %s)", fbUser.Name, fbUser.ID)
+
+	// 2. Get both Facebook pages and Instagram Business accounts
+	facebookPages, err := getFacebookPages(data.UserToken)
+	if err != nil {
+		log.Printf("❌ Error getting Facebook pages: %v", err)
+		http.Error(w, fmt.Sprintf("Could not get Facebook pages: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("✅ Found %d Facebook pages", len(facebookPages))
+
+	// 3. Get Instagram Business accounts connected to Facebook pages
+	instagramAccounts := []InstagramAccount{}
+	for _, page := range facebookPages {
+		if igAccount, err := getInstagramBusinessAccount(page.AccessToken, page.ID); err == nil && igAccount.ID != "" {
+			instagramAccounts = append(instagramAccounts, igAccount)
+			log.Printf("✅ Found Instagram Business account: %s (ID: %s) for page: %s", igAccount.Username, igAccount.ID, page.Name)
+		}
+	}
+
+	log.Printf("✅ Found %d Instagram Business accounts", len(instagramAccounts))
+
+	// 4. Create client session
+	clientID := generateClientID()
+	sessionToken := generateSessionToken()
+
+	// 5. Store both Facebook and Instagram data in database
+	err = storeFacebookBusinessData(clientID, fbUser, facebookPages, instagramAccounts)
+	if err != nil {
+		log.Printf("❌ Error storing Facebook Business data: %v", err)
+		http.Error(w, fmt.Sprintf("Could not store account data: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// 6. Create session entry
+	sessionMutex.Lock()
+	sessions[sessionToken] = &Session{
+		Token:     sessionToken,
+		ClientID:  clientID,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	sessionMutex.Unlock()
+
+	log.Printf("✅ Facebook Business authentication completed successfully for client: %s", clientID)
+
+	// 7. Return success response
+	response := map[string]interface{}{
+		"success":       true,
+		"session_token": sessionToken,
+		"client_id":     clientID,
+		"facebook_pages": len(facebookPages),
+		"instagram_accounts": len(instagramAccounts),
+		"message":       "Facebook Business authentication successful - both Facebook and Instagram accounts connected",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // handleInstagramTokenExchange handles the Instagram OAuth code exchange for access token
 func handleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -2201,4 +2285,133 @@ func getInstagramBusinessAccounts(accessToken string) ([]InstagramAccount, error
 	log.Printf("✅ Created Instagram Business account entry: %s (%s)", account.Name, account.ID)
 	
 	return []InstagramAccount{account}, nil
+}
+
+// storeFacebookBusinessData stores both Facebook pages and Instagram Business accounts from Facebook Business login
+func storeFacebookBusinessData(clientID string, fbUser FacebookUser, facebookPages []FacebookPage, instagramAccounts []InstagramAccount) error {
+	log.Printf("=== Storing Facebook Business data for client: %s ===", clientID)
+
+	// Begin transaction for client-manager database
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Begin transaction for social dashboard database (if available)
+	var socialTx *sql.Tx
+	if socialDb != nil {
+		socialTx, err = socialDb.Begin()
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not begin social dashboard transaction: %v", err)
+		} else {
+			defer socialTx.Rollback()
+		}
+	}
+
+	// 1. Store/update client
+	_, err = tx.Exec(`
+        INSERT INTO clients (id, name, facebook_user_id, created_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (facebook_user_id) DO UPDATE
+        SET name = EXCLUDED.name,
+            id = EXCLUDED.id
+    `, clientID, fbUser.Name, fbUser.ID)
+	if err != nil {
+		return fmt.Errorf("failed to store client: %v", err)
+	}
+
+	// 1b. Store in social dashboard too
+	if socialTx != nil {
+		_, err = socialTx.Exec(`
+            INSERT INTO clients (id, name, facebook_user_id, created_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                facebook_user_id = EXCLUDED.facebook_user_id
+        `, clientID, fbUser.Name, fbUser.ID)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not store client in social dashboard: %v", err)
+		}
+	}
+
+	// 2. Store Facebook pages
+	for _, page := range facebookPages {
+		_, err = tx.Exec(`
+            INSERT INTO facebook_pages (page_id, client_id, name, access_token, category, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (page_id) DO UPDATE
+            SET name = EXCLUDED.name,
+                access_token = EXCLUDED.access_token,
+                category = EXCLUDED.category,
+                client_id = EXCLUDED.client_id
+        `, page.ID, clientID, page.Name, page.AccessToken, page.Category)
+		if err != nil {
+			return fmt.Errorf("failed to store Facebook page %s: %v", page.Name, err)
+		}
+
+		// Store in social dashboard too
+		if socialTx != nil {
+			_, err = socialTx.Exec(`
+                INSERT INTO facebook_pages (page_id, client_id, name, access_token, category, created_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                ON CONFLICT (page_id) DO UPDATE
+                SET name = EXCLUDED.name,
+                    access_token = EXCLUDED.access_token,
+                    category = EXCLUDED.category,
+                    client_id = EXCLUDED.client_id
+            `, page.ID, clientID, page.Name, page.AccessToken, page.Category)
+			if err != nil {
+				log.Printf("⚠️ Warning: Could not store Facebook page in social dashboard: %v", err)
+			}
+		}
+	}
+
+	// 3. Store Instagram Business accounts
+	for _, igAccount := range instagramAccounts {
+		_, err = tx.Exec(`
+            INSERT INTO instagram_accounts (account_id, client_id, name, username, access_token, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (account_id) DO UPDATE
+            SET name = EXCLUDED.name,
+                username = EXCLUDED.username,
+                access_token = EXCLUDED.access_token,
+                client_id = EXCLUDED.client_id
+        `, igAccount.ID, clientID, igAccount.Name, igAccount.Username, igAccount.AccessToken)
+		if err != nil {
+			return fmt.Errorf("failed to store Instagram account %s: %v", igAccount.Username, err)
+		}
+
+		// Store in social dashboard too
+		if socialTx != nil {
+			_, err = socialTx.Exec(`
+                INSERT INTO instagram_accounts (account_id, client_id, name, username, access_token, created_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                ON CONFLICT (account_id) DO UPDATE
+                SET name = EXCLUDED.name,
+                    username = EXCLUDED.username,
+                    access_token = EXCLUDED.access_token,
+                    client_id = EXCLUDED.client_id
+            `, igAccount.ID, clientID, igAccount.Name, igAccount.Username, igAccount.AccessToken)
+			if err != nil {
+				log.Printf("⚠️ Warning: Could not store Instagram account in social dashboard: %v", err)
+			}
+		}
+	}
+
+	// Commit transactions
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit client-manager transaction: %v", err)
+	}
+
+	if socialTx != nil {
+		if err = socialTx.Commit(); err != nil {
+			log.Printf("⚠️ Warning: Could not commit social dashboard transaction: %v", err)
+		}
+	}
+
+	log.Printf("✅ Successfully stored %d Facebook pages and %d Instagram accounts for client %s", 
+		len(facebookPages), len(instagramAccounts), clientID)
+	
+	return nil
 }

@@ -29,9 +29,11 @@ function Success() {
     // Update progress indicators step by step
     setSetupProgress(prev => ({ ...prev, pageConnection: 'in_progress' }));
 
-    // Send token to your backend (different endpoints for Facebook vs Instagram)
+    // Send token to your backend (different endpoints for each auth type)
     const endpoint = authType === 'instagram' 
       ? 'https://neurocrow-client-manager.onrender.com/instagram-token'
+      : authType === 'facebook_business'
+      ? 'https://neurocrow-client-manager.onrender.com/facebook-business-token'
       : 'https://neurocrow-client-manager.onrender.com/facebook-token';
     
     fetch(endpoint, {
