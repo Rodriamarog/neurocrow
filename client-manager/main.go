@@ -2260,28 +2260,98 @@ func getInstagramUser(accessToken string) (*InstagramUser, error) {
 	return &user, nil
 }
 
-// getInstagramBusinessAccounts gets Instagram Business accounts for the user
-func getInstagramBusinessAccounts(accessToken string) ([]InstagramAccount, error) {
-	// Note: Instagram Business API typically requires getting accounts through 
-	// Facebook Pages that have connected Instagram Business accounts
-	// For now, we'll create a basic account entry using the user's info
+// getInstagramBusinessAccounts gets Instagram Business accounts connected to Facebook Pages
+func getInstagramBusinessAccounts(facebookAccessToken string) ([]InstagramAccount, error) {
+	log.Printf("🔍 Getting Instagram Business accounts through Facebook Pages...")
 	
-	user, err := getInstagramUser(accessToken)
+	// First get Facebook Pages for this user
+	pages, err := getConnectedPages(facebookAccessToken)
 	if err != nil {
-		return nil, fmt.Errorf("error getting user info: %w", err)
+		return nil, fmt.Errorf("error getting Facebook pages: %w", err)
 	}
-
-	// Create an account entry for the authenticated Instagram Business account
-	account := InstagramAccount{
-		ID:          user.ID,
-		Name:        user.Username,
-		Username:    user.Username,
-		AccessToken: accessToken,
-	}
-
-	log.Printf("✅ Created Instagram Business account entry: %s (%s)", account.Name, account.ID)
 	
-	return []InstagramAccount{account}, nil
+	var instagramAccounts []InstagramAccount
+	
+	// For each Facebook Page, check if it has a connected Instagram Business account
+	for _, page := range pages {
+		log.Printf("🔍 Checking page %s for connected Instagram account...", page.Name)
+		
+		// Get Instagram Business account ID for this page
+		url := fmt.Sprintf("https://graph.facebook.com/v23.0/%s?fields=instagram_business_account&access_token=%s", page.ID, page.AccessToken)
+		
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("⚠️ Error checking Instagram connection for page %s: %v", page.Name, err)
+			continue
+		}
+		defer resp.Body.Close()
+		
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("⚠️ Error reading response for page %s: %v", page.Name, err)
+			continue
+		}
+		
+		var pageData struct {
+			InstagramBusinessAccount struct {
+				ID string `json:"id"`
+			} `json:"instagram_business_account"`
+		}
+		
+		if err := json.Unmarshal(bodyBytes, &pageData); err != nil {
+			log.Printf("⚠️ Error parsing response for page %s: %v", page.Name, err)
+			continue
+		}
+		
+		// If this page has a connected Instagram Business account
+		if pageData.InstagramBusinessAccount.ID != "" {
+			log.Printf("✅ Found Instagram Business account %s connected to page %s", pageData.InstagramBusinessAccount.ID, page.Name)
+			
+			// Get Instagram account details
+			igUrl := fmt.Sprintf("https://graph.facebook.com/v23.0/%s?fields=id,username,name&access_token=%s", 
+				pageData.InstagramBusinessAccount.ID, page.AccessToken)
+			
+			igResp, err := http.Get(igUrl)
+			if err != nil {
+				log.Printf("⚠️ Error getting Instagram account details: %v", err)
+				continue
+			}
+			defer igResp.Body.Close()
+			
+			igBodyBytes, err := io.ReadAll(igResp.Body)
+			if err != nil {
+				log.Printf("⚠️ Error reading Instagram account response: %v", err)
+				continue
+			}
+			
+			var igAccount struct {
+				ID       string `json:"id"`
+				Username string `json:"username"`
+				Name     string `json:"name"`
+			}
+			
+			if err := json.Unmarshal(igBodyBytes, &igAccount); err != nil {
+				log.Printf("⚠️ Error parsing Instagram account response: %v", err)
+				continue
+			}
+			
+			// Create Instagram account entry
+			account := InstagramAccount{
+				ID:          igAccount.ID,
+				Name:        igAccount.Name,
+				Username:    igAccount.Username,
+				AccessToken: page.AccessToken, // Use the page token for Instagram API calls
+			}
+			
+			instagramAccounts = append(instagramAccounts, account)
+			log.Printf("✅ Added Instagram Business account: %s (@%s)", account.Name, account.Username)
+		} else {
+			log.Printf("ℹ️ Page %s has no connected Instagram Business account", page.Name)
+		}
+	}
+	
+	log.Printf("✅ Found %d Instagram Business accounts total", len(instagramAccounts))
+	return instagramAccounts, nil
 }
 
 // storeFacebookBusinessData stores both Facebook pages and Instagram Business accounts from Facebook Business login
@@ -2334,13 +2404,13 @@ func storeFacebookBusinessData(fbUser FacebookUser, facebookPages []FacebookPage
 		}
 	}
 
-	// 2. Store Facebook pages in social_pages table
+	// 2. Store Facebook pages in pages table (client-manager database)
 	for _, page := range facebookPages {
 		_, err = tx.Exec(`
-            INSERT INTO social_pages (client_id, platform, page_id, page_name, access_token, status, created_at)
-            VALUES ($1, 'facebook', $2, $3, $4, 'active', NOW())
-            ON CONFLICT (page_id, platform) DO UPDATE
-            SET page_name = EXCLUDED.page_name,
+            INSERT INTO pages (client_id, page_id, name, access_token, platform, status, created_at)
+            VALUES ($1, $2, $3, $4, 'facebook', 'active', NOW())
+            ON CONFLICT (platform, page_id) DO UPDATE
+            SET name = EXCLUDED.name,
                 access_token = EXCLUDED.access_token,
                 client_id = EXCLUDED.client_id,
                 status = EXCLUDED.status
@@ -2366,13 +2436,13 @@ func storeFacebookBusinessData(fbUser FacebookUser, facebookPages []FacebookPage
 		}
 	}
 
-	// 3. Store Instagram Business accounts in social_pages table
+	// 3. Store Instagram Business accounts in pages table (client-manager database)
 	for _, igAccount := range instagramAccounts {
 		_, err = tx.Exec(`
-            INSERT INTO social_pages (client_id, platform, page_id, page_name, access_token, status, created_at)
-            VALUES ($1, 'instagram', $2, $3, $4, 'active', NOW())
-            ON CONFLICT (page_id, platform) DO UPDATE
-            SET page_name = EXCLUDED.page_name,
+            INSERT INTO pages (client_id, page_id, name, access_token, platform, status, created_at)
+            VALUES ($1, $2, $3, $4, 'instagram', 'active', NOW())
+            ON CONFLICT (platform, page_id) DO UPDATE
+            SET name = EXCLUDED.name,
                 access_token = EXCLUDED.access_token,
                 client_id = EXCLUDED.client_id,
                 status = EXCLUDED.status
