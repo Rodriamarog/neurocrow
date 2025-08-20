@@ -2293,7 +2293,7 @@ func storeFacebookBusinessData(fbUser FacebookUser, facebookPages []FacebookPage
 	// Begin transaction for client-manager database
 	tx, err := DB.Begin()
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %v", err)
+		return "", fmt.Errorf("failed to begin transaction: %v", err)
 	}
 	defer tx.Rollback()
 
