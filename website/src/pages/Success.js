@@ -1,7 +1,6 @@
 // Success.js
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import './Success.css';
 
 function Success() {
   const [syncStatus, setSyncStatus] = useState('syncing');
@@ -99,70 +98,75 @@ function Success() {
   const getStatusIcon = (status) => {
     switch (status) {
       case 'pending':
-        return <i className="fas fa-clock" style={{ color: '#ccc' }}></i>;
+        return <i className="fas fa-clock text-slate-400"></i>;
       case 'in_progress':
-        return <i className="fas fa-spinner fa-spin" style={{ color: '#007bff' }}></i>;
+        return <i className="fas fa-spinner fa-spin text-blue-500"></i>;
       case 'success':
-        return <i className="fas fa-check-circle" style={{ color: '#28a745' }}></i>;
+        return <i className="fas fa-check-circle text-green-500"></i>;
       case 'error':
-        return <i className="fas fa-times-circle" style={{ color: '#dc3545' }}></i>;
+        return <i className="fas fa-times-circle text-red-500"></i>;
       default:
-        return <i className="fas fa-clock" style={{ color: '#ccc' }}></i>;
+        return <i className="fas fa-clock text-slate-400"></i>;
     }
   };
 
   return (
-    <div className="success-container">
-      <div className="success-box">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-8 space-y-6 text-center rounded-xl shadow-lg">
         {syncStatus === 'syncing' ? (
           <>
-            <i className="fas fa-spinner fa-spin success-icon"></i>
-            <h1>Configurando tu cuenta...</h1>
-            <p>Estamos configurando automáticamente tu cuenta para que funcione con Neurocrow.</p>
+            <i className="fas fa-spinner fa-spin text-6xl text-blue-500 mb-6"></i>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">Configurando tu cuenta...</h1>
+            <p className="text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">Estamos configurando automáticamente tu cuenta para que funcione con Neurocrow.</p>
             
-            <div className="setup-progress" style={{ margin: '20px 0', textAlign: 'left' }}>
-              <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
+            <div className="space-y-4 text-left">
+              <div className="flex items-center space-x-3">
                 {getStatusIcon(setupProgress.pageConnection)}
-                <span style={{ marginLeft: '10px' }}>Conectando tu cuenta...</span>
+                <span className="text-slate-700 dark:text-slate-300">Conectando tu cuenta...</span>
               </div>
-              <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
+              <div className="flex items-center space-x-3">
                 {getStatusIcon(setupProgress.webhookSetup)}
-                <span style={{ marginLeft: '10px' }}>Configurando mensajería automática...</span>
+                <span className="text-slate-700 dark:text-slate-300">Configurando mensajería automática...</span>
               </div>
-              <div className="progress-item" style={{ display: 'flex', alignItems: 'center', margin: '10px 0' }}>
+              <div className="flex items-center space-x-3">
                 {getStatusIcon(setupProgress.handoverConfig)}
-                <span style={{ marginLeft: '10px' }}>Finalizando configuración...</span>
+                <span className="text-slate-700 dark:text-slate-300">Finalizando configuración...</span>
               </div>
             </div>
           </>
         ) : syncStatus === 'success' ? (
           <>
-            <i className="fas fa-check-circle success-icon"></i>
-            <h1>¡Configuración Completada!</h1>
-            <p>Tu cuenta ha sido configurada automáticamente. Tus páginas ya están listas para recibir mensajes y usar el chatbot de Neurocrow.</p>
+            <i className="fas fa-check-circle text-6xl text-green-500 mb-6"></i>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">¡Configuración Completada!</h1>
+            <p className="text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">Tu cuenta ha sido configurada automáticamente. Tus páginas ya están listas para recibir mensajes y usar el chatbot de Neurocrow.</p>
             
           </>
         ) : (
           <>
-            <i className="fas fa-exclamation-circle success-icon error"></i>
-            <h1>Hubo un problema</h1>
-            <p>No pudimos completar la configuración automática. Por favor contáctanos para ayudarte.</p>
+            <i className="fas fa-exclamation-circle text-6xl text-red-500 mb-6"></i>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">Hubo un problema</h1>
+            <p className="text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">No pudimos completar la configuración automática. Por favor contáctanos para ayudarte.</p>
           </>
         )}
         
-        <div className="contact-options">
-          <p>Si tienes alguna pregunta, puedes contactarnos por:</p>
-          <div className="contact-buttons">
-            <button onClick={handleContactClick} className="messenger-btn">
-              <i className="fab fa-facebook-messenger"></i> Messenger
+        <div className="mt-8">
+          <p className="text-slate-600 dark:text-slate-300 mb-4">Si tienes alguna pregunta, puedes contactarnos por:</p>
+          <div className="flex gap-4 justify-center">
+            <button 
+              onClick={handleContactClick} 
+              className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-all hover:scale-105"
+            >
+              <i className="fab fa-facebook-messenger"></i> 
+              Messenger
             </button>
             <a 
               href="https://wa.me/+16197612314" 
               target="_blank" 
               rel="noopener noreferrer" 
-              className="whatsapp-btn"
+              className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-all hover:scale-105 no-underline"
             >
-              <i className="fab fa-whatsapp"></i> WhatsApp
+              <i className="fab fa-whatsapp"></i> 
+              WhatsApp
             </a>
           </div>
         </div>
