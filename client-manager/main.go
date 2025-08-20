@@ -1815,8 +1815,8 @@ func handleFacebookBusinessToken(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✅ Found %d Facebook pages", len(facebookPages))
 
-	// 3. Get Instagram Business accounts using existing function
-	instagramAccounts, err := getInstagramBusinessAccounts(data.UserToken)
+	// 3. Get Instagram Business accounts via Facebook Pages
+	instagramAccounts, err := getInstagramAccountsViaFacebook(data.UserToken)
 	if err != nil {
 		log.Printf("⚠️ Warning: Could not get Instagram Business accounts: %v", err)
 		instagramAccounts = []InstagramAccount{} // Continue without Instagram accounts
@@ -2260,8 +2260,32 @@ func getInstagramUser(accessToken string) (*InstagramUser, error) {
 	return &user, nil
 }
 
-// getInstagramBusinessAccounts gets Instagram Business accounts connected to Facebook Pages
-func getInstagramBusinessAccounts(facebookAccessToken string) ([]InstagramAccount, error) {
+// getInstagramBusinessAccounts gets Instagram Business accounts for the user (original Instagram-only version)
+func getInstagramBusinessAccounts(accessToken string) ([]InstagramAccount, error) {
+	// Note: Instagram Business API typically requires getting accounts through 
+	// Facebook Pages that have connected Instagram Business accounts
+	// For now, we'll create a basic account entry using the user's info
+	
+	user, err := getInstagramUser(accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("error getting user info: %w", err)
+	}
+
+	// Create an account entry for the authenticated Instagram Business account
+	account := InstagramAccount{
+		ID:          user.ID,
+		Name:        user.Username,
+		Username:    user.Username,
+		AccessToken: accessToken,
+	}
+
+	log.Printf("✅ Created Instagram Business account entry: %s (%s)", account.Name, account.ID)
+	
+	return []InstagramAccount{account}, nil
+}
+
+// getInstagramAccountsViaFacebook gets Instagram Business accounts connected to Facebook Pages
+func getInstagramAccountsViaFacebook(facebookAccessToken string) ([]InstagramAccount, error) {
 	log.Printf("🔍 Getting Instagram Business accounts through Facebook Pages...")
 	
 	// First get Facebook Pages for this user
