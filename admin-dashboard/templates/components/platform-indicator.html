@@ -1,8 +1,0 @@
-{{define "platform-indicator"}}
-<div class="flex items-center">
-    <div class="w-2 h-2 {{if eq .Platform "facebook"}}bg-blue-500{{else}}bg-pink-500{{end}} rounded-full mr-2"></div>
-    <span class="text-sm font-medium {{if eq .Platform "facebook"}}text-blue-600{{else}}text-pink-600{{end}}">
-        {{if eq .Platform "facebook"}}Facebook{{else}}Instagram{{end}}
-    </span>
-</div>
-{{end}} 
