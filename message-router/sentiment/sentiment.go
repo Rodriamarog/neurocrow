@@ -27,7 +27,7 @@ type Config struct {
 // DefaultConfig returns a default configuration
 func DefaultConfig() Config {
 	return Config{
-		Timeout: 5 * time.Second,
+		Timeout: 15 * time.Second,
 	}
 }
 
