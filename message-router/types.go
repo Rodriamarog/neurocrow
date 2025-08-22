@@ -114,7 +114,7 @@ type ConversationState struct {
 	Platform           string
 	BotEnabled         bool // Current bot control flag - true=bot enabled, false=human agent has control
 	LastBotMessage     time.Time
-	LastHumanMessage   time.Time // DEPRECATED: Kept for analytics.
+	LastHumanMessage   time.Time // Used for 12-hour bot reactivation logic
 	LastUserMessage    time.Time
 	MessageCount       int
 	DifyConversationID string // Dify conversation ID for maintaining context
@@ -126,9 +126,9 @@ type Config struct {
 	VerifyToken       string
 	Port              string
 	FireworksKey      string
-	// Facebook Handover Protocol App IDs
-	FacebookBotAppID       int64 // Your bot's Facebook App ID (1195277397801905)
-	FacebookPageInboxAppID int64 // Facebook Page Inbox App ID (263902037430900)
+	// Facebook App IDs for echo message detection
+	FacebookBotAppID       int64 // Your bot's Facebook App ID (1195277397801905) - used for echo detection
+	FacebookPageInboxAppID int64 // Facebook Page Inbox App ID (263902037430900) - unused
 	// Botpress integration (legacy - will be removed after migration)
 	BotpressToken string // Botpress token (temporary during migration)
 	// Note: Dify API keys are now stored per-page in database (multi-tenant)

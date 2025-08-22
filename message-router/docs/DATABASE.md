@@ -70,7 +70,7 @@ User conversation threads with bot control state management.
 | thread_id | text | PRIMARY KEY | User ID from Facebook/Instagram |
 | page_id | uuid | NOT NULL, FK → social_pages.id | Associated social media page |
 | platform | text | NOT NULL | Platform identifier |
-| bot_enabled | boolean | DEFAULT true | Current bot control flag - true=enabled, false=disabled |
+| bot_enabled | boolean | DEFAULT true | Controls whether the bot processes messages for this conversation |
 | latest_message_at | timestamptz | NOT NULL | Timestamp of most recent message |
 | message_count | integer | DEFAULT 0 | Total messages in conversation |
 | first_message_at | timestamptz | | Timestamp of first message |
@@ -83,16 +83,12 @@ User conversation threads with bot control state management.
 | created_at | timestamptz | DEFAULT CURRENT_TIMESTAMP | Record creation |
 | updated_at | timestamptz | DEFAULT CURRENT_TIMESTAMP | Last modification |
 
-#### Legacy Columns (Deprecated but Retained)
+#### Additional Timestamp Columns
 | Column | Type | Description |
 |--------|------|-------------|
-| last_bot_message_at | timestamptz | **[DEPRECATED]** Last bot response timestamp - kept for analytics |
-| last_human_message_at | timestamptz | **[DEPRECATED]** Last human agent message - kept for analytics |
-| last_user_message_at | timestamptz | **[DEPRECATED]** Last user message - kept for analytics |
-| bot_disabled_at | timestamptz | **[DEPRECATED]** When bot was disabled - kept for analytics |
-| thread_control_status | varchar | **[UNUSED]** Intended for handover protocol - not implemented |
-| handover_timestamp | timestamptz | **[UNUSED]** Intended for handover protocol - not implemented |
-| handover_reason | text | **[UNUSED]** Intended for handover protocol - not implemented |
+| last_bot_message_at | timestamptz | Last bot response timestamp |
+| last_human_message_at | timestamptz | Last human agent message - used for 12-hour bot reactivation logic |
+| last_user_message_at | timestamptz | Last user message timestamp |
 
 **Bot Control System:**
 The service uses the simple `bot_enabled` boolean flag to control bot behavior:
@@ -193,9 +189,8 @@ Application users (human agents and administrators).
 - **Auto-reactivation**: 12-hour timer system via database function
 
 ### Data Retention
-- **Legacy Columns**: Marked as deprecated but retained for analytics
 - **Historical Data**: Existing conversations maintain full history
-- **Clean-up Timeline**: Legacy columns will be removed in future updates
+- **Message Archives**: Complete audit trail of all conversation interactions
 
 ## Database Functions
 

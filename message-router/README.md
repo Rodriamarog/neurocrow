@@ -187,7 +187,7 @@ The service is currently migrating from Botpress to Dify AI integration:
 
 - **Current**: Dify API integration for new conversations
 - **Legacy**: Some database columns retained for historical data
-- **Thread Control**: Modern Facebook Handover Protocol (deprecates 6-hour timer)
+- **Bot Control**: Simple boolean flag system with 12-hour auto-reactivation
 
 ## Monitoring
 

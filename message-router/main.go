@@ -187,9 +187,9 @@ func loadConfig() {
 		VerifyToken:       getEnvOrDie("VERIFY_TOKEN"),
 		Port:              getEnvOrDefault("PORT", "8080"),
 		FireworksKey:      getEnvOrDie("FIREWORKS_API_KEY"),
-		// Facebook Handover Protocol App IDs
+		// Facebook App IDs for echo message detection
 		FacebookBotAppID:       1195277397801905, // Your bot's Facebook App ID (detected from existing code)
-		FacebookPageInboxAppID: 263902037430900,  // Facebook Page Inbox App ID (constant)
+		FacebookPageInboxAppID: 263902037430900,  // Facebook Page Inbox App ID (unused)
 		// Botpress integration (legacy - temporary during migration)
 		BotpressToken: os.Getenv("BOTPRESS_TOKEN"), // Optional during migration
 		// Note: Dify API keys are now stored per-page in database (multi-tenant)
