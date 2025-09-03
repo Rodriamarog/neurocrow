@@ -326,7 +326,7 @@ func routeBasedOnSentiment(ctx context.Context, msgContext *MessageContext, anal
 	case "need_human":
 		return handleNeedHumanRequest(ctx, msgContext, requestID)
 	case "frustrated":
-		return handleFrustratedUser(ctx, msgContext, requestID)
+		return handleGeneralMessage(ctx, msgContext, requestID) // I don't want 'frustrated' messages to disable the bot, so I use general message handling for this
 	case "general":
 		return handleGeneralMessage(ctx, msgContext, requestID)
 	default:
