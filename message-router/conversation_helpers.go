@@ -170,6 +170,7 @@ func updateConversationState(ctx context.Context, conv *ConversationState, botEn
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE conversations 
 		SET bot_enabled = $1,
+			bot_disabled_at = CASE WHEN $1 = false THEN NOW() ELSE NULL END,
 			latest_message_at = NOW(),
 			message_count = message_count + 1,
 			updated_at = NOW()
@@ -249,6 +250,7 @@ func updateConversationForHumanMessage(ctx context.Context, pageID, threadID, pl
         UPDATE conversations 
         SET last_human_message_at = NOW(),
             bot_enabled = false,
+            bot_disabled_at = NOW(),
             latest_message_at = NOW(),
             message_count = message_count + 1,
             updated_at = NOW()
