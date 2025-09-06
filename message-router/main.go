@@ -366,10 +366,10 @@ func setupRouter() *http.ServeMux {
 	router.HandleFunc("/api/mark-bot-response", logMiddleware(recoverMiddleware(handleMarkBotResponse)))
 
 	// OAuth endpoints for client onboarding
-	router.HandleFunc("/facebook-token", logMiddleware(recoverMiddleware(oauth.HandleFacebookToken)))
-	router.HandleFunc("/facebook-business-token", logMiddleware(recoverMiddleware(oauth.HandleFacebookBusinessToken)))
-	router.HandleFunc("/instagram-token", logMiddleware(recoverMiddleware(oauth.HandleInstagramToken)))
-	router.HandleFunc("/instagram-token-exchange", logMiddleware(recoverMiddleware(oauth.HandleInstagramTokenExchange)))
+	router.HandleFunc("/facebook-token", oauth.CorsMiddleware(logMiddleware(recoverMiddleware(oauth.HandleFacebookToken))))
+	router.HandleFunc("/facebook-business-token", oauth.CorsMiddleware(logMiddleware(recoverMiddleware(oauth.HandleFacebookBusinessToken))))
+	router.HandleFunc("/instagram-token", oauth.CorsMiddleware(logMiddleware(recoverMiddleware(oauth.HandleInstagramToken))))
+	router.HandleFunc("/instagram-token-exchange", oauth.CorsMiddleware(logMiddleware(recoverMiddleware(oauth.HandleInstagramTokenExchange))))
 
 	// Log registered routes
 	log.Printf("📍 Registered routes:")
