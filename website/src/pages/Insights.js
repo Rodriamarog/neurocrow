@@ -53,7 +53,7 @@ function Insights() {
       }
       
       const response = await fetch(
-        'https://neurocrow-client-manager.onrender.com/pages',
+        'https://neurocrow-message-router.onrender.com/pages', // Note: This endpoint may not exist in message-router
         {
           method: 'GET',
           headers: authHeaders
@@ -105,7 +105,7 @@ function Insights() {
       }
       
       const response = await fetch(
-        `https://neurocrow-client-manager.onrender.com/posts?pageId=${pageId}&limit=${limit}`,
+        `https://neurocrow-message-router.onrender.com/posts?pageId=${pageId}&limit=${limit}`, // Note: This endpoint may not exist in message-router
         {
           method: 'GET',
           headers: authHeaders
@@ -149,7 +149,7 @@ function Insights() {
       // Call backend logout endpoint if we have a session token
       if (authHeaders.Authorization) {
         try {
-          await fetch('https://neurocrow-client-manager.onrender.com/logout', {
+          await fetch('https://neurocrow-message-router.onrender.com/logout', { // Note: This endpoint may not exist in message-router
             method: 'POST',
             headers: authHeaders
           });

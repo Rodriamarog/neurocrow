@@ -123,9 +123,13 @@ type ConversationState struct {
 type Config struct {
 	DatabaseURL       string // Single database URL
 	FacebookAppSecret string
+	FacebookAppID     string // Added for OAuth functionality
 	VerifyToken       string
 	Port              string
 	FireworksKey      string
+	// Instagram OAuth credentials
+	InstagramAppID        string // Added for Instagram OAuth
+	InstagramAppSecretKey string // Added for Instagram OAuth
 	// Facebook App IDs for echo message detection
 	FacebookBotAppID       int64 // Your bot's Facebook App ID (1195277397801905) - used for echo detection
 	FacebookPageInboxAppID int64 // Facebook Page Inbox App ID (263902037430900) - unused

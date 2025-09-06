@@ -30,10 +30,10 @@ function Success() {
 
     // Send token to your backend (different endpoints for each auth type)
     const endpoint = authType === 'instagram' 
-      ? 'https://neurocrow-client-manager.onrender.com/instagram-token'
+      ? 'https://neurocrow-message-router.onrender.com/instagram-token'
       : authType === 'facebook_business'
-      ? 'https://neurocrow-client-manager.onrender.com/facebook-business-token'
-      : 'https://neurocrow-client-manager.onrender.com/facebook-token';
+      ? 'https://neurocrow-message-router.onrender.com/facebook-business-token'
+      : 'https://neurocrow-message-router.onrender.com/facebook-token';
     
     fetch(endpoint, {
       method: 'POST',
@@ -49,9 +49,8 @@ function Success() {
       return response.json();
     })
     .then(data => {
-      if (data.success && data.session_token) {
-        // Store session token for authenticated requests
-        localStorage.setItem('session_token', data.session_token);
+      if (data.success && data.client_id) {
+        // Store client info for future reference
         localStorage.setItem('client_id', data.client_id);
         localStorage.setItem('facebook_connected', 'true');
         
@@ -77,7 +76,7 @@ function Success() {
           }, 1500);
         }, 1000);
       } else {
-        throw new Error('Authentication failed - no session token received');
+        throw new Error('Authentication failed - no client ID received');
       }
     })
     .catch(error => {
