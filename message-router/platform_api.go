@@ -31,7 +31,6 @@ func getPageInfo(ctx context.Context, pageID string, platform string) (*PageInfo
 	return &info, nil
 }
 
-
 // sendPlatformResponse routes message sending to the appropriate platform API
 func sendPlatformResponse(ctx context.Context, pageInfo *PageInfo, senderID, message string) error {
 	switch pageInfo.Platform {
@@ -159,4 +158,3 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
-

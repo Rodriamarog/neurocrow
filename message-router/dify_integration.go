@@ -144,7 +144,7 @@ func sendToDify(ctx context.Context, apiKey string, payload DifyRequest) (*DifyR
 	// Log response timing and basic status
 	responseTime := time.Since(start)
 	LogDebug("📥 Dify response: %d in %dms", resp.StatusCode, responseTime.Milliseconds())
-	
+
 	// Log full response body only in debug mode
 	LogDebug("Dify response body: %s", string(respBody))
 
@@ -200,7 +200,6 @@ func handleDifyResponseDirect(ctx context.Context, pageID, senderID, platform st
 	log.Printf("✅ Platform response sent successfully - no storage needed")
 	return nil
 }
-
 
 // updateDifyConversationID stores the Dify conversation ID for maintaining context
 func updateDifyConversationID(ctx context.Context, threadID string, difyConversationID string) error {

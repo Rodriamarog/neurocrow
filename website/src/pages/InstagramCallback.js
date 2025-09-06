@@ -41,7 +41,7 @@ function InstagramCallback() {
 
       // Send the authorization code to our backend for token exchange
       // This keeps the app secret secure on the server side
-      const response = await fetch('https://neurocrow-client-manager.onrender.com/instagram-token-exchange', {
+      const response = await fetch('https://neurocrow-message-router.onrender.com/instagram-token-exchange', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -313,7 +313,7 @@ func TestGeneralCategorization(t *testing.T) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		
+
 		analysis, err := analyzer.Analyze(ctx, phrase)
 		cancel()
 
@@ -329,11 +329,11 @@ func TestGeneralCategorization(t *testing.T) {
 
 		if analysis.Status == "general" {
 			correctCount++
-			t.Logf("✅ [%d/%d] CORRECT: '%s' → %s (tokens: %d, ~$%.6f)", 
+			t.Logf("✅ [%d/%d] CORRECT: '%s' → %s (tokens: %d, ~$%.6f)",
 				i+1, len(generalPhrases), phrase, analysis.Status, analysis.TokensUsed, cost)
 		} else {
 			incorrectCount++
-			t.Logf("❌ [%d/%d] INCORRECT: '%s' → %s (expected: general) (tokens: %d, ~$%.6f)", 
+			t.Logf("❌ [%d/%d] INCORRECT: '%s' → %s (expected: general) (tokens: %d, ~$%.6f)",
 				i+1, len(generalPhrases), phrase, analysis.Status, analysis.TokensUsed, cost)
 		}
 	}
@@ -379,7 +379,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Quiero hablar con alguien real",
 		"¿Hay alguna persona disponible?",
 		"Necesito hablar con un operador",
-		
+
 		// Explicit agent requests
 		"Conectame con un agente",
 		"Transfiéreme a un agente",
@@ -391,7 +391,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Transfiéreme con alguien",
 		"¿Me puedes pasar con un agente?",
 		"Solicito hablar con un agente",
-		
+
 		// Support/representative requests
 		"Quiero hablar con soporte",
 		"Necesito soporte humano",
@@ -403,7 +403,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Necesito hablar con un especialista",
 		"¿Hay algún humano que me pueda ayudar?",
 		"Quiero hablar con alguien del equipo",
-		
+
 		// Bot rejection + human request
 		"Este bot no me sirve, quiero una persona",
 		"No entiendo al bot, necesito un humano",
@@ -415,7 +415,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Los bots son inútiles, necesito un humano",
 		"No quiero bot, quiero persona",
 		"Mejor ponme con alguien real",
-		
+
 		// Urgent human requests
 		"NECESITO HABLAR CON UNA PERSONA YA",
 		"URGENTE: quiero un agente",
@@ -427,7 +427,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Rápido, conectame con una persona",
 		"¡AHORA! Quiero un humano",
 		"¡Por favor! Necesito un agente real",
-		
+
 		// Formal human requests
 		"Solicito ser atendido por una persona",
 		"Requiero asistencia humana",
@@ -439,7 +439,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Deseo contactar con un especialista",
 		"Me gustaría hablar con un supervisor",
 		"Quisiera ser transferido a un agente",
-		
+
 		// Multiple ways to ask for human
 		"¿Hay alguna persona que me pueda atender?",
 		"¿Me pueden conectar con alguien real?",
@@ -451,7 +451,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"¿Puedo solicitar atención humana?",
 		"¿Me pueden dar asistencia humana?",
 		"¿Hay opción de hablar con una persona?",
-		
+
 		// Variations with 'persona'
 		"Quiero una persona",
 		"Necesito una persona",
@@ -463,7 +463,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Ponme una persona",
 		"Consígueme una persona",
 		"Tráeme una persona",
-		
+
 		// Service-specific human requests
 		"Quiero hablar con ventas humano",
 		"Necesito soporte técnico humano",
@@ -475,7 +475,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Necesito ejecutivo humano",
 		"Quiero asesor real",
 		"Necesito consultor humano",
-		
+
 		// Polite but clear human requests
 		"Por favor, me gustaría hablar con una persona",
 		"Si es posible, quisiera un agente humano",
@@ -487,7 +487,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		"Si está disponible, quiero un humano",
 		"Por favor, un representante humano",
 		"Si es posible, un agente real",
-		
+
 		// Direct 'humano' requests
 		"Quiero un humano",
 		"Necesito un humano",
@@ -514,7 +514,7 @@ func TestNeedHumanCategorization(t *testing.T) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		
+
 		analysis, err := analyzer.Analyze(ctx, phrase)
 		cancel()
 
@@ -530,11 +530,11 @@ func TestNeedHumanCategorization(t *testing.T) {
 
 		if analysis.Status == "need_human" {
 			correctCount++
-			t.Logf("✅ [%d/%d] CORRECT: '%s' → %s (tokens: %d, ~$%.6f)", 
+			t.Logf("✅ [%d/%d] CORRECT: '%s' → %s (tokens: %d, ~$%.6f)",
 				i+1, len(needHumanPhrases), phrase, analysis.Status, analysis.TokensUsed, cost)
 		} else {
 			incorrectCount++
-			t.Logf("❌ [%d/%d] INCORRECT: '%s' → %s (expected: need_human) (tokens: %d, ~$%.6f)", 
+			t.Logf("❌ [%d/%d] INCORRECT: '%s' → %s (expected: need_human) (tokens: %d, ~$%.6f)",
 				i+1, len(needHumanPhrases), phrase, analysis.Status, analysis.TokensUsed, cost)
 		}
 	}

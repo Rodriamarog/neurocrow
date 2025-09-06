@@ -1,0 +1,10 @@
+Request these permissions:
+instagram_business_manage_comments​
+instagram_business_content_publish
+​
+Add them to the login flow, and make a specific page/dashboard in the website where I can see Urban Edge FB and Instagram pages and 
+publish a post.
+
+Also, to let me manage comments.
+
+

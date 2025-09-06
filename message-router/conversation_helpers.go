@@ -342,4 +342,3 @@ func checkAndReactivateBots(ctx context.Context, requestID string) {
 		LogDebug("[%s] No bots eligible for reactivation", requestID)
 	}
 }
-

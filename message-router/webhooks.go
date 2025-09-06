@@ -147,4 +147,3 @@ func handlePlatformMessage(body []byte) {
 	ctx := context.Background()
 	go processMessagesAsync(ctx, event, requestID)
 }
-

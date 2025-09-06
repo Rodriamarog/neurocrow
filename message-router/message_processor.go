@@ -162,9 +162,9 @@ func filterAndValidateMessage(msg MessagingEntry, requestID string, msgIndex int
 type EchoAction int
 
 const (
-	EchoActionContinue    EchoAction = iota // Continue with normal processing
-	EchoActionSkip                          // Skip this message
-	EchoActionDisableBot                    // Bot was disabled, skip processing
+	EchoActionContinue   EchoAction = iota // Continue with normal processing
+	EchoActionSkip                         // Skip this message
+	EchoActionDisableBot                   // Bot was disabled, skip processing
 )
 
 // handleEchoMessage processes echo messages intelligently

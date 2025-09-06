@@ -65,6 +65,7 @@ import (
 	"syscall"
 	"time"
 
+	"message-router/oauth"
 	"message-router/sentiment"
 
 	"github.com/joho/godotenv"
@@ -155,7 +156,7 @@ var (
 	}
 	config            Config
 	sentimentAnalyzer *sentiment.Analyzer
-	
+
 	// Instagram bot flag system - tracks which messages are bot responses
 	botFlags      = make(map[string]bool) // conversation_id -> is_bot_message
 	botFlagsMutex = sync.RWMutex{}
@@ -173,6 +174,9 @@ func init() {
 	loadConfig()
 	setupDatabase()
 	setupSentimentAnalyzer()
+
+	// Initialize OAuth database connections
+	oauth.InitDB(config.DatabaseURL)
 }
 
 func loadConfig() {
@@ -184,9 +188,13 @@ func loadConfig() {
 	config = Config{
 		DatabaseURL:       getEnvOrDie("DATABASE_URL"), // Use DATABASE_URL for the single database
 		FacebookAppSecret: getEnvOrDie("FACEBOOK_APP_SECRET"),
+		FacebookAppID:     getEnvOrDie("FACEBOOK_APP_ID"), // Added for OAuth functionality
 		VerifyToken:       getEnvOrDie("VERIFY_TOKEN"),
 		Port:              getEnvOrDefault("PORT", "8080"),
 		FireworksKey:      getEnvOrDie("FIREWORKS_API_KEY"),
+		// Instagram OAuth credentials
+		InstagramAppID:        getEnvOrDie("INSTAGRAM_APP_ID"),         // Added for Instagram OAuth
+		InstagramAppSecretKey: getEnvOrDie("INSTAGRAM_APP_SECRET_KEY"), // Added for Instagram OAuth
 		// Facebook App IDs for echo message detection
 		FacebookBotAppID:       1195277397801905, // Your bot's Facebook App ID (detected from existing code)
 		FacebookPageInboxAppID: 263902037430900,  // Facebook Page Inbox App ID (unused)
@@ -199,6 +207,9 @@ func loadConfig() {
 	log.Printf("📝 Configuration loaded:")
 	log.Printf("   Database URL length: %d", len(config.DatabaseURL))
 	log.Printf("   Facebook App Secret length: %d", len(config.FacebookAppSecret))
+	log.Printf("   Facebook App ID length: %d", len(config.FacebookAppID))
+	log.Printf("   Instagram App ID length: %d", len(config.InstagramAppID))
+	log.Printf("   Instagram App Secret Key length: %d", len(config.InstagramAppSecretKey))
 	log.Printf("   Verify Token length: %d", len(config.VerifyToken))
 	log.Printf("   Fireworks API Key length: %d", len(config.FireworksKey))
 	log.Printf("   Facebook Bot App ID: %d", config.FacebookBotAppID)
@@ -350,9 +361,15 @@ func setupRouter() *http.ServeMux {
 
 	// New endpoint for sending messages from the dashboard
 	router.HandleFunc("/send-message", logMiddleware(recoverMiddleware(handleSendMessage)))
-	
+
 	// Instagram bot flag endpoint for Dify integration
 	router.HandleFunc("/api/mark-bot-response", logMiddleware(recoverMiddleware(handleMarkBotResponse)))
+
+	// OAuth endpoints for client onboarding
+	router.HandleFunc("/facebook-token", logMiddleware(recoverMiddleware(oauth.HandleFacebookToken)))
+	router.HandleFunc("/facebook-business-token", logMiddleware(recoverMiddleware(oauth.HandleFacebookBusinessToken)))
+	router.HandleFunc("/instagram-token", logMiddleware(recoverMiddleware(oauth.HandleInstagramToken)))
+	router.HandleFunc("/instagram-token-exchange", logMiddleware(recoverMiddleware(oauth.HandleInstagramTokenExchange)))
 
 	// Log registered routes
 	log.Printf("📍 Registered routes:")
@@ -360,9 +377,14 @@ func setupRouter() *http.ServeMux {
 	log.Printf("   - GET/POST /webhook (Facebook/Instagram Webhook)")
 	log.Printf("   - POST /send-message (Dashboard Message Sender)")
 	log.Printf("   - POST /api/mark-bot-response (Instagram Bot Flag)")
+	log.Printf("   - POST /facebook-token (Facebook OAuth)")
+	log.Printf("   - POST /facebook-business-token (Facebook Business OAuth)")
+	log.Printf("   - POST /instagram-token (Instagram OAuth)")
+	log.Printf("   - POST /instagram-token-exchange (Instagram Token Exchange)")
 	log.Printf("🤖 AI Integration: Dify (per-page API keys)")
 	log.Printf("📊 Database: Multi-tenant client support")
 	log.Printf("📱 Instagram: Bot flag system for reliable human/bot detection")
+	log.Printf("🔐 OAuth: Facebook & Instagram client onboarding")
 
 	return router
 }
@@ -372,6 +394,8 @@ func cleanup() {
 		log.Printf("🧹 Closing database connection...")
 		db.Close()
 	}
+	// Cleanup OAuth database connections
+	oauth.CleanupDB()
 }
 
 // =============================================================================
@@ -409,15 +433,15 @@ func handleMarkBotResponse(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	conversationID := r.URL.Query().Get("conversation_id")
 	if conversationID == "" {
 		http.Error(w, "Missing conversation_id parameter", http.StatusBadRequest)
 		return
 	}
-	
+
 	setBotFlag(conversationID)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"success","conversation_id":"%s","message":"Bot flag set"}`, conversationID)
