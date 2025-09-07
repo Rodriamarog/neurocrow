@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -37,7 +36,7 @@ func HandleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("=== Starting Instagram token exchange ===")
+	LogInfo("=== Starting Instagram token exchange ===")
 
 	var data struct {
 		Code        string `json:"code"`
@@ -45,25 +44,25 @@ func HandleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		log.Printf("❌ Error decoding Instagram token exchange request: %v", err)
+		LogError("Error decoding Instagram token exchange request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if data.Code == "" || data.RedirectURI == "" {
-		log.Printf("❌ Missing required fields: code=%s, redirect_uri=%s", data.Code, data.RedirectURI)
+		LogError("Missing required fields: code=%s, redirect_uri=%s", data.Code, data.RedirectURI)
 		http.Error(w, "Missing code or redirect_uri", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("📥 Instagram token exchange request: code=%s, redirect_uri=%s", data.Code, data.RedirectURI)
+	LogInfo("Instagram token exchange request: code=%s, redirect_uri=%s", data.Code, data.RedirectURI)
 
 	// Exchange authorization code for access token using Instagram API
 	instagramAppId := os.Getenv("INSTAGRAM_APP_ID")
 	instagramAppSecret := os.Getenv("INSTAGRAM_APP_SECRET_KEY")
 
 	if instagramAppId == "" || instagramAppSecret == "" {
-		log.Printf("❌ Missing Instagram app credentials")
+		LogError("Missing Instagram app credentials")
 		http.Error(w, "Server configuration error", http.StatusInternalServerError)
 		return
 	}
@@ -77,12 +76,12 @@ func HandleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 		instagramAppId, instagramAppSecret, data.RedirectURI, data.Code,
 	)
 
-	log.Printf("🔗 Making token exchange request to Instagram API")
+	LogInfo("Making token exchange request to Instagram API")
 
 	// Make the token exchange request (POST with form data)
 	resp, err := http.Post(tokenURL, "application/x-www-form-urlencoded", strings.NewReader(formData))
 	if err != nil {
-		log.Printf("❌ Error making token exchange request: %v", err)
+		LogError("Error making token exchange request: %v", err)
 		http.Error(w, "Failed to exchange token", http.StatusInternalServerError)
 		return
 	}
@@ -91,12 +90,12 @@ func HandleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 	// Read response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("❌ Error reading token exchange response: %v", err)
+		LogError("Error reading token exchange response: %v", err)
 		http.Error(w, "Failed to read token response", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("📥 Instagram token exchange response: %d - %s", resp.StatusCode, string(bodyBytes))
+	LogDebug("Instagram token exchange response: %d - %s", resp.StatusCode, string(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
 		var igError struct {
@@ -114,12 +113,12 @@ func HandleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 			if errorMsg == "" {
 				errorMsg = igError.Error.Message
 			}
-			log.Printf("❌ Instagram API error: %s", errorMsg)
+			LogError("Instagram API error: %s", errorMsg)
 			http.Error(w, fmt.Sprintf("Instagram API error: %s", errorMsg), http.StatusBadRequest)
 			return
 		}
 
-		log.Printf("❌ Instagram token exchange failed: %s", string(bodyBytes))
+		LogError("Instagram token exchange failed: %s", string(bodyBytes))
 		http.Error(w, "Token exchange failed", http.StatusBadRequest)
 		return
 	}
@@ -132,18 +131,18 @@ func HandleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &tokenResponse); err != nil {
-		log.Printf("❌ Error parsing token response: %v", err)
+		LogError("Error parsing token response: %v", err)
 		http.Error(w, "Failed to parse token response", http.StatusInternalServerError)
 		return
 	}
 
 	if tokenResponse.AccessToken == "" {
-		log.Printf("❌ No access token in response")
+		LogError("No access token in response")
 		http.Error(w, "No access token received", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("✅ Successfully exchanged Instagram authorization code for access token")
+	LogInfo("Successfully exchanged Instagram authorization code for access token")
 
 	// Return the access token to the client
 	w.Header().Set("Content-Type", "application/json")
@@ -157,7 +156,7 @@ func HandleInstagramTokenExchange(w http.ResponseWriter, r *http.Request) {
 
 func getInstagramUser(accessToken string) (*InstagramUser, error) {
 	url := fmt.Sprintf("https://graph.instagram.com/me?fields=id,username&access_token=%s", accessToken)
-	log.Printf("📡 Getting Instagram user info from: %s", url)
+	LogDebug("Getting Instagram user info from: %s", url)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -170,7 +169,7 @@ func getInstagramUser(accessToken string) (*InstagramUser, error) {
 		return nil, fmt.Errorf("error reading Instagram API response: %w", err)
 	}
 
-	log.Printf("📥 Instagram user API response: %d - %s", resp.StatusCode, string(bodyBytes))
+	LogDebug("Instagram user API response: %d - %s", resp.StatusCode, string(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
 		var igError struct {
@@ -196,7 +195,7 @@ func getInstagramUser(accessToken string) (*InstagramUser, error) {
 		return nil, fmt.Errorf("incomplete user data from Instagram API")
 	}
 
-	log.Printf("✅ Successfully got Instagram user: %s (%s)", user.Username, user.ID)
+	LogInfo("Successfully got Instagram user: %s (%s)", user.Username, user.ID)
 	return &user, nil
 }
 
@@ -218,13 +217,13 @@ func getInstagramBusinessAccounts(accessToken string) ([]InstagramAccount, error
 		AccessToken: accessToken,
 	}
 
-	log.Printf("✅ Created Instagram Business account entry: %s (%s)", account.Name, account.ID)
+	LogInfo("Created Instagram Business account entry: %s (%s)", account.Name, account.ID)
 
 	return []InstagramAccount{account}, nil
 }
 
 func getInstagramAccountsViaFacebook(facebookAccessToken string) ([]InstagramAccount, error) {
-	log.Printf("🔍 Getting Instagram Business accounts through Facebook Pages...")
+	LogInfo("Getting Instagram Business accounts through Facebook Pages...")
 
 	// First get Facebook Pages for this user
 	pages, err := getConnectedPages(facebookAccessToken)
@@ -236,21 +235,21 @@ func getInstagramAccountsViaFacebook(facebookAccessToken string) ([]InstagramAcc
 
 	// For each Facebook Page, check if it has a connected Instagram Business account
 	for _, page := range pages {
-		log.Printf("🔍 Checking page %s for connected Instagram account...", page.Name)
+		LogDebug("Checking page %s for connected Instagram account...", page.Name)
 
 		// Get Instagram Business account ID for this page
 		url := fmt.Sprintf("https://graph.facebook.com/v23.0/%s?fields=instagram_business_account&access_token=%s", page.ID, page.AccessToken)
 
 		resp, err := http.Get(url)
 		if err != nil {
-			log.Printf("⚠️ Error checking Instagram connection for page %s: %v", page.Name, err)
+			LogError("Error checking Instagram connection for page %s: %v", page.Name, err)
 			continue
 		}
 		defer resp.Body.Close()
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Printf("⚠️ Error reading response for page %s: %v", page.Name, err)
+			LogError("Error reading response for page %s: %v", page.Name, err)
 			continue
 		}
 
@@ -261,13 +260,13 @@ func getInstagramAccountsViaFacebook(facebookAccessToken string) ([]InstagramAcc
 		}
 
 		if err := json.Unmarshal(bodyBytes, &pageData); err != nil {
-			log.Printf("⚠️ Error parsing response for page %s: %v", page.Name, err)
+			LogError("Error parsing response for page %s: %v", page.Name, err)
 			continue
 		}
 
 		// If this page has a connected Instagram Business account
 		if pageData.InstagramBusinessAccount.ID != "" {
-			log.Printf("✅ Found Instagram Business account %s connected to page %s", pageData.InstagramBusinessAccount.ID, page.Name)
+			LogInfo("Found Instagram Business account %s connected to page %s", pageData.InstagramBusinessAccount.ID, page.Name)
 
 			// Get Instagram account details
 			igUrl := fmt.Sprintf("https://graph.facebook.com/v23.0/%s?fields=id,username,name&access_token=%s",
@@ -275,14 +274,14 @@ func getInstagramAccountsViaFacebook(facebookAccessToken string) ([]InstagramAcc
 
 			igResp, err := http.Get(igUrl)
 			if err != nil {
-				log.Printf("⚠️ Error getting Instagram account details: %v", err)
+				LogError("Error getting Instagram account details: %v", err)
 				continue
 			}
 			defer igResp.Body.Close()
 
 			igBodyBytes, err := io.ReadAll(igResp.Body)
 			if err != nil {
-				log.Printf("⚠️ Error reading Instagram account response: %v", err)
+				LogError("Error reading Instagram account response: %v", err)
 				continue
 			}
 
@@ -293,7 +292,7 @@ func getInstagramAccountsViaFacebook(facebookAccessToken string) ([]InstagramAcc
 			}
 
 			if err := json.Unmarshal(igBodyBytes, &igAccount); err != nil {
-				log.Printf("⚠️ Error parsing Instagram account response: %v", err)
+				LogError("Error parsing Instagram account response: %v", err)
 				continue
 			}
 
@@ -306,25 +305,25 @@ func getInstagramAccountsViaFacebook(facebookAccessToken string) ([]InstagramAcc
 			}
 
 			instagramAccounts = append(instagramAccounts, account)
-			log.Printf("✅ Added Instagram Business account: %s (@%s)", account.Name, account.Username)
+			LogInfo("Added Instagram Business account: %s (@%s)", account.Name, account.Username)
 		} else {
-			log.Printf("ℹ️ Page %s has no connected Instagram Business account", page.Name)
+			LogInfo("Page %s has no connected Instagram Business account", page.Name)
 		}
 	}
 
-	log.Printf("✅ Found %d Instagram Business accounts total", len(instagramAccounts))
+	LogInfo("Found %d Instagram Business accounts total", len(instagramAccounts))
 	return instagramAccounts, nil
 }
 
 func HandleInstagramToken(w http.ResponseWriter, r *http.Request) {
-	log.Printf("=== Starting Instagram token request handling ===")
+	LogInfo("=== Starting Instagram token request handling ===")
 
 	var data struct {
 		UserToken string `json:"userToken"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		log.Printf("❌ Error decoding request: %v", err)
+		LogError("Error decoding request: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -332,7 +331,7 @@ func HandleInstagramToken(w http.ResponseWriter, r *http.Request) {
 	// 1. Get Instagram user details
 	instagramUser, err := getInstagramUser(data.UserToken)
 	if err != nil {
-		log.Printf("❌ Error getting Instagram user details: %v", err)
+		LogError("Error getting Instagram user details: %v", err)
 		http.Error(w, fmt.Sprintf("Could not verify Instagram user: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -340,16 +339,16 @@ func HandleInstagramToken(w http.ResponseWriter, r *http.Request) {
 	// 2. Get Instagram Business accounts
 	accounts, err := getInstagramBusinessAccounts(data.UserToken)
 	if err != nil {
-		log.Printf("❌ Error getting Instagram accounts: %v", err)
+		LogError("Error getting Instagram accounts: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Printf("✅ Found %d Instagram Business accounts", len(accounts))
+	LogInfo("Found %d Instagram Business accounts", len(accounts))
 
 	// 3. Start transaction for single database
 	tx, err := SocialDB.Begin()
 	if err != nil {
-		log.Printf("❌ Error starting database transaction: %v", err)
+		LogError("Error starting database transaction: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -365,15 +364,15 @@ func HandleInstagramToken(w http.ResponseWriter, r *http.Request) {
         RETURNING id
     `, instagramUser.Username, instagramUser.ID).Scan(&clientID)
 	if err != nil {
-		log.Printf("❌ Error upserting client: %v", err)
+		LogError("Error upserting client: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Printf("✅ Upserted client with ID: %s", clientID)
+	LogInfo("Upserted client with ID: %s", clientID)
 
 	// 5. Insert/update Instagram accounts in social_pages table
 	for _, account := range accounts {
-		log.Printf("📝 Processing Instagram account %s (ID: %s)", account.Name, account.ID)
+		LogInfo("Processing Instagram account %s (ID: %s)", account.Name, account.ID)
 
 		_, err := tx.Exec(`
             INSERT INTO social_pages (
@@ -394,40 +393,40 @@ func HandleInstagramToken(w http.ResponseWriter, r *http.Request) {
         `, clientID, "instagram", account.ID, account.Name, account.AccessToken)
 
 		if err != nil {
-			log.Printf("❌ Error processing Instagram account %s: %v", account.Name, err)
+			LogError("Error processing Instagram account %s: %v", account.Name, err)
 			continue
 		}
 
-		log.Printf("✅ Successfully processed Instagram account %s", account.Name)
+		LogInfo("Successfully processed Instagram account %s", account.Name)
 	}
 
 	// 6. Commit transaction
 	if err = tx.Commit(); err != nil {
-		log.Printf("❌ Error committing transaction: %v", err)
+		LogError("Error committing transaction: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Printf("✅ Database transaction committed successfully")
+	LogInfo("Database transaction committed successfully")
 
 	// 7. Set up webhook subscriptions for Instagram accounts (after database commit)
-	log.Printf("🚀 Starting webhook subscription automation for %d Instagram accounts", len(accounts))
+	LogInfo("Starting webhook subscription automation for %d Instagram accounts", len(accounts))
 	webhookSuccessCount := 0
 	for _, account := range accounts {
-		log.Printf("📝 Setting up webhooks for Instagram account: %s", account.Name)
+		LogInfo("Setting up webhooks for Instagram account: %s", account.Name)
 
 		// Set up webhook subscriptions automatically
 		if err := setupWebhookSubscriptions(account.ID, account.AccessToken, account.Name, "instagram"); err != nil {
-			log.Printf("⚠️ Webhook setup failed for %s: %v", account.Name, err)
+			LogError("Webhook setup failed for %s: %v", account.Name, err)
 			// Don't fail the entire request - webhook setup is best effort
 		} else {
 			webhookSuccessCount++
-			log.Printf("✅ Webhook setup completed for %s", account.Name)
+			LogInfo("Webhook setup completed for %s", account.Name)
 		}
 	}
 
-	log.Printf("🎯 Webhook automation summary: %d/%d Instagram accounts configured successfully", webhookSuccessCount, len(accounts))
+	LogInfo("Webhook automation summary: %d/%d Instagram accounts configured successfully", webhookSuccessCount, len(accounts))
 
-	log.Printf("✅ Successfully completed Instagram token request with webhook automation")
+	LogInfo("Successfully completed Instagram token request with webhook automation")
 
 	// Return success response (no session token needed)
 	w.Header().Set("Content-Type", "application/json")
