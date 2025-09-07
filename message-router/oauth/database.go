@@ -15,18 +15,18 @@ var SocialDB *sql.DB // Main application database (social_pages table)
 
 // InitDB initializes the OAuth database connection
 func InitDB(databaseURL string) {
-	log.Printf("📊 Initializing OAuth database connection...")
+	LogInfo("📊 Initializing database connection...")
 
 	var err error
 	SocialDB, err = sql.Open("postgres", databaseURL)
 	if err != nil {
-		log.Printf("❌ Error opening OAuth database: %v", err)
+		LogError("Error opening database: %v", err)
 		log.Fatal(err)
 	}
 
 	// Test the connection
 	if err = SocialDB.Ping(); err != nil {
-		log.Printf("❌ Error pinging OAuth database: %v", err)
+		LogError("Error pinging database: %v", err)
 		log.Fatal(err)
 	}
 
@@ -34,13 +34,13 @@ func InitDB(databaseURL string) {
 	SocialDB.SetMaxOpenConns(10)
 	SocialDB.SetMaxIdleConns(10)
 
-	log.Printf("✅ OAuth database connection established")
+	LogInfo("✅ Database connection established")
 }
 
 // CleanupDB closes the OAuth database connection
 func CleanupDB() {
 	if SocialDB != nil {
-		log.Printf("🧹 Closing OAuth database connection...")
+		LogInfo("🧹 Closing database connection...")
 		SocialDB.Close()
 	}
 }
