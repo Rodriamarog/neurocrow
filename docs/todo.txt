@@ -1,3 +1,5 @@
+We need to make a plan for this:
+
 Add these permissons to the login flow:
 
 For instagram:
@@ -9,10 +11,8 @@ pages_manage_posts
 pages_manage_engagement
 
 After that, make a specific page/dashboard in the website where I can see Urban Edge FB and Instagram pages and 
-publish a posts, and make comments, and edit comments, etc. Something I can demonstrate the proper use of these permissions we are requesting.
-
-Also, to let me manage comments.
+publish a posts, and make comments, and edit comments, answer customer comments, etc. Something I can demonstrate the proper use of these permissions we are requesting.
 
 -----------
 
-Learn faceboo ads and make the design ads.
+Learn facebook ads and make the design ads.
