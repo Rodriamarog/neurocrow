@@ -80,10 +80,10 @@ func (cm *ContentManagement) GetUserPages(w http.ResponseWriter, r *http.Request
 	LogInfo("🔍 Getting pages for client: %s", clientID)
 
 	query := `
-		SELECT id, page_id, name, platform, access_token, client_id 
+		SELECT id, page_id, page_name, platform, access_token, client_id 
 		FROM social_pages 
 		WHERE client_id = $1 AND status = 'active'
-		ORDER BY platform, name
+		ORDER BY platform, page_name
 	`
 
 	rows, err := cm.db.Query(query, clientID)
