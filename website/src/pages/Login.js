@@ -47,6 +47,8 @@ function Login() {
       'pages_manage_metadata',
       'pages_messaging',
       'pages_read_engagement',
+      'pages_manage_posts',
+      'pages_manage_engagement',
       'public_profile',
       'business_management'
     ];
@@ -106,6 +108,8 @@ function Login() {
       'pages_manage_metadata', 
       'pages_messaging',
       'pages_read_engagement',
+      'pages_manage_posts',
+      'pages_manage_engagement',
       'public_profile',
       'business_management',
       'instagram_basic',

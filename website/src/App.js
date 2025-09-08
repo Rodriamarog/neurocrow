@@ -12,6 +12,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Success from './pages/Success';
 import InstagramCallback from './pages/InstagramCallback';
+import ContentManager from './pages/ContentManager';
 import { Outlet } from 'react-router-dom';
 import TerminosServicio from './pages/TerminosServicio';
 import PoliticaPrivacidad from './pages/PoliticaPrivacidad';
@@ -20,17 +21,17 @@ import './index.css';
 
 // Loading component
 const LoadingSpinner = () => (
-  <div className="loading-container">
-    <div className="loading-spinner">Cargando...</div>
+  <div className="min-h-screen flex items-center justify-center p-5 bg-slate-50 dark:bg-slate-900">
+    <div className="p-5 text-center text-slate-700 dark:text-slate-300">Cargando...</div>
   </div>
 );
 
 // Error display component
 const ErrorMessage = ({ error }) => (
-  <div className="error-container">
-    <div className="error-message">
-      <h3>Error de conexión</h3>
-      <p>{error}</p>
+  <div className="min-h-screen flex items-center justify-center p-5 bg-slate-50 dark:bg-slate-900">
+    <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg p-5 max-w-md text-center text-red-800 dark:text-red-200">
+      <h3 className="font-bold mb-2">Error de conexión</h3>
+      <p className="mb-2">{error}</p>
       <p>Por favor, recarga la página o intenta más tarde.</p>
     </div>
   </div>
@@ -91,7 +92,7 @@ const FacebookAwareComponent = ({ children }) => {
 // Layout component to wrap all routes
 const Layout = () => {
   return (
-    <div className="App">
+    <div className="text-center">
       <FacebookAwareComponent>
         <Navbar />
         <main>
@@ -111,6 +112,7 @@ const router = createBrowserRouter(
       <Route path="/login" element={<Login />} />
       <Route path="/success" element={<Success />} />
       <Route path="/instagram-callback" element={<InstagramCallback />} />
+      <Route path="/content-manager" element={<ContentManager />} />
       <Route path="/terminos-de-servicio" element={<TerminosServicio />} />
       <Route path="/politica-de-privacidad" element={<PoliticaPrivacidad />} />
     </Route>

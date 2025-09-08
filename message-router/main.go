@@ -371,6 +371,14 @@ func setupRouter() *http.ServeMux {
 	router.HandleFunc("/instagram-token", oauth.CorsMiddleware(logMiddleware(recoverMiddleware(oauth.HandleInstagramToken))))
 	router.HandleFunc("/instagram-token-exchange", oauth.CorsMiddleware(logMiddleware(recoverMiddleware(oauth.HandleInstagramTokenExchange))))
 
+	// Content Management API endpoints
+	contentMgmt := NewContentManagement(db)
+	authMiddleware := NewAuthMiddleware(db)
+	
+	router.HandleFunc("/api/pages", authMiddleware.ContentAuthMiddleware(contentMgmt.GetUserPages))
+	router.HandleFunc("/api/posts/", authMiddleware.ContentAuthMiddleware(handlePostsRoute(contentMgmt)))
+	router.HandleFunc("/api/comments/", authMiddleware.ContentAuthMiddleware(handleCommentsRoute(contentMgmt)))
+
 	// Log registered routes
 	log.Printf("📍 Registered routes:")
 	log.Printf("   - GET/POST/HEAD / (Health Check)")
@@ -381,10 +389,14 @@ func setupRouter() *http.ServeMux {
 	log.Printf("   - POST /facebook-business-token (Facebook Business OAuth)")
 	log.Printf("   - POST /instagram-token (Instagram OAuth)")
 	log.Printf("   - POST /instagram-token-exchange (Instagram Token Exchange)")
+	log.Printf("   - GET /api/pages (Content Management: Get Pages)")
+	log.Printf("   - GET/POST /api/posts/{pageId} (Content Management: Posts)")
+	log.Printf("   - GET/POST /api/comments/{id} (Content Management: Comments)")
 	log.Printf("🤖 AI Integration: Dify (per-page API keys)")
 	log.Printf("📊 Database: Multi-tenant client support")
 	log.Printf("📱 Instagram: Bot flag system for reliable human/bot detection")
 	log.Printf("🔐 OAuth: Facebook & Instagram client onboarding")
+	log.Printf("📝 Content Management: Posts & comments with Urban Edge demo")
 
 	return router
 }
@@ -445,6 +457,37 @@ func handleMarkBotResponse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"success","conversation_id":"%s","message":"Bot flag set"}`, conversationID)
+}
+
+// Route handlers for content management
+func handlePostsRoute(cm *ContentManagement) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {		
+		switch r.Method {
+		case "GET":
+			// Get posts for page
+			cm.GetPagePosts(w, r)
+		case "POST":
+			// Create new post
+			cm.CreatePost(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func handleCommentsRoute(cm *ContentManagement) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			// Get comments for post
+			cm.GetPostComments(w, r)
+		case "POST":
+			// Reply to comment
+			cm.ReplyToComment(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
 }
 
 // Bot reactivation system: 12-hour rule with message-triggered checks
