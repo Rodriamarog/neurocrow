@@ -337,7 +337,8 @@ func (cm *ContentManagement) fetchPostsFromAPI(pageID, platform, accessToken, li
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}
 
-	LogDebug("🔗 Fetching posts from: %s", apiURL)
+	LogInfo("🔗 Fetching posts from API for page %s (%s)", pageID, platform)
+	LogDebug("🔗 API URL: %s", strings.ReplaceAll(apiURL, accessToken, "***TOKEN***"))
 
 	resp, err := http.Get(apiURL)
 	if err != nil {
@@ -351,16 +352,22 @@ func (cm *ContentManagement) fetchPostsFromAPI(pageID, platform, accessToken, li
 	}
 
 	if resp.StatusCode != 200 {
+		LogError("❌ Facebook API error %d: %s", resp.StatusCode, string(body))
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
 	}
+
+	LogDebug("✅ Facebook API response: %s", string(body))
 
 	var apiResponse struct {
 		Data []json.RawMessage `json:"data"`
 	}
 
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		LogError("❌ Failed to parse API response: %v", err)
 		return nil, fmt.Errorf("failed to parse API response: %v", err)
 	}
+
+	LogInfo("📊 Found %d posts in API response for page %s", len(apiResponse.Data), pageID)
 
 	var posts []Post
 	for _, rawPost := range apiResponse.Data {
@@ -372,6 +379,7 @@ func (cm *ContentManagement) fetchPostsFromAPI(pageID, platform, accessToken, li
 		posts = append(posts, post)
 	}
 
+	LogInfo("✅ Successfully parsed %d posts for page %s", len(posts), pageID)
 	return posts, nil
 }
 
