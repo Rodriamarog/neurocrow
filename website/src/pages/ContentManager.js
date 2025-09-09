@@ -355,7 +355,7 @@ function ContentManager() {
   };
 
   const deleteComment = async (commentId) => {
-    if (!confirm('Are you sure you want to delete this comment?')) return;
+    if (!window.confirm('Are you sure you want to delete this comment?')) return;
 
     try {
       const authHeaders = getAuthHeaders();
