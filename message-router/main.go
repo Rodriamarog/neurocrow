@@ -488,6 +488,12 @@ func handleCommentsRoute(cm *ContentManagement) http.HandlerFunc {
 		case "POST":
 			// Reply to comment
 			cm.ReplyToComment(w, r)
+		case "PUT":
+			// Edit comment
+			cm.EditComment(w, r)
+		case "DELETE":
+			// Delete comment
+			cm.DeleteComment(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}

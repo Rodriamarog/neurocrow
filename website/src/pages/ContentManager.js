@@ -11,6 +11,12 @@ function ContentManager() {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [filePreviewUrls, setFilePreviewUrls] = useState([]);
   const [publishingPost, setPublishingPost] = useState(false);
+  const [commentsVisible, setCommentsVisible] = useState({});
+  const [comments, setComments] = useState({});
+  const [loadingComments, setLoadingComments] = useState({});
+  const [newComment, setNewComment] = useState({});
+  const [editingComment, setEditingComment] = useState(null);
+  const [editCommentText, setEditCommentText] = useState('');
 
   // Get client ID for authentication
   const getClientId = () => {
@@ -258,6 +264,120 @@ function ContentManager() {
 
   const handleConnectFacebook = () => {
     window.location.href = '/login';
+  };
+
+  // Comment management functions
+  const fetchComments = async (postId) => {
+    setLoadingComments(prev => ({ ...prev, [postId]: true }));
+    try {
+      const authHeaders = getAuthHeaders();
+      const response = await fetch(
+        `https://neurocrow-message-router.onrender.com/api/comments/${postId}`,
+        {
+          method: 'GET',
+          headers: authHeaders
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setComments(prev => ({ ...prev, [postId]: data.comments || [] }));
+      } else {
+        console.error('Failed to fetch comments:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    } finally {
+      setLoadingComments(prev => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  const toggleComments = async (postId) => {
+    const isVisible = commentsVisible[postId];
+    setCommentsVisible(prev => ({ ...prev, [postId]: !isVisible }));
+    
+    if (!isVisible && !comments[postId]) {
+      await fetchComments(postId);
+    }
+  };
+
+  const addComment = async (postId) => {
+    const commentText = newComment[postId];
+    if (!commentText?.trim()) return;
+
+    try {
+      const authHeaders = getAuthHeaders();
+      const response = await fetch(
+        `https://neurocrow-message-router.onrender.com/api/comments/${postId}/reply`,
+        {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ message: commentText })
+        }
+      );
+
+      if (response.ok) {
+        setNewComment(prev => ({ ...prev, [postId]: '' }));
+        await fetchComments(postId);
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error);
+    }
+  };
+
+  const editComment = async (commentId) => {
+    if (!editCommentText.trim()) return;
+
+    try {
+      const authHeaders = getAuthHeaders();
+      const response = await fetch(
+        `https://neurocrow-message-router.onrender.com/api/comments/${commentId}`,
+        {
+          method: 'PUT',
+          headers: authHeaders,
+          body: JSON.stringify({ message: editCommentText })
+        }
+      );
+
+      if (response.ok) {
+        setEditingComment(null);
+        setEditCommentText('');
+        // Refresh comments for the affected post
+        Object.keys(comments).forEach(postId => {
+          if (comments[postId].some(c => c.id === commentId)) {
+            fetchComments(postId);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error editing comment:', error);
+    }
+  };
+
+  const deleteComment = async (commentId) => {
+    if (!confirm('Are you sure you want to delete this comment?')) return;
+
+    try {
+      const authHeaders = getAuthHeaders();
+      const response = await fetch(
+        `https://neurocrow-message-router.onrender.com/api/comments/${commentId}`,
+        {
+          method: 'DELETE',
+          headers: authHeaders
+        }
+      );
+
+      if (response.ok) {
+        // Refresh comments for the affected post
+        Object.keys(comments).forEach(postId => {
+          if (comments[postId].some(c => c.id === commentId)) {
+            fetchComments(postId);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+    }
   };
 
   if (loading && connectedPages.length === 0) {
@@ -581,16 +701,128 @@ function ContentManager() {
                 
                 {/* Post Actions */}
                 <div className="flex border-t border-slate-200 dark:border-slate-700">
-                  <button className="flex-1 flex items-center justify-center gap-2 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                  <button 
+                    onClick={() => toggleComments(post.id)}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                  >
                     <i className="fas fa-comment text-sm"></i>
                     <span className="text-sm">Comments</span>
+                    {commentsVisible[post.id] && <i className="fas fa-chevron-up text-xs"></i>}
+                    {!commentsVisible[post.id] && <i className="fas fa-chevron-down text-xs"></i>}
                   </button>
-                  <div className="w-px bg-slate-200 dark:bg-slate-700"></div>
+                  <div className="w-px bg-slate-200 dark:border-slate-700"></div>
                   <button className="flex-1 flex items-center justify-center gap-2 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
                     <i className="fas fa-chart-line text-sm"></i>
                     <span className="text-sm">Analytics</span>
                   </button>
                 </div>
+
+                {/* Comments Section */}
+                {commentsVisible[post.id] && (
+                  <div className="border-t border-slate-200 dark:border-slate-700">
+                    {/* Comments List */}
+                    <div className="max-h-96 overflow-y-auto">
+                      {loadingComments[post.id] ? (
+                        <div className="p-4 text-center">
+                          <i className="fas fa-spinner fa-spin text-slate-400"></i>
+                          <p className="text-sm text-slate-500 mt-2">Loading comments...</p>
+                        </div>
+                      ) : comments[post.id] && comments[post.id].length > 0 ? (
+                        comments[post.id].map((comment) => (
+                          <div key={comment.id} className="p-4 border-b border-slate-100 dark:border-slate-700 last:border-b-0">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium text-slate-800 dark:text-slate-200 text-sm">
+                                    {comment.from.name}
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    {new Date(comment.created_time).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                {editingComment === comment.id ? (
+                                  <div className="space-y-2">
+                                    <textarea
+                                      value={editCommentText}
+                                      onChange={(e) => setEditCommentText(e.target.value)}
+                                      className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 resize-none"
+                                      rows="2"
+                                    />
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => editComment(comment.id)}
+                                        className="px-3 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setEditingComment(null);
+                                          setEditCommentText('');
+                                        }}
+                                        className="px-3 py-1 bg-slate-500 text-white rounded text-xs hover:bg-slate-600"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-slate-700 dark:text-slate-300 text-sm">
+                                    {comment.message}
+                                  </p>
+                                )}
+                              </div>
+                              {!editingComment && (
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => {
+                                      setEditingComment(comment.id);
+                                      setEditCommentText(comment.message);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-blue-500 transition-colors"
+                                  >
+                                    <i className="fas fa-edit text-xs"></i>
+                                  </button>
+                                  <button
+                                    onClick={() => deleteComment(comment.id)}
+                                    className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                  >
+                                    <i className="fas fa-trash text-xs"></i>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-4 text-center text-slate-500 dark:text-slate-400">
+                          <p className="text-sm">No comments yet</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Add Comment */}
+                    <div className="p-4 bg-slate-50 dark:bg-slate-700/50">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Add a comment..."
+                          value={newComment[post.id] || ''}
+                          onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
+                          onKeyPress={(e) => e.key === 'Enter' && addComment(post.id)}
+                          className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <button
+                          onClick={() => addComment(post.id)}
+                          disabled={!newComment[post.id]?.trim()}
+                          className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        >
+                          Post
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

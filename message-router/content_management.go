@@ -318,6 +318,89 @@ func (cm *ContentManagement) ReplyToComment(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// EditComment edits a specific comment
+func (cm *ContentManagement) EditComment(w http.ResponseWriter, r *http.Request) {
+	// Extract commentID from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/api/comments/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Comment ID required", http.StatusBadRequest)
+		return
+	}
+	commentID := parts[0]
+	
+	clientID := r.Header.Get("X-Client-ID")
+	if clientID == "" {
+		http.Error(w, "Client ID required", http.StatusUnauthorized)
+		return
+	}
+
+	var editRequest struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&editRequest); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if editRequest.Message == "" {
+		http.Error(w, "Message is required", http.StatusBadRequest)
+		return
+	}
+
+	LogInfo("✏️ Editing comment %s", commentID)
+
+	err := cm.editCommentOnAPI(commentID, editRequest.Message)
+	if err != nil {
+		LogError("Error editing comment: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to edit comment: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	LogInfo("✅ Edited comment %s", commentID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Comment edited successfully",
+	})
+}
+
+// DeleteComment deletes a specific comment
+func (cm *ContentManagement) DeleteComment(w http.ResponseWriter, r *http.Request) {
+	// Extract commentID from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/api/comments/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Comment ID required", http.StatusBadRequest)
+		return
+	}
+	commentID := parts[0]
+	
+	clientID := r.Header.Get("X-Client-ID")
+	if clientID == "" {
+		http.Error(w, "Client ID required", http.StatusUnauthorized)
+		return
+	}
+
+	LogInfo("🗑️ Deleting comment %s", commentID)
+
+	err := cm.deleteCommentOnAPI(commentID)
+	if err != nil {
+		LogError("Error deleting comment: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to delete comment: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	LogInfo("✅ Deleted comment %s", commentID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Comment deleted successfully",
+	})
+}
+
 // Helper function to get page access token
 func (cm *ContentManagement) getPageAccessToken(pageID, clientID string) (string, string, error) {
 	query := `
@@ -765,36 +848,212 @@ func (cm *ContentManagement) publishInstagramMediaContainer(pageID, accessToken,
 
 // Helper function to fetch comments from Facebook/Instagram API
 func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, error) {
-	// Determine platform based on post ID format
-	// Facebook post IDs are typically in format: pageId_postId
-	// Instagram post IDs are typically numeric
-	
-	var platform string
-	
-	// For now, assume Facebook if contains underscore, Instagram otherwise
+	// Extract page ID from post ID (Facebook format: pageId_postId)
+	var pageID string
 	if strings.Contains(postID, "_") {
-		platform = "facebook"
+		parts := strings.Split(postID, "_")
+		if len(parts) > 0 {
+			pageID = parts[0]
+		}
 	} else {
-		platform = "instagram"
+		// For Instagram or other formats, use the postID as pageID
+		pageID = postID
 	}
 	
-	LogDebug("🔍 Fetching comments for %s post: %s", platform, postID)
+	LogDebug("🔍 Fetching comments for post: %s (page: %s)", postID, pageID)
 	
-	// TODO: Get access token for the post's page
-	// For now, return empty comments with a message
-	LogInfo("⚠️ Comment fetching requires page access token lookup - not fully implemented")
+	// Get access token from database for any page (simplified for MVP)
+	query := `SELECT access_token, platform FROM social_pages WHERE status = 'active' LIMIT 1`
+	var accessToken, platform string
+	err := cm.db.QueryRow(query).Scan(&accessToken, &platform)
+	if err != nil {
+		return nil, fmt.Errorf("no active pages found: %v", err)
+	}
 	
-	return []Comment{}, nil
+	// Facebook Graph API call to fetch comments
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments?fields=id,message,created_time,from{name,id}&access_token=%s", postID, accessToken)
+	
+	LogDebug("🔗 Comments API URL: %s", strings.ReplaceAll(apiURL, accessToken, "***TOKEN***"))
+	
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("API request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %v", err)
+	}
+	
+	if resp.StatusCode != 200 {
+		LogError("❌ Facebook API error %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+	
+	var apiResponse struct {
+		Data []struct {
+			ID          string `json:"id"`
+			Message     string `json:"message"`
+			CreatedTime string `json:"created_time"`
+			From        struct {
+				Name string `json:"name"`
+				ID   string `json:"id"`
+			} `json:"from"`
+		} `json:"data"`
+	}
+	
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse API response: %v", err)
+	}
+	
+	var comments []Comment
+	for _, apiComment := range apiResponse.Data {
+		createdTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiComment.CreatedTime)
+		comment := Comment{
+			ID:          apiComment.ID,
+			Message:     apiComment.Message,
+			CreatedTime: createdTime,
+			From: struct {
+				Name string `json:"name"`
+				ID   string `json:"id"`
+			}{
+				Name: apiComment.From.Name,
+				ID:   apiComment.From.ID,
+			},
+			CanReply: true,
+		}
+		comments = append(comments, comment)
+	}
+	
+	LogInfo("✅ Retrieved %d comments for post %s", len(comments), postID)
+	return comments, nil
 }
 
-// Helper function to reply to comment (simplified)
+// Helper function to reply to comment
 func (cm *ContentManagement) replyToCommentOnAPI(commentID, message string) (string, error) {
-	// This is a placeholder - in a real implementation, you'd:
-	// 1. Determine platform and get access token
-	// 2. Make API call to reply to comment
-	// 3. Return reply ID
+	LogDebug("↩️ Replying to comment %s: %s", commentID, message)
 	
-	return "", fmt.Errorf("comment reply not fully implemented yet")
+	// Get access token from database (simplified for MVP)
+	query := `SELECT access_token FROM social_pages WHERE status = 'active' LIMIT 1`
+	var accessToken string
+	err := cm.db.QueryRow(query).Scan(&accessToken)
+	if err != nil {
+		return "", fmt.Errorf("no active pages found: %v", err)
+	}
+	
+	// Facebook Graph API call to reply to comment
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments", commentID)
+	
+	formData := fmt.Sprintf("message=%s&access_token=%s", message, accessToken)
+	
+	LogDebug("🔗 Reply API URL: %s", apiURL)
+	
+	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(formData))
+	if err != nil {
+		return "", fmt.Errorf("API request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %v", err)
+	}
+	
+	if resp.StatusCode != 200 {
+		LogError("❌ Facebook API error %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+	
+	var replyResponse struct {
+		ID string `json:"id"`
+	}
+	
+	if err := json.Unmarshal(body, &replyResponse); err != nil {
+		return "", fmt.Errorf("failed to parse reply response: %v", err)
+	}
+	
+	LogInfo("✅ Created reply %s to comment %s", replyResponse.ID, commentID)
+	return replyResponse.ID, nil
+}
+
+// Helper function to delete comment
+func (cm *ContentManagement) deleteCommentOnAPI(commentID string) error {
+	LogDebug("🗑️ Deleting comment %s", commentID)
+	
+	// Get access token from database (simplified for MVP)
+	query := `SELECT access_token FROM social_pages WHERE status = 'active' LIMIT 1`
+	var accessToken string
+	err := cm.db.QueryRow(query).Scan(&accessToken)
+	if err != nil {
+		return fmt.Errorf("no active pages found: %v", err)
+	}
+	
+	// Facebook Graph API call to delete comment
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s?access_token=%s", commentID, accessToken)
+	
+	req, err := http.NewRequest("DELETE", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create delete request: %v", err)
+	}
+	
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("API request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %v", err)
+	}
+	
+	if resp.StatusCode != 200 {
+		LogError("❌ Facebook API error %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+	
+	LogInfo("✅ Deleted comment %s", commentID)
+	return nil
+}
+
+// Helper function to edit comment
+func (cm *ContentManagement) editCommentOnAPI(commentID, message string) error {
+	LogDebug("✏️ Editing comment %s: %s", commentID, message)
+	
+	// Get access token from database (simplified for MVP)
+	query := `SELECT access_token FROM social_pages WHERE status = 'active' LIMIT 1`
+	var accessToken string
+	err := cm.db.QueryRow(query).Scan(&accessToken)
+	if err != nil {
+		return fmt.Errorf("no active pages found: %v", err)
+	}
+	
+	// Facebook Graph API call to edit comment
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s", commentID)
+	
+	formData := fmt.Sprintf("message=%s&access_token=%s", message, accessToken)
+	
+	LogDebug("🔗 Edit API URL: %s", apiURL)
+	
+	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(formData))
+	if err != nil {
+		return fmt.Errorf("API request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %v", err)
+	}
+	
+	if resp.StatusCode != 200 {
+		LogError("❌ Facebook API error %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+	
+	LogInfo("✅ Edited comment %s", commentID)
+	return nil
 }
 
 // Helper function
