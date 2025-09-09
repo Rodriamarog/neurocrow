@@ -378,6 +378,9 @@ func setupRouter() *http.ServeMux {
 	router.HandleFunc("/api/pages", authMiddleware.ContentAuthMiddleware(contentMgmt.GetUserPages))
 	router.HandleFunc("/api/posts/", authMiddleware.ContentAuthMiddleware(handlePostsRoute(contentMgmt)))
 	router.HandleFunc("/api/comments/", authMiddleware.ContentAuthMiddleware(handleCommentsRoute(contentMgmt)))
+	
+	// Temporary media files serving for Instagram posting
+	router.Handle("/temp-media/", http.StripPrefix("/temp-media/", http.FileServer(http.Dir("/tmp/media_uploads"))))
 
 	// Log registered routes
 	log.Printf("📍 Registered routes:")
@@ -392,6 +395,7 @@ func setupRouter() *http.ServeMux {
 	log.Printf("   - GET /api/pages (Content Management: Get Pages)")
 	log.Printf("   - GET/POST /api/posts/{pageId} (Content Management: Posts)")
 	log.Printf("   - GET/POST /api/comments/{id} (Content Management: Comments)")
+	log.Printf("   - GET /temp-media/* (Temporary Media Files for Instagram)")
 	log.Printf("🤖 AI Integration: Dify (per-page API keys)")
 	log.Printf("📊 Database: Multi-tenant client support")
 	log.Printf("📱 Instagram: Bot flag system for reliable human/bot detection")

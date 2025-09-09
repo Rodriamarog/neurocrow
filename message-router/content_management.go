@@ -8,6 +8,8 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -605,9 +607,160 @@ func (cm *ContentManagement) createFacebookPost(pageID, accessToken, message str
 
 // Helper function to create Instagram post (simplified version)
 func (cm *ContentManagement) createInstagramPost(pageID, accessToken, message string, form *multipart.Form) (string, error) {
-	// Instagram posting is more complex and requires media upload first
-	// For now, return an error indicating it's not fully implemented
-	return "", fmt.Errorf("Instagram posting not fully implemented yet - requires media container creation")
+	// Instagram posting requires media for posts (cannot be text-only)
+	if len(form.File) == 0 {
+		return "", fmt.Errorf("Instagram posts require at least one image")
+	}
+
+	// Step 1: Upload media and create media container
+	var mediaContainerIDs []string
+	
+	for key, fileHeaders := range form.File {
+		if strings.HasPrefix(key, "media_") && len(fileHeaders) > 0 {
+			fileHeader := fileHeaders[0]
+			
+			// Upload media to a temporary URL (you could use a service like imgur, or upload to your own server)
+			mediaURL, err := cm.uploadMediaToTempURL(fileHeader)
+			if err != nil {
+				return "", fmt.Errorf("failed to upload media: %v", err)
+			}
+
+			// Create Instagram media container
+			containerID, err := cm.createInstagramMediaContainer(pageID, accessToken, mediaURL, message)
+			if err != nil {
+				return "", fmt.Errorf("failed to create media container: %v", err)
+			}
+			
+			mediaContainerIDs = append(mediaContainerIDs, containerID)
+		}
+	}
+
+	if len(mediaContainerIDs) == 0 {
+		return "", fmt.Errorf("no valid media files found")
+	}
+
+	// Step 2: Publish the media container
+	postID, err := cm.publishInstagramMediaContainer(pageID, accessToken, mediaContainerIDs[0])
+	if err != nil {
+		return "", fmt.Errorf("failed to publish Instagram post: %v", err)
+	}
+
+	return postID, nil
+}
+
+// Helper function to upload media to a temporary URL accessible by Instagram
+func (cm *ContentManagement) uploadMediaToTempURL(fileHeader *multipart.FileHeader) (string, error) {
+	// Create a temporary file to store the uploaded media
+	file, err := fileHeader.Open()
+	if err != nil {
+		return "", fmt.Errorf("failed to open uploaded file: %v", err)
+	}
+	defer file.Close()
+
+	// Create a unique filename
+	timestamp := time.Now().Unix()
+	filename := fmt.Sprintf("temp_%d_%s", timestamp, fileHeader.Filename)
+	
+	// Create temp directory if it doesn't exist
+	tempDir := "/tmp/media_uploads"
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %v", err)
+	}
+	
+	// Save file to temporary location
+	filePath := filepath.Join(tempDir, filename)
+	dst, err := os.Create(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %v", err)
+	}
+	defer dst.Close()
+	
+	_, err = io.Copy(dst, file)
+	if err != nil {
+		return "", fmt.Errorf("failed to save temp file: %v", err)
+	}
+	
+	// Return a public URL that Instagram can access
+	// Note: In production, you'd want to use your actual domain
+	publicURL := fmt.Sprintf("https://neurocrow-message-router.onrender.com/temp-media/%s", filename)
+	
+	LogInfo("📁 Uploaded temp media file: %s", publicURL)
+	return publicURL, nil
+}
+
+// Helper function to create Instagram media container
+func (cm *ContentManagement) createInstagramMediaContainer(pageID, accessToken, mediaURL, caption string) (string, error) {
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/media", pageID)
+	
+	// Prepare form data for media container creation
+	formData := fmt.Sprintf("image_url=%s&caption=%s&access_token=%s", 
+		mediaURL, caption, accessToken)
+	
+	LogDebug("🔗 Creating Instagram media container: %s", apiURL)
+	
+	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(formData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create media container: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %v", err)
+	}
+	
+	if resp.StatusCode != 200 {
+		LogError("❌ Instagram media container creation failed: %d - %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("Instagram API error %d: %s", resp.StatusCode, string(body))
+	}
+	
+	var containerResponse struct {
+		ID string `json:"id"`
+	}
+	
+	if err := json.Unmarshal(body, &containerResponse); err != nil {
+		return "", fmt.Errorf("failed to parse container response: %v", err)
+	}
+	
+	LogInfo("✅ Created Instagram media container: %s", containerResponse.ID)
+	return containerResponse.ID, nil
+}
+
+// Helper function to publish Instagram media container
+func (cm *ContentManagement) publishInstagramMediaContainer(pageID, accessToken, containerID string) (string, error) {
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/media_publish", pageID)
+	
+	// Prepare form data for publishing
+	formData := fmt.Sprintf("creation_id=%s&access_token=%s", containerID, accessToken)
+	
+	LogDebug("🔗 Publishing Instagram media container: %s", apiURL)
+	
+	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(formData))
+	if err != nil {
+		return "", fmt.Errorf("failed to publish media: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %v", err)
+	}
+	
+	if resp.StatusCode != 200 {
+		LogError("❌ Instagram media publish failed: %d - %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("Instagram API error %d: %s", resp.StatusCode, string(body))
+	}
+	
+	var publishResponse struct {
+		ID string `json:"id"`
+	}
+	
+	if err := json.Unmarshal(body, &publishResponse); err != nil {
+		return "", fmt.Errorf("failed to parse publish response: %v", err)
+	}
+	
+	LogInfo("✅ Published Instagram post: %s", publishResponse.ID)
+	return publishResponse.ID, nil
 }
 
 // Helper function to fetch comments from Facebook/Instagram API
