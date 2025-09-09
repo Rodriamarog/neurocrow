@@ -8,6 +8,8 @@ function ContentManager() {
   const [error, setError] = useState(null);
   const [postComposerOpen, setPostComposerOpen] = useState(false);
   const [newPostMessage, setNewPostMessage] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [filePreviewUrls, setFilePreviewUrls] = useState([]);
   const [publishingPost, setPublishingPost] = useState(false);
 
   // Get client ID for authentication
@@ -158,8 +160,45 @@ function ContentManager() {
     }
   };
 
+  const handleFileSelect = (event) => {
+    const files = Array.from(event.target.files);
+    const validFiles = files.filter(file => {
+      const isImage = file.type.startsWith('image/');
+      const isValidSize = file.size <= 10 * 1024 * 1024; // 10MB limit
+      if (!isImage) {
+        setError('Only image files are allowed');
+        return false;
+      }
+      if (!isValidSize) {
+        setError('File size must be under 10MB');
+        return false;
+      }
+      return true;
+    });
+
+    if (validFiles.length > 0) {
+      setSelectedFiles(validFiles);
+      
+      // Create preview URLs
+      const previewUrls = validFiles.map(file => URL.createObjectURL(file));
+      setFilePreviewUrls(previewUrls);
+      setError(null);
+    }
+  };
+
+  const removeFile = (index) => {
+    const newFiles = selectedFiles.filter((_, i) => i !== index);
+    const newPreviews = filePreviewUrls.filter((_, i) => i !== index);
+    
+    // Revoke the URL to prevent memory leaks
+    URL.revokeObjectURL(filePreviewUrls[index]);
+    
+    setSelectedFiles(newFiles);
+    setFilePreviewUrls(newPreviews);
+  };
+
   const handleCreatePost = async () => {
-    if (!newPostMessage.trim() || !selectedPage) {
+    if ((!newPostMessage.trim() && selectedFiles.length === 0) || !selectedPage) {
       return;
     }
 
@@ -170,14 +209,24 @@ function ContentManager() {
       console.log(`📝 Creating post for page ${selectedPage.page_id}: ${newPostMessage}`);
       const authHeaders = getAuthHeaders();
 
+      // Create FormData for multipart upload
+      const formData = new FormData();
+      formData.append('message', newPostMessage);
+      
+      // Add files if any are selected
+      selectedFiles.forEach((file, index) => {
+        formData.append(`media_${index}`, file);
+      });
+
+      // Remove Content-Type header to let browser set it automatically for FormData
+      const { 'Content-Type': contentType, ...headersWithoutContentType } = authHeaders;
+
       const response = await fetch(
         `https://neurocrow-message-router.onrender.com/api/posts/${selectedPage.page_id}`,
         {
           method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            message: newPostMessage
-          })
+          headers: headersWithoutContentType,
+          body: formData
         }
       );
 
@@ -187,6 +236,12 @@ function ContentManager() {
       if (response.ok) {
         console.log('✅ Post created successfully');
         setNewPostMessage('');
+        
+        // Clean up file previews
+        filePreviewUrls.forEach(url => URL.revokeObjectURL(url));
+        setSelectedFiles([]);
+        setFilePreviewUrls([]);
+        
         setPostComposerOpen(false);
         // Refresh posts
         fetchPosts(selectedPage.page_id);
@@ -354,6 +409,51 @@ function ContentManager() {
                 rows={6}
                 disabled={publishingPost}
               />
+
+              {/* File Upload Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer transition-colors">
+                    <i className="fas fa-image text-slate-600 dark:text-slate-400"></i>
+                    <span className="text-slate-700 dark:text-slate-300 font-medium">Add Photos</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      disabled={publishingPost}
+                      className="hidden"
+                    />
+                  </label>
+                  {selectedFiles.length > 0 && (
+                    <span className="text-sm text-slate-500 dark:text-slate-400">
+                      {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+                    </span>
+                  )}
+                </div>
+
+                {/* File Previews */}
+                {filePreviewUrls.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {filePreviewUrls.map((url, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={url}
+                          alt={`Preview ${index + 1}`}
+                          className="w-full h-24 object-cover rounded-lg border border-slate-200 dark:border-slate-600"
+                        />
+                        <button
+                          onClick={() => removeFile(index)}
+                          disabled={publishingPost}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs transition-colors opacity-0 group-hover:opacity-100 disabled:cursor-not-allowed"
+                        >
+                          <i className="fas fa-times"></i>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500 dark:text-slate-400">
@@ -376,7 +476,7 @@ function ContentManager() {
               </button>
               <button 
                 onClick={handleCreatePost}
-                disabled={!newPostMessage.trim() || publishingPost}
+                disabled={(!newPostMessage.trim() && selectedFiles.length === 0) || publishingPost}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600 disabled:from-gray-400 disabled:to-gray-500 text-white font-medium rounded-lg transition-all disabled:cursor-not-allowed"
               >
                 {publishingPost ? (

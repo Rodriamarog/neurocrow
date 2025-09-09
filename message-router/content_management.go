@@ -164,7 +164,7 @@ func (cm *ContentManagement) GetPagePosts(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// CreatePost creates a new post on Facebook or Instagram
+// CreatePost creates a new post on Facebook or Instagram with optional media
 func (cm *ContentManagement) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Extract pageID from URL path
 	path := strings.TrimPrefix(r.URL.Path, "/api/posts/")
@@ -181,18 +181,31 @@ func (cm *ContentManagement) CreatePost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var postReq PostRequest
-	if err := json.NewDecoder(r.Body).Decode(&postReq); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	// Parse multipart form
+	if err := r.ParseMultipartForm(10 << 20); err != nil { // 10 MB limit
+		LogError("Error parsing multipart form: %v", err)
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
 
-	if postReq.Message == "" {
-		http.Error(w, "Message is required", http.StatusBadRequest)
-		return
+	// Get message from form
+	message := r.FormValue("message")
+	if message == "" {
+		// Check if there are any media files
+		hasMedia := false
+		for key := range r.MultipartForm.File {
+			if strings.HasPrefix(key, "media_") {
+				hasMedia = true
+				break
+			}
+		}
+		if !hasMedia {
+			http.Error(w, "Message or media is required", http.StatusBadRequest)
+			return
+		}
 	}
 
-	LogInfo("📝 Creating post for page %s: %s", pageID, postReq.Message[:min(50, len(postReq.Message))])
+	LogInfo("📝 Creating post for page %s with %d media files", pageID, len(r.MultipartForm.File))
 
 	// Get page access token
 	accessToken, platform, err := cm.getPageAccessToken(pageID, clientID)
@@ -202,7 +215,7 @@ func (cm *ContentManagement) CreatePost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	postID, err := cm.createPostOnAPI(pageID, platform, accessToken, postReq)
+	postID, err := cm.createPostOnAPI(pageID, platform, accessToken, message, r.MultipartForm)
 	if err != nil {
 		LogError("Error creating post on API: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to create post: %v", err), http.StatusInternalServerError)
@@ -466,36 +479,76 @@ func (cm *ContentManagement) parsePost(rawPost json.RawMessage, platform, pageID
 }
 
 // Helper function to create post on Facebook/Instagram API
-func (cm *ContentManagement) createPostOnAPI(pageID, platform, accessToken string, postReq PostRequest) (string, error) {
+func (cm *ContentManagement) createPostOnAPI(pageID, platform, accessToken, message string, form *multipart.Form) (string, error) {
 	if platform == "facebook" {
-		return cm.createFacebookPost(pageID, accessToken, postReq)
+		return cm.createFacebookPost(pageID, accessToken, message, form)
 	} else if platform == "instagram" {
 		// Instagram posting requires a two-step process: create media object, then publish
-		return cm.createInstagramPost(pageID, accessToken, postReq)
+		return cm.createInstagramPost(pageID, accessToken, message, form)
 	} else {
 		return "", fmt.Errorf("unsupported platform: %s", platform)
 	}
 }
 
 // Helper function to create Facebook post
-func (cm *ContentManagement) createFacebookPost(pageID, accessToken string, postReq PostRequest) (string, error) {
-	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/feed", pageID)
+func (cm *ContentManagement) createFacebookPost(pageID, accessToken, message string, form *multipart.Form) (string, error) {
+	// Check if we have media files
+	hasMedia := len(form.File) > 0
+
+	var apiURL string
+	if hasMedia {
+		// Use photos endpoint for media posts
+		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/photos", pageID)
+	} else {
+		// Use feed endpoint for text-only posts
+		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/feed", pageID)
+	}
 	
 	// Prepare form data
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 	
-	writer.WriteField("message", postReq.Message)
+	// Add message (caption for photos, message for text posts)
+	if hasMedia {
+		writer.WriteField("caption", message)
+	} else {
+		writer.WriteField("message", message)
+	}
 	writer.WriteField("access_token", accessToken)
 	
-	if postReq.ImageURL != "" {
-		writer.WriteField("link", postReq.ImageURL)
+	// Add first media file if present (Facebook photos endpoint handles one image at a time)
+	if hasMedia {
+		for key, fileHeaders := range form.File {
+			if strings.HasPrefix(key, "media_") && len(fileHeaders) > 0 {
+				fileHeader := fileHeaders[0]
+				file, err := fileHeader.Open()
+				if err != nil {
+					return "", fmt.Errorf("failed to open uploaded file: %v", err)
+				}
+				defer file.Close()
+
+				fileWriter, err := writer.CreateFormFile("source", fileHeader.Filename)
+				if err != nil {
+					return "", fmt.Errorf("failed to create form file: %v", err)
+				}
+
+				_, err = io.Copy(fileWriter, file)
+				if err != nil {
+					return "", fmt.Errorf("failed to copy file data: %v", err)
+				}
+				break // Facebook photos API handles one photo at a time
+			}
+		}
 	}
 	
 	writer.Close()
 
 	LogDebug("🔗 Creating Facebook post: %s", apiURL)
-	LogDebug("📤 Post message: %s", postReq.Message[:min(100, len(postReq.Message))])
+	if message != "" {
+		LogDebug("📤 Post message: %s", message[:min(100, len(message))])
+	} else {
+		LogDebug("📤 Media-only post")
+	}
 
 	req, err := http.NewRequest("POST", apiURL, &buf)
 	if err != nil {
@@ -551,7 +604,7 @@ func (cm *ContentManagement) createFacebookPost(pageID, accessToken string, post
 }
 
 // Helper function to create Instagram post (simplified version)
-func (cm *ContentManagement) createInstagramPost(pageID, accessToken string, postReq PostRequest) (string, error) {
+func (cm *ContentManagement) createInstagramPost(pageID, accessToken, message string, form *multipart.Form) (string, error) {
 	// Instagram posting is more complex and requires media upload first
 	// For now, return an error indicating it's not fully implemented
 	return "", fmt.Errorf("Instagram posting not fully implemented yet - requires media container creation")
