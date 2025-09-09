@@ -391,11 +391,11 @@ func (cm *ContentManagement) parsePost(rawPost json.RawMessage, platform, pageID
 
 	if platform == "facebook" {
 		var fbPost struct {
-			ID          string    `json:"id"`
-			Message     string    `json:"message"`
-			CreatedTime time.Time `json:"created_time"`
-			Picture     string    `json:"picture"`
-			FullPicture string    `json:"full_picture"`
+			ID          string `json:"id"`
+			Message     string `json:"message"`
+			CreatedTime string `json:"created_time"`
+			Picture     string `json:"picture"`
+			FullPicture string `json:"full_picture"`
 			Likes       struct {
 				Summary struct {
 					TotalCount int `json:"total_count"`
@@ -415,9 +415,16 @@ func (cm *ContentManagement) parsePost(rawPost json.RawMessage, platform, pageID
 			return post, err
 		}
 
+		// Parse Facebook's timestamp format: 2025-09-09T05:11:23+0000
+		createdTime, err := time.Parse("2006-01-02T15:04:05-0700", fbPost.CreatedTime)
+		if err != nil {
+			LogError("Error parsing Facebook timestamp '%s': %v", fbPost.CreatedTime, err)
+			createdTime = time.Now() // fallback to current time
+		}
+
 		post.ID = fbPost.ID
 		post.Message = fbPost.Message
-		post.CreatedTime = fbPost.CreatedTime
+		post.CreatedTime = createdTime
 		post.Picture = fbPost.Picture
 		post.FullPicture = fbPost.FullPicture
 		post.Likes = fbPost.Likes.Summary.TotalCount
@@ -426,22 +433,29 @@ func (cm *ContentManagement) parsePost(rawPost json.RawMessage, platform, pageID
 
 	} else if platform == "instagram" {
 		var igPost struct {
-			ID            string    `json:"id"`
-			Caption       string    `json:"caption"`
-			MediaURL      string    `json:"media_url"`
-			ThumbnailURL  string    `json:"thumbnail_url"`
-			Timestamp     time.Time `json:"timestamp"`
-			LikeCount     int       `json:"like_count"`
-			CommentsCount int       `json:"comments_count"`
+			ID            string `json:"id"`
+			Caption       string `json:"caption"`
+			MediaURL      string `json:"media_url"`
+			ThumbnailURL  string `json:"thumbnail_url"`
+			Timestamp     string `json:"timestamp"`
+			LikeCount     int    `json:"like_count"`
+			CommentsCount int    `json:"comments_count"`
 		}
 
 		if err := json.Unmarshal(rawPost, &igPost); err != nil {
 			return post, err
 		}
 
+		// Parse Instagram's timestamp format (same as Facebook)
+		timestamp, err := time.Parse("2006-01-02T15:04:05-0700", igPost.Timestamp)
+		if err != nil {
+			LogError("Error parsing Instagram timestamp '%s': %v", igPost.Timestamp, err)
+			timestamp = time.Now() // fallback to current time
+		}
+
 		post.ID = igPost.ID
 		post.Message = igPost.Caption
-		post.CreatedTime = igPost.Timestamp
+		post.CreatedTime = timestamp
 		post.Picture = igPost.ThumbnailURL
 		post.FullPicture = igPost.MediaURL
 		post.Likes = igPost.LikeCount
