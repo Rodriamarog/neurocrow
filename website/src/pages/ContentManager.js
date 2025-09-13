@@ -17,6 +17,8 @@ function ContentManager() {
   const [newComment, setNewComment] = useState({});
   const [editingComment, setEditingComment] = useState(null);
   const [editCommentText, setEditCommentText] = useState('');
+  const [replyingToComment, setReplyingToComment] = useState(null);
+  const [replyText, setReplyText] = useState('');
 
   // Get client ID for authentication
   const getClientId = () => {
@@ -377,6 +379,35 @@ function ContentManager() {
       }
     } catch (error) {
       console.error('Error deleting comment:', error);
+    }
+  };
+
+  const replyToComment = async (commentId) => {
+    if (!replyText.trim()) return;
+
+    try {
+      const authHeaders = getAuthHeaders();
+      const response = await fetch(
+        `https://neurocrow-message-router.onrender.com/api/comments/${commentId}/reply`,
+        {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ message: replyText })
+        }
+      );
+
+      if (response.ok) {
+        setReplyingToComment(null);
+        setReplyText('');
+        // Refresh comments for the affected post
+        Object.keys(comments).forEach(postId => {
+          if (comments[postId].some(c => c.id === commentId)) {
+            fetchComments(postId);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error replying to comment:', error);
     }
   };
 
@@ -767,9 +798,20 @@ function ContentManager() {
                                     </div>
                                   </div>
                                 ) : (
-                                  <p className="text-slate-700 dark:text-slate-300 text-sm">
-                                    {comment.message}
-                                  </p>
+                                  <div>
+                                    <p className="text-slate-700 dark:text-slate-300 text-sm mb-2">
+                                      {comment.message}
+                                    </p>
+                                    <button
+                                      onClick={() => {
+                                        setReplyingToComment(comment.id);
+                                        setReplyText('');
+                                      }}
+                                      className="text-xs text-slate-500 hover:text-blue-500 transition-colors"
+                                    >
+                                      Reply
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                               {!editingComment && (
@@ -792,6 +834,38 @@ function ContentManager() {
                                 </div>
                               )}
                             </div>
+                            
+                            {/* Reply Interface */}
+                            {replyingToComment === comment.id && (
+                              <div className="mt-3 ml-6 p-3 bg-slate-100 dark:bg-slate-600 rounded-lg">
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Write a reply..."
+                                    value={replyText}
+                                    onChange={(e) => setReplyText(e.target.value)}
+                                    onKeyPress={(e) => e.key === 'Enter' && replyToComment(comment.id)}
+                                    className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  />
+                                  <button
+                                    onClick={() => replyToComment(comment.id)}
+                                    disabled={!replyText.trim()}
+                                    className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                                  >
+                                    Reply
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setReplyingToComment(null);
+                                      setReplyText('');
+                                    }}
+                                    className="px-4 py-2 bg-slate-500 text-white rounded-md hover:bg-slate-600 text-sm"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))
                       ) : (
