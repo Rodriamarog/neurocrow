@@ -52,7 +52,8 @@ type Comment struct {
 		Name string `json:"name"`
 		ID   string `json:"id"`
 	} `json:"from"`
-	CanReply bool `json:"can_reply"`
+	CanReply bool      `json:"can_reply"`
+	Replies  []Comment `json:"replies,omitempty"`
 }
 
 // PostRequest represents a request to create a new post
@@ -870,8 +871,8 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 		return nil, fmt.Errorf("no active pages found: %v", err)
 	}
 	
-	// Facebook Graph API call to fetch comments
-	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments?fields=id,message,created_time,from{name,id}&access_token=%s", postID, accessToken)
+	// Facebook Graph API call to fetch comments with replies
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments?fields=id,message,created_time,from{name,id},comments{id,message,created_time,from{name,id}}&access_token=%s", postID, accessToken)
 	
 	LogDebug("🔗 Comments API URL: %s", strings.ReplaceAll(apiURL, accessToken, "***TOKEN***"))
 	
@@ -900,6 +901,17 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 				Name string `json:"name"`
 				ID   string `json:"id"`
 			} `json:"from"`
+			Comments struct {
+				Data []struct {
+					ID          string `json:"id"`
+					Message     string `json:"message"`
+					CreatedTime string `json:"created_time"`
+					From        struct {
+						Name string `json:"name"`
+						ID   string `json:"id"`
+					} `json:"from"`
+				} `json:"data"`
+			} `json:"comments"`
 		} `json:"data"`
 	}
 	
@@ -910,6 +922,27 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 	var comments []Comment
 	for _, apiComment := range apiResponse.Data {
 		createdTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiComment.CreatedTime)
+		
+		// Parse replies
+		var replies []Comment
+		for _, apiReply := range apiComment.Comments.Data {
+			replyCreatedTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiReply.CreatedTime)
+			reply := Comment{
+				ID:          apiReply.ID,
+				Message:     apiReply.Message,
+				CreatedTime: replyCreatedTime,
+				From: struct {
+					Name string `json:"name"`
+					ID   string `json:"id"`
+				}{
+					Name: apiReply.From.Name,
+					ID:   apiReply.From.ID,
+				},
+				CanReply: true,
+			}
+			replies = append(replies, reply)
+		}
+		
 		comment := Comment{
 			ID:          apiComment.ID,
 			Message:     apiComment.Message,
@@ -922,6 +955,7 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 				ID:   apiComment.From.ID,
 			},
 			CanReply: true,
+			Replies:  replies,
 		}
 		comments = append(comments, comment)
 	}

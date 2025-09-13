@@ -866,6 +866,27 @@ function ContentManager() {
                                 </div>
                               </div>
                             )}
+                            
+                            {/* Display Replies */}
+                            {comment.replies && comment.replies.length > 0 && (
+                              <div className="mt-3 ml-6">
+                                {comment.replies.map((reply) => (
+                                  <div key={reply.id} className="p-3 bg-slate-50 dark:bg-slate-700 rounded-lg mb-2">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="font-medium text-slate-800 dark:text-slate-200 text-sm">
+                                        {reply.from.name}
+                                      </span>
+                                      <span className="text-xs text-slate-500">
+                                        {new Date(reply.created_time).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-700 dark:text-slate-300 text-sm">
+                                      {reply.message}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))
                       ) : (
