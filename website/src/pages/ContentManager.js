@@ -697,7 +697,7 @@ function ContentManager() {
                 {/* Post Content */}
                 <div className="p-4">
                   {post.message && (
-                    <p className="text-slate-800 dark:text-slate-200 text-sm mb-3 line-clamp-4">
+                    <p className="text-slate-800 dark:text-slate-200 text-sm mb-3 line-clamp-4 text-left">
                       {post.message}
                     </p>
                   )}
