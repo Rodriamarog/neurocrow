@@ -947,7 +947,7 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 						Name: apiReply.Username,
 						ID:   "", // Instagram doesn't provide user ID in comments
 					},
-					CanReply: true,
+					CanReply: false, // Instagram doesn't support nested replies
 				}
 				replies = append(replies, reply)
 			}
@@ -963,7 +963,7 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 					Name: apiComment.Username,
 					ID:   "", // Instagram doesn't provide user ID in comments
 				},
-				CanReply: true,
+				CanReply: false, // Instagram doesn't support nested replies
 				Replies:  replies,
 			}
 			comments = append(comments, comment)
@@ -1046,12 +1046,18 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 func (cm *ContentManagement) replyToCommentOnAPI(commentID, message string) (string, error) {
 	LogDebug("↩️ Replying to comment %s: %s", commentID, message)
 	
-	// Get access token from database (simplified for MVP)
-	query := `SELECT access_token FROM social_pages WHERE status = 'active' LIMIT 1`
-	var accessToken string
-	err := cm.db.QueryRow(query).Scan(&accessToken)
+	// Get access token and platform from database (simplified for MVP)
+	query := `SELECT access_token, platform FROM social_pages WHERE status = 'active' LIMIT 1`
+	var accessToken, platform string
+	err := cm.db.QueryRow(query).Scan(&accessToken, &platform)
 	if err != nil {
 		return "", fmt.Errorf("no active pages found: %v", err)
+	}
+	
+	// Instagram doesn't support nested comment replies
+	if platform == "instagram" {
+		LogError("❌ Instagram does not support replies to comments. You can only comment on posts directly.")
+		return "", fmt.Errorf("Instagram does not support nested comment replies. You can only add top-level comments to posts")
 	}
 	
 	// Facebook Graph API call to reply to comment
