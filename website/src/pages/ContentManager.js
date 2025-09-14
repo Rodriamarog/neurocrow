@@ -706,7 +706,7 @@ function ContentManager() {
                       <img 
                         src={post.full_picture} 
                         alt="Post content" 
-                        className="w-full h-48 object-cover"
+                        className="w-full max-h-96 object-contain bg-slate-100 dark:bg-slate-700"
                       />
                     </div>
                   )}
