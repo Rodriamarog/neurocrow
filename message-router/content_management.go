@@ -863,7 +863,7 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 	
 	LogDebug("🔍 Fetching comments for post: %s (page: %s)", postID, pageID)
 	
-	// Get access token from database for any page (simplified for MVP)
+	// Get access token and platform from database for any page (simplified for MVP)
 	query := `SELECT access_token, platform FROM social_pages WHERE status = 'active' LIMIT 1`
 	var accessToken, platform string
 	err := cm.db.QueryRow(query).Scan(&accessToken, &platform)
@@ -871,8 +871,20 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 		return nil, fmt.Errorf("no active pages found: %v", err)
 	}
 	
-	// Facebook Graph API call to fetch comments with replies
-	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments?fields=id,message,created_time,from{name,id},comments{id,message,created_time,from{name,id}}&access_token=%s", postID, accessToken)
+	// Use different fields based on platform
+	var fields string
+	var apiURL string
+	
+	if platform == "instagram" {
+		// Instagram comments use different field structure
+		// Instagram doesn't have 'name' field, use 'username' instead
+		fields = "id,text,timestamp,username,replies{id,text,timestamp,username}"
+		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments?fields=%s&access_token=%s", postID, fields, accessToken)
+	} else {
+		// Facebook comments use the original structure
+		fields = "id,message,created_time,from{name,id},comments{id,message,created_time,from{name,id}}"
+		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments?fields=%s&access_token=%s", postID, fields, accessToken)
+	}
 	
 	LogDebug("🔗 Comments API URL: %s", strings.ReplaceAll(apiURL, accessToken, "***TOKEN***"))
 	
@@ -892,72 +904,138 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
 	}
 	
-	var apiResponse struct {
-		Data []struct {
-			ID          string `json:"id"`
-			Message     string `json:"message"`
-			CreatedTime string `json:"created_time"`
-			From        struct {
-				Name string `json:"name"`
-				ID   string `json:"id"`
-			} `json:"from"`
-			Comments struct {
-				Data []struct {
-					ID          string `json:"id"`
-					Message     string `json:"message"`
-					CreatedTime string `json:"created_time"`
-					From        struct {
+	var comments []Comment
+	
+	if platform == "instagram" {
+		// Instagram comment structure
+		var instagramResponse struct {
+			Data []struct {
+				ID        string `json:"id"`
+				Text      string `json:"text"`
+				Timestamp string `json:"timestamp"`
+				Username  string `json:"username"`
+				Replies   struct {
+					Data []struct {
+						ID        string `json:"id"`
+						Text      string `json:"text"`
+						Timestamp string `json:"timestamp"`
+						Username  string `json:"username"`
+					} `json:"data"`
+				} `json:"replies"`
+			} `json:"data"`
+		}
+		
+		if err := json.Unmarshal(body, &instagramResponse); err != nil {
+			return nil, fmt.Errorf("failed to parse Instagram API response: %v", err)
+		}
+		
+		for _, apiComment := range instagramResponse.Data {
+			createdTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiComment.Timestamp)
+			
+			// Parse replies
+			var replies []Comment
+			for _, apiReply := range apiComment.Replies.Data {
+				replyCreatedTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiReply.Timestamp)
+				reply := Comment{
+					ID:          apiReply.ID,
+					Message:     apiReply.Text,
+					CreatedTime: replyCreatedTime,
+					From: struct {
 						Name string `json:"name"`
 						ID   string `json:"id"`
-					} `json:"from"`
-				} `json:"data"`
-			} `json:"comments"`
-		} `json:"data"`
-	}
-	
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse API response: %v", err)
-	}
-	
-	var comments []Comment
-	for _, apiComment := range apiResponse.Data {
-		createdTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiComment.CreatedTime)
-		
-		// Parse replies
-		var replies []Comment
-		for _, apiReply := range apiComment.Comments.Data {
-			replyCreatedTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiReply.CreatedTime)
-			reply := Comment{
-				ID:          apiReply.ID,
-				Message:     apiReply.Message,
-				CreatedTime: replyCreatedTime,
+					}{
+						Name: apiReply.Username,
+						ID:   "", // Instagram doesn't provide user ID in comments
+					},
+					CanReply: true,
+				}
+				replies = append(replies, reply)
+			}
+			
+			comment := Comment{
+				ID:          apiComment.ID,
+				Message:     apiComment.Text,
+				CreatedTime: createdTime,
 				From: struct {
 					Name string `json:"name"`
 					ID   string `json:"id"`
 				}{
-					Name: apiReply.From.Name,
-					ID:   apiReply.From.ID,
+					Name: apiComment.Username,
+					ID:   "", // Instagram doesn't provide user ID in comments
 				},
 				CanReply: true,
+				Replies:  replies,
 			}
-			replies = append(replies, reply)
+			comments = append(comments, comment)
+		}
+	} else {
+		// Facebook comment structure
+		var facebookResponse struct {
+			Data []struct {
+				ID          string `json:"id"`
+				Message     string `json:"message"`
+				CreatedTime string `json:"created_time"`
+				From        struct {
+					Name string `json:"name"`
+					ID   string `json:"id"`
+				} `json:"from"`
+				Comments struct {
+					Data []struct {
+						ID          string `json:"id"`
+						Message     string `json:"message"`
+						CreatedTime string `json:"created_time"`
+						From        struct {
+							Name string `json:"name"`
+							ID   string `json:"id"`
+						} `json:"from"`
+					} `json:"data"`
+				} `json:"comments"`
+			} `json:"data"`
 		}
 		
-		comment := Comment{
-			ID:          apiComment.ID,
-			Message:     apiComment.Message,
-			CreatedTime: createdTime,
-			From: struct {
-				Name string `json:"name"`
-				ID   string `json:"id"`
-			}{
-				Name: apiComment.From.Name,
-				ID:   apiComment.From.ID,
-			},
-			CanReply: true,
-			Replies:  replies,
+		if err := json.Unmarshal(body, &facebookResponse); err != nil {
+			return nil, fmt.Errorf("failed to parse Facebook API response: %v", err)
 		}
-		comments = append(comments, comment)
+		
+		for _, apiComment := range facebookResponse.Data {
+			createdTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiComment.CreatedTime)
+			
+			// Parse replies
+			var replies []Comment
+			for _, apiReply := range apiComment.Comments.Data {
+				replyCreatedTime, _ := time.Parse("2006-01-02T15:04:05-0700", apiReply.CreatedTime)
+				reply := Comment{
+					ID:          apiReply.ID,
+					Message:     apiReply.Message,
+					CreatedTime: replyCreatedTime,
+					From: struct {
+						Name string `json:"name"`
+						ID   string `json:"id"`
+					}{
+						Name: apiReply.From.Name,
+						ID:   apiReply.From.ID,
+					},
+					CanReply: true,
+				}
+				replies = append(replies, reply)
+			}
+			
+			comment := Comment{
+				ID:          apiComment.ID,
+				Message:     apiComment.Message,
+				CreatedTime: createdTime,
+				From: struct {
+					Name string `json:"name"`
+					ID   string `json:"id"`
+				}{
+					Name: apiComment.From.Name,
+					ID:   apiComment.From.ID,
+				},
+				CanReply: true,
+				Replies:  replies,
+			}
+			comments = append(comments, comment)
+		}
 	}
 	
 	LogInfo("✅ Retrieved %d comments for post %s", len(comments), postID)
