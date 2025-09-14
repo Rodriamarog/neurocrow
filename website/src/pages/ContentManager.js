@@ -648,7 +648,7 @@ function ContentManager() {
       )}
 
       {/* Posts Section */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Recent Posts</h2>
@@ -676,7 +676,7 @@ function ContentManager() {
             </div>
           </div>
         ) : posts.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="flex flex-col space-y-8">
             {posts.map((post) => (
               <div key={post.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden hover:shadow-lg dark:hover:shadow-slate-900/20 transition-all">
                 {/* Post Header */}
