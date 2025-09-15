@@ -393,7 +393,7 @@ func setupRouter() *http.ServeMux {
 	log.Printf("   - POST /instagram-token (Instagram OAuth)")
 	log.Printf("   - POST /instagram-token-exchange (Instagram Token Exchange)")
 	log.Printf("   - GET /api/pages (Content Management: Get Pages)")
-	log.Printf("   - GET/POST /api/posts/{pageId} (Content Management: Posts)")
+	log.Printf("   - GET/POST/DELETE /api/posts/{pageId} (Content Management: Posts)")
 	log.Printf("   - GET/POST /api/comments/{id} (Content Management: Comments)")
 	log.Printf("   - GET /temp-media/* (Temporary Media Files for Instagram)")
 	log.Printf("🤖 AI Integration: Dify (per-page API keys)")
@@ -465,7 +465,7 @@ func handleMarkBotResponse(w http.ResponseWriter, r *http.Request) {
 
 // Route handlers for content management
 func handlePostsRoute(cm *ContentManagement) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {		
+	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
 			// Get posts for page
@@ -473,6 +473,9 @@ func handlePostsRoute(cm *ContentManagement) http.HandlerFunc {
 		case "POST":
 			// Create new post
 			cm.CreatePost(w, r)
+		case "DELETE":
+			// Delete post
+			cm.DeletePost(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}

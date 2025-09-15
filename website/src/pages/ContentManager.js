@@ -19,6 +19,11 @@ function ContentManager() {
   const [editCommentText, setEditCommentText] = useState('');
   const [replyingToComment, setReplyingToComment] = useState(null);
   const [replyText, setReplyText] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [postToDelete, setPostToDelete] = useState(null);
+  const [deletingPost, setDeletingPost] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
 
   // Get client ID for authentication
   const getClientId = () => {
@@ -121,40 +126,55 @@ function ContentManager() {
     }
   };
 
-  const fetchPosts = async (pageId) => {
-    setLoading(true);
+  const fetchPosts = async (pageId, append = false, limit = 20) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setHasMorePosts(true);
+    }
     setError(null);
-    
+
     try {
-      console.log(`🔍 Fetching posts for page ${pageId}...`);
+      const offset = append ? posts.length : 0;
+      console.log(`🔍 Fetching posts for page ${pageId} (offset: ${offset}, limit: ${limit})...`);
       const authHeaders = getAuthHeaders();
-      
+
       if (!authHeaders['X-Client-ID']) {
         throw new Error('No authentication available');
       }
-      
+
       const response = await fetch(
-        `https://neurocrow-message-router.onrender.com/api/posts/${pageId}?limit=10`,
+        `https://neurocrow-message-router.onrender.com/api/posts/${pageId}?limit=${limit}&offset=${offset}`,
         {
           method: 'GET',
           headers: authHeaders
         }
       );
-      
+
       console.log('📱 Posts API response status:', response.status);
       const responseText = await response.text();
       console.log('📱 Posts API raw response:', responseText);
-      
+
       if (!response.ok) {
         throw new Error(`Posts API Error (${response.status}): ${responseText}`);
       }
-      
+
       // Try to parse as JSON
       let data;
       try {
         data = JSON.parse(responseText);
         console.log('✅ Posts API parsed data:', data);
-        setPosts(data.posts || []);
+        const newPosts = data.posts || [];
+
+        if (append) {
+          setPosts(prevPosts => [...prevPosts, ...newPosts]);
+        } else {
+          setPosts(newPosts);
+        }
+
+        // Check if there are more posts to load
+        setHasMorePosts(newPosts.length === limit);
       } catch (parseError) {
         console.error('❌ JSON Parse Error:', parseError);
         throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}...`);
@@ -162,9 +182,15 @@ function ContentManager() {
     } catch (error) {
       console.error('❌ Error fetching posts:', error);
       setError(error.message);
-      setPosts([]);
+      if (!append) {
+        setPosts([]);
+      }
     } finally {
-      setLoading(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -411,6 +437,64 @@ function ContentManager() {
     }
   };
 
+  const handleDeletePost = (post) => {
+    setPostToDelete(post);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDeletePost = async () => {
+    if (!postToDelete) return;
+
+    setDeletingPost(true);
+    setError(null);
+
+    try {
+      console.log(`🗑️ Deleting post ${postToDelete.id}`);
+      const authHeaders = getAuthHeaders();
+
+      if (!authHeaders['X-Client-ID']) {
+        throw new Error('No authentication available');
+      }
+
+      const response = await fetch(
+        `https://neurocrow-message-router.onrender.com/api/posts/${postToDelete.id}`,
+        {
+          method: 'DELETE',
+          headers: authHeaders
+        }
+      );
+
+      const responseText = await response.text();
+      console.log('🗑️ Delete response:', response.status, responseText);
+
+      if (response.ok) {
+        console.log('✅ Post deleted successfully');
+        // Remove the post from the list
+        setPosts(prevPosts => prevPosts.filter(p => p.id !== postToDelete.id));
+        setDeleteConfirmOpen(false);
+        setPostToDelete(null);
+      } else {
+        throw new Error(`Failed to delete post: ${response.status} ${responseText}`);
+      }
+    } catch (error) {
+      console.error('❌ Error deleting post:', error);
+      setError(`Failed to delete post: ${error.message}`);
+    } finally {
+      setDeletingPost(false);
+    }
+  };
+
+  const cancelDeletePost = () => {
+    setDeleteConfirmOpen(false);
+    setPostToDelete(null);
+  };
+
+  const loadMorePosts = () => {
+    if (selectedPage && !loadingMore && hasMorePosts) {
+      fetchPosts(selectedPage.page_id, true);
+    }
+  };
+
   if (loading && connectedPages.length === 0) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4">
@@ -647,6 +731,83 @@ function ContentManager() {
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmOpen && postToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => !deletingPost && cancelDeletePost()}>
+          <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-lg shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Delete Post</h3>
+              <button
+                onClick={cancelDeletePost}
+                disabled={deletingPost}
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors disabled:cursor-not-allowed"
+              >
+                <i className="fas fa-times text-slate-500 dark:text-slate-400"></i>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800/50">
+                <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                  <i className="fas fa-exclamation-triangle text-white text-sm"></i>
+                </div>
+                <div>
+                  <p className="font-medium text-red-900 dark:text-red-100">Are you sure?</p>
+                  <p className="text-sm text-red-700 dark:text-red-300">This action cannot be undone.</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-4">
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">You are about to delete this post:</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-4 h-4 rounded-full flex items-center justify-center ${postToDelete.platform === 'facebook' ? 'bg-blue-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'} text-white`}>
+                    <i className={`fab fa-${postToDelete.platform} text-xs`}></i>
+                  </div>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
+                    {postToDelete.platform}
+                  </span>
+                </div>
+                {postToDelete.message && (
+                  <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-3">
+                    {postToDelete.message}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex gap-3 p-6 border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={cancelDeletePost}
+                disabled={deletingPost}
+                className="flex-1 px-4 py-2 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-lg transition-colors disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeletePost}
+                disabled={deletingPost}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-medium rounded-lg transition-all disabled:cursor-not-allowed"
+              >
+                {deletingPost ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin"></i>
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-trash"></i>
+                    Delete Post
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Posts Section */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-8">
@@ -676,8 +837,9 @@ function ContentManager() {
             </div>
           </div>
         ) : posts.length > 0 ? (
-          <div className="flex flex-col space-y-8">
-            {posts.map((post) => (
+          <>
+            <div className="flex flex-col space-y-8">
+              {posts.map((post) => (
               <div key={post.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden hover:shadow-lg dark:hover:shadow-slate-900/20 transition-all">
                 {/* Post Header */}
                 <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
@@ -745,6 +907,14 @@ function ContentManager() {
                   <button className="flex-1 flex items-center justify-center gap-2 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
                     <i className="fas fa-chart-line text-sm"></i>
                     <span className="text-sm">Analytics</span>
+                  </button>
+                  <div className="w-px bg-slate-200 dark:border-slate-700"></div>
+                  <button
+                    onClick={() => handleDeletePost(post)}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                  >
+                    <i className="fas fa-trash text-sm"></i>
+                    <span className="text-sm">Delete</span>
                   </button>
                 </div>
 
@@ -919,8 +1089,31 @@ function ContentManager() {
                   </div>
                 )}
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+
+            {hasMorePosts && (
+              <div className="text-center mt-8">
+                <button
+                  onClick={loadMorePosts}
+                  disabled={loadingMore}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loadingMore ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin text-sm"></i>
+                      Loading more posts...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-chevron-down text-sm"></i>
+                      Load More Posts
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-center py-16">
             <div className="w-20 h-20 mx-auto mb-6 flex items-center justify-center bg-slate-100 dark:bg-slate-700 rounded-full">

@@ -140,7 +140,12 @@ func (cm *ContentManagement) GetPagePosts(w http.ResponseWriter, r *http.Request
 		limit = "10"
 	}
 
-	LogInfo("📱 Getting posts for page %s, limit %s", pageID, limit)
+	offset := r.URL.Query().Get("offset")
+	if offset == "" {
+		offset = "0"
+	}
+
+	LogInfo("📱 Getting posts for page %s, limit %s, offset %s", pageID, limit, offset)
 
 	// Get page access token
 	accessToken, platform, err := cm.getPageAccessToken(pageID, clientID)
@@ -150,7 +155,7 @@ func (cm *ContentManagement) GetPagePosts(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	posts, err := cm.fetchPostsFromAPI(pageID, platform, accessToken, limit)
+	posts, err := cm.fetchPostsFromAPI(pageID, platform, accessToken, limit, offset)
 	if err != nil {
 		LogError("Error fetching posts from API: %v", err)
 		http.Error(w, "Failed to fetch posts", http.StatusInternalServerError)
@@ -402,6 +407,41 @@ func (cm *ContentManagement) DeleteComment(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// DeletePost deletes a specific post
+func (cm *ContentManagement) DeletePost(w http.ResponseWriter, r *http.Request) {
+	// Extract postID from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/api/posts/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Post ID required", http.StatusBadRequest)
+		return
+	}
+	postID := parts[0]
+
+	clientID := r.Header.Get("X-Client-ID")
+	if clientID == "" {
+		http.Error(w, "Client ID required", http.StatusUnauthorized)
+		return
+	}
+
+	LogInfo("🗑️ Deleting post %s", postID)
+
+	err := cm.deletePostOnAPI(postID, clientID)
+	if err != nil {
+		LogError("Error deleting post: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to delete post: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	LogInfo("✅ Deleted post %s", postID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Post deleted successfully",
+	})
+}
+
 // Helper function to get page access token
 func (cm *ContentManagement) getPageAccessToken(pageID, clientID string) (string, string, error) {
 	query := `
@@ -421,18 +461,18 @@ func (cm *ContentManagement) getPageAccessToken(pageID, clientID string) (string
 }
 
 // Helper function to fetch posts from Facebook/Instagram API
-func (cm *ContentManagement) fetchPostsFromAPI(pageID, platform, accessToken, limit string) ([]Post, error) {
+func (cm *ContentManagement) fetchPostsFromAPI(pageID, platform, accessToken, limit, offset string) ([]Post, error) {
 	var apiURL string
 	var fields string
-	
+
 	if platform == "facebook" {
 		fields = "id,message,created_time,likes.summary(total_count),comments.summary(total_count),shares,picture,full_picture"
-		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/posts?fields=%s&limit=%s&access_token=%s", 
-			pageID, fields, limit, accessToken)
+		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/posts?fields=%s&limit=%s&offset=%s&access_token=%s",
+			pageID, fields, limit, offset, accessToken)
 	} else if platform == "instagram" {
 		fields = "id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count"
-		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/media?fields=%s&limit=%s&access_token=%s", 
-			pageID, fields, limit, accessToken)
+		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/media?fields=%s&limit=%s&offset=%s&access_token=%s",
+			pageID, fields, limit, offset, accessToken)
 	} else {
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}
@@ -668,8 +708,24 @@ func (cm *ContentManagement) createFacebookPost(pageID, accessToken, message str
 		}
 		
 		if json.Unmarshal(body, &errorResp) == nil && errorResp.Error.Message != "" {
-			return "", fmt.Errorf("Facebook API error: %s (Type: %s, Code: %d)", 
-				errorResp.Error.Message, errorResp.Error.Type, errorResp.Error.Code)
+			// Check for specific error types and provide better guidance
+			switch errorResp.Error.Code {
+			case 4, 17, 341, 613:
+				// Rate limiting errors
+				return "", fmt.Errorf("Rate limit exceeded. Please wait a few minutes before posting again. (Error: %s)", errorResp.Error.Message)
+			case 100:
+				// Permission/parameter errors
+				if strings.Contains(strings.ToLower(errorResp.Error.Message), "rate") {
+					return "", fmt.Errorf("Rate limit exceeded. Please wait before posting again. (Error: %s)", errorResp.Error.Message)
+				}
+				return "", fmt.Errorf("Permission or parameter error: %s", errorResp.Error.Message)
+			case 190:
+				// Token errors
+				return "", fmt.Errorf("Authentication error. Please reconnect your account. (Error: %s)", errorResp.Error.Message)
+			default:
+				return "", fmt.Errorf("Facebook API error: %s (Type: %s, Code: %d)",
+					errorResp.Error.Message, errorResp.Error.Type, errorResp.Error.Code)
+			}
 		}
 		
 		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
@@ -796,6 +852,36 @@ func (cm *ContentManagement) createInstagramMediaContainer(pageID, accessToken, 
 	
 	if resp.StatusCode != 200 {
 		LogError("❌ Instagram media container creation failed: %d - %s", resp.StatusCode, string(body))
+
+		// Try to parse error response for better user feedback
+		var errorResp struct {
+			Error struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+				Code    int    `json:"code"`
+			} `json:"error"`
+		}
+
+		if json.Unmarshal(body, &errorResp) == nil && errorResp.Error.Message != "" {
+			// Check for specific Instagram error types
+			switch errorResp.Error.Code {
+			case 4, 17, 341, 613:
+				// Rate limiting errors
+				return "", fmt.Errorf("Rate limit exceeded. Please wait a few minutes before posting to Instagram again. (Error: %s)", errorResp.Error.Message)
+			case 100:
+				// Permission/parameter errors
+				if strings.Contains(strings.ToLower(errorResp.Error.Message), "rate") {
+					return "", fmt.Errorf("Rate limit exceeded. Please wait before posting to Instagram again. (Error: %s)", errorResp.Error.Message)
+				}
+				return "", fmt.Errorf("Instagram permission or parameter error: %s", errorResp.Error.Message)
+			case 190:
+				// Token errors
+				return "", fmt.Errorf("Instagram authentication error. Please reconnect your account. (Error: %s)", errorResp.Error.Message)
+			default:
+				return "", fmt.Errorf("Instagram API error: %s (Code: %d)", errorResp.Error.Message, errorResp.Error.Code)
+			}
+		}
+
 		return "", fmt.Errorf("Instagram API error %d: %s", resp.StatusCode, string(body))
 	}
 	
@@ -833,7 +919,37 @@ func (cm *ContentManagement) publishInstagramMediaContainer(pageID, accessToken,
 	
 	if resp.StatusCode != 200 {
 		LogError("❌ Instagram media publish failed: %d - %s", resp.StatusCode, string(body))
-		return "", fmt.Errorf("Instagram API error %d: %s", resp.StatusCode, string(body))
+
+		// Try to parse error response for better user feedback
+		var errorResp struct {
+			Error struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+				Code    int    `json:"code"`
+			} `json:"error"`
+		}
+
+		if json.Unmarshal(body, &errorResp) == nil && errorResp.Error.Message != "" {
+			// Check for specific Instagram publish error types
+			switch errorResp.Error.Code {
+			case 4, 17, 341, 613:
+				// Rate limiting errors
+				return "", fmt.Errorf("Instagram publish rate limit exceeded. Please wait a few minutes before posting again. (Error: %s)", errorResp.Error.Message)
+			case 100:
+				// Permission/parameter errors
+				if strings.Contains(strings.ToLower(errorResp.Error.Message), "rate") {
+					return "", fmt.Errorf("Instagram publish rate limit exceeded. Please wait before posting again. (Error: %s)", errorResp.Error.Message)
+				}
+				return "", fmt.Errorf("Instagram publish error: %s", errorResp.Error.Message)
+			case 190:
+				// Token errors
+				return "", fmt.Errorf("Instagram authentication error during publish. Please reconnect your account. (Error: %s)", errorResp.Error.Message)
+			default:
+				return "", fmt.Errorf("Instagram publish API error: %s (Code: %d)", errorResp.Error.Message, errorResp.Error.Code)
+			}
+		}
+
+		return "", fmt.Errorf("Instagram publish API error %d: %s", resp.StatusCode, string(body))
 	}
 	
 	var publishResponse struct {
@@ -1236,6 +1352,74 @@ func (cm *ContentManagement) editCommentOnAPI(commentID, message, clientID strin
 	}
 	
 	LogInfo("✅ Edited comment %s", commentID)
+	return nil
+}
+
+// Helper function to delete post on Facebook/Instagram API
+func (cm *ContentManagement) deletePostOnAPI(postID, clientID string) error {
+	LogDebug("🗑️ Deleting post %s", postID)
+
+	// Extract page ID from post ID to get access token and platform
+	var pageID string
+	if strings.Contains(postID, "_") {
+		// Facebook format: pageId_postId
+		parts := strings.Split(postID, "_")
+		if len(parts) > 0 {
+			pageID = parts[0]
+		}
+	} else {
+		// Instagram format: use post ID as is
+		pageID = postID
+	}
+
+	// Get access token and platform for this post's page
+	accessToken, platform, err := cm.getPageAccessToken(pageID, clientID)
+	if err != nil {
+		return fmt.Errorf("failed to get access token for page %s: %v", pageID, err)
+	}
+
+	LogDebug("🔗 Deleting %s post: %s", platform, postID)
+
+	// Facebook Graph API call to delete post
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s?access_token=%s", postID, accessToken)
+
+	req, err := http.NewRequest("DELETE", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create delete request: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("API request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %v", err)
+	}
+
+	if resp.StatusCode != 200 {
+		LogError("❌ %s API error %d: %s", platform, resp.StatusCode, string(body))
+
+		// Parse error response for better user feedback
+		var errorResp struct {
+			Error struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+				Code    int    `json:"code"`
+			} `json:"error"`
+		}
+
+		if json.Unmarshal(body, &errorResp) == nil && errorResp.Error.Message != "" {
+			return fmt.Errorf("%s API error: %s (Type: %s, Code: %d)",
+				platform, errorResp.Error.Message, errorResp.Error.Type, errorResp.Error.Code)
+		}
+
+		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	LogInfo("✅ Deleted %s post %s", platform, postID)
 	return nil
 }
 
