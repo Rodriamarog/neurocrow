@@ -863,12 +863,20 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 	
 	LogDebug("🔍 Fetching comments for post: %s (page: %s)", postID, pageID)
 	
-	// Get access token and platform from database for any page (simplified for MVP)
-	query := `SELECT access_token, platform FROM social_pages WHERE status = 'active' LIMIT 1`
-	var accessToken, platform string
-	err := cm.db.QueryRow(query).Scan(&accessToken, &platform)
+	// Determine platform from post ID format first
+	var platform string
+	if strings.Contains(postID, "_") {
+		platform = "facebook"
+	} else {
+		platform = "instagram"
+	}
+
+	// Get access token for the correct platform
+	query := `SELECT access_token FROM social_pages WHERE platform = $1 AND status = 'active' LIMIT 1`
+	var accessToken string
+	err := cm.db.QueryRow(query, platform).Scan(&accessToken)
 	if err != nil {
-		return nil, fmt.Errorf("no active pages found: %v", err)
+		return nil, fmt.Errorf("no active %s pages found: %v", platform, err)
 	}
 	
 	// Use different fields based on platform
