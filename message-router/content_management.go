@@ -302,7 +302,7 @@ func (cm *ContentManagement) ReplyToComment(w http.ResponseWriter, r *http.Reque
 
 	LogInfo("↩️ Replying to comment %s: %s", commentID, reply.Message[:min(50, len(reply.Message))])
 
-	replyID, err := cm.replyToCommentOnAPI(commentID, reply.Message)
+	replyID, err := cm.replyToCommentOnAPI(commentID, reply.Message, clientID)
 	if err != nil {
 		LogError("Error replying to comment: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to reply: %v", err), http.StatusInternalServerError)
@@ -351,7 +351,7 @@ func (cm *ContentManagement) EditComment(w http.ResponseWriter, r *http.Request)
 
 	LogInfo("✏️ Editing comment %s", commentID)
 
-	err := cm.editCommentOnAPI(commentID, editRequest.Message)
+	err := cm.editCommentOnAPI(commentID, editRequest.Message, clientID)
 	if err != nil {
 		LogError("Error editing comment: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to edit comment: %v", err), http.StatusInternalServerError)
@@ -386,7 +386,7 @@ func (cm *ContentManagement) DeleteComment(w http.ResponseWriter, r *http.Reques
 
 	LogInfo("🗑️ Deleting comment %s", commentID)
 
-	err := cm.deleteCommentOnAPI(commentID)
+	err := cm.deleteCommentOnAPI(commentID, clientID)
 	if err != nil {
 		LogError("Error deleting comment: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to delete comment: %v", err), http.StatusInternalServerError)
@@ -1042,27 +1042,57 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID, clientID string) ([]Co
 }
 
 // Helper function to reply to comment
-func (cm *ContentManagement) replyToCommentOnAPI(commentID, message string) (string, error) {
+func (cm *ContentManagement) replyToCommentOnAPI(commentID, message, clientID string) (string, error) {
 	LogDebug("↩️ Replying to comment %s: %s", commentID, message)
 	
-	// Extract page ID from comment ID (Facebook format: pageId_commentId)
-	var pageID string
+	// Extract the post reference from comment ID
+	// Facebook comment IDs are in format: postSecondPart_commentUniqueId
+	// We need to find the page that owns the post containing this postSecondPart
+	var postReference string
 	if strings.Contains(commentID, "_") {
 		parts := strings.Split(commentID, "_")
 		if len(parts) > 0 {
-			pageID = parts[0]
+			postReference = parts[0]
 		}
 	} else {
-		return "", fmt.Errorf("cannot determine page ID from comment ID: %s", commentID)
+		return "", fmt.Errorf("invalid comment ID format: %s", commentID)
 	}
 
-	// Get access token for this specific page (we need a client ID but don't have it)
-	// For MVP, get any access token for a page with this page_id
-	query := `SELECT access_token, platform FROM social_pages WHERE page_id = $1 AND status = 'active' LIMIT 1`
-	var accessToken, platform string
-	err := cm.db.QueryRow(query, pageID).Scan(&accessToken, &platform)
+	// Find the page that has a post containing this postReference
+	// Facebook post IDs are in format: pageId_postReference
+	pageQuery := `
+		SELECT DISTINCT page_id
+		FROM social_pages
+		WHERE client_id = $1 AND platform = 'facebook' AND status = 'active'
+	`
+	rows, err := cm.db.Query(pageQuery, clientID)
 	if err != nil {
-		return "", fmt.Errorf("no active page found for page ID %s: %v", pageID, err)
+		return "", fmt.Errorf("failed to query pages: %v", err)
+	}
+	defer rows.Close()
+
+	var pageID string
+	for rows.Next() {
+		var candidatePageID string
+		if err := rows.Scan(&candidatePageID); err != nil {
+			continue
+		}
+
+		// Check if this page could own the post (by checking if pageId_postReference exists)
+		// Since we don't store posts, we'll assume the first Facebook page owns it
+		// In a real implementation, you'd check against stored posts
+		pageID = candidatePageID
+		break
+	}
+
+	if pageID == "" {
+		return "", fmt.Errorf("no Facebook page found for client %s", clientID)
+	}
+
+	// Get access token for the identified page
+	accessToken, platform, err := cm.getPageAccessToken(pageID, clientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get access token for page %s: %v", pageID, err)
 	}
 	
 	// Instagram doesn't support nested comment replies
@@ -1107,26 +1137,37 @@ func (cm *ContentManagement) replyToCommentOnAPI(commentID, message string) (str
 }
 
 // Helper function to delete comment
-func (cm *ContentManagement) deleteCommentOnAPI(commentID string) error {
+func (cm *ContentManagement) deleteCommentOnAPI(commentID, clientID string) error {
 	LogDebug("🗑️ Deleting comment %s", commentID)
 
-	// Extract page ID from comment ID (Facebook format: pageId_commentId)
-	var pageID string
+	// Extract the post reference from comment ID and find the correct page
+	var postReference string
 	if strings.Contains(commentID, "_") {
 		parts := strings.Split(commentID, "_")
 		if len(parts) > 0 {
-			pageID = parts[0]
+			postReference = parts[0]
 		}
 	} else {
-		return fmt.Errorf("cannot determine page ID from comment ID: %s", commentID)
+		return fmt.Errorf("invalid comment ID format: %s", commentID)
 	}
 
-	// Get access token for this specific page
-	query := `SELECT access_token FROM social_pages WHERE page_id = $1 AND status = 'active' LIMIT 1`
-	var accessToken string
-	err := cm.db.QueryRow(query, pageID).Scan(&accessToken)
+	// Find the Facebook page for this client
+	pageQuery := `
+		SELECT DISTINCT page_id
+		FROM social_pages
+		WHERE client_id = $1 AND platform = 'facebook' AND status = 'active'
+		LIMIT 1
+	`
+	var pageID string
+	err := cm.db.QueryRow(pageQuery, clientID).Scan(&pageID)
 	if err != nil {
-		return fmt.Errorf("no active page found for page ID %s: %v", pageID, err)
+		return fmt.Errorf("no Facebook page found for client %s: %v", clientID, err)
+	}
+
+	// Get access token for the identified page
+	accessToken, _, err := cm.getPageAccessToken(pageID, clientID)
+	if err != nil {
+		return fmt.Errorf("failed to get access token for page %s: %v", pageID, err)
 	}
 	
 	// Facebook Graph API call to delete comment
@@ -1158,26 +1199,37 @@ func (cm *ContentManagement) deleteCommentOnAPI(commentID string) error {
 }
 
 // Helper function to edit comment
-func (cm *ContentManagement) editCommentOnAPI(commentID, message string) error {
+func (cm *ContentManagement) editCommentOnAPI(commentID, message, clientID string) error {
 	LogDebug("✏️ Editing comment %s: %s", commentID, message)
 
-	// Extract page ID from comment ID (Facebook format: pageId_commentId)
-	var pageID string
+	// Extract the post reference from comment ID and find the correct page
+	var postReference string
 	if strings.Contains(commentID, "_") {
 		parts := strings.Split(commentID, "_")
 		if len(parts) > 0 {
-			pageID = parts[0]
+			postReference = parts[0]
 		}
 	} else {
-		return fmt.Errorf("cannot determine page ID from comment ID: %s", commentID)
+		return fmt.Errorf("invalid comment ID format: %s", commentID)
 	}
 
-	// Get access token for this specific page
-	query := `SELECT access_token FROM social_pages WHERE page_id = $1 AND status = 'active' LIMIT 1`
-	var accessToken string
-	err := cm.db.QueryRow(query, pageID).Scan(&accessToken)
+	// Find the Facebook page for this client
+	pageQuery := `
+		SELECT DISTINCT page_id
+		FROM social_pages
+		WHERE client_id = $1 AND platform = 'facebook' AND status = 'active'
+		LIMIT 1
+	`
+	var pageID string
+	err := cm.db.QueryRow(pageQuery, clientID).Scan(&pageID)
 	if err != nil {
-		return fmt.Errorf("no active page found for page ID %s: %v", pageID, err)
+		return fmt.Errorf("no Facebook page found for client %s: %v", clientID, err)
+	}
+
+	// Get access token for the identified page
+	accessToken, _, err := cm.getPageAccessToken(pageID, clientID)
+	if err != nil {
+		return fmt.Errorf("failed to get access token for page %s: %v", pageID, err)
 	}
 	
 	// Facebook Graph API call to edit comment
