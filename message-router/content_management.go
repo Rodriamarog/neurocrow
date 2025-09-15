@@ -1197,7 +1197,7 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID, pageID, clientID strin
 // Helper function to reply to comment
 func (cm *ContentManagement) replyToCommentOnAPI(commentID, message, clientID string) (string, error) {
 	LogDebug("↩️ Replying to comment %s: %s", commentID, message)
-	
+
 	// Validate comment ID format (Facebook comment IDs contain underscores)
 	if !strings.Contains(commentID, "_") {
 		return "", fmt.Errorf("invalid comment ID format: %s", commentID)
@@ -1470,9 +1470,38 @@ func (cm *ContentManagement) addCommentToPostOnAPI(postID, pageID, message, clie
 		return "", fmt.Errorf("failed to get access token for page %s: %v", pageID, err)
 	}
 
-	// Instagram doesn't support adding comments via API
+	// Handle Instagram vs Facebook API differences
 	if platform == "instagram" {
-		return "", fmt.Errorf("Instagram does not support adding comments via API. Comments can only be added manually in the Instagram app")
+		// Instagram Graph API for commenting (different from Facebook)
+		LogDebug("🔗 Adding comment to Instagram post via Graph API: %s", postID)
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments", postID)
+		formData := fmt.Sprintf("message=%s&access_token=%s", message, accessToken)
+
+		resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(formData))
+		if err != nil {
+			return "", fmt.Errorf("Instagram API request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("failed to read Instagram response: %v", err)
+		}
+
+		if resp.StatusCode != 200 {
+			LogError("❌ Instagram API error %d: %s", resp.StatusCode, string(body))
+			return "", fmt.Errorf("Instagram API error %d: %s", resp.StatusCode, string(body))
+		}
+
+		var commentResponse struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(body, &commentResponse); err != nil {
+			return "", fmt.Errorf("failed to parse Instagram response: %v", err)
+		}
+
+		LogInfo("✅ Created Instagram comment %s", commentResponse.ID)
+		return commentResponse.ID, nil
 	}
 
 	LogDebug("🔗 Adding comment to %s post: %s", platform, postID)
