@@ -256,7 +256,7 @@ func (cm *ContentManagement) GetPostComments(w http.ResponseWriter, r *http.Requ
 
 	// For now, we'll need to determine which page this post belongs to
 	// In a real implementation, you'd store post metadata or parse the post ID
-	comments, err := cm.fetchCommentsFromAPI(postID)
+	comments, err := cm.fetchCommentsFromAPI(postID, clientID)
 	if err != nil {
 		LogError("Error fetching comments: %v", err)
 		http.Error(w, "Failed to fetch comments", http.StatusInternalServerError)
@@ -415,7 +415,8 @@ func (cm *ContentManagement) getPageAccessToken(pageID, clientID string) (string
 	if err != nil {
 		return "", "", fmt.Errorf("page not found: %v", err)
 	}
-	
+
+	LogDebug("🔍 Found page %s with platform: %s", pageID, platform)
 	return accessToken, platform, nil
 }
 
@@ -848,7 +849,7 @@ func (cm *ContentManagement) publishInstagramMediaContainer(pageID, accessToken,
 }
 
 // Helper function to fetch comments from Facebook/Instagram API
-func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, error) {
+func (cm *ContentManagement) fetchCommentsFromAPI(postID, clientID string) ([]Comment, error) {
 	// Extract page ID from post ID (Facebook format: pageId_postId)
 	var pageID string
 	if strings.Contains(postID, "_") {
@@ -863,20 +864,10 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 	
 	LogDebug("🔍 Fetching comments for post: %s (page: %s)", postID, pageID)
 	
-	// Determine platform from post ID format first
-	var platform string
-	if strings.Contains(postID, "_") {
-		platform = "facebook"
-	} else {
-		platform = "instagram"
-	}
-
-	// Get access token for the correct platform
-	query := `SELECT access_token FROM social_pages WHERE platform = $1 AND status = 'active' LIMIT 1`
-	var accessToken string
-	err := cm.db.QueryRow(query, platform).Scan(&accessToken)
+	// Get the correct access token for this specific page
+	accessToken, platform, err := cm.getPageAccessToken(pageID, clientID)
 	if err != nil {
-		return nil, fmt.Errorf("no active %s pages found: %v", platform, err)
+		return nil, fmt.Errorf("failed to get access token for page %s: %v", pageID, err)
 	}
 	
 	// Use different fields based on platform
@@ -1054,12 +1045,24 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID string) ([]Comment, err
 func (cm *ContentManagement) replyToCommentOnAPI(commentID, message string) (string, error) {
 	LogDebug("↩️ Replying to comment %s: %s", commentID, message)
 	
-	// Get access token and platform from database (simplified for MVP)
-	query := `SELECT access_token, platform FROM social_pages WHERE status = 'active' LIMIT 1`
+	// Extract page ID from comment ID (Facebook format: pageId_commentId)
+	var pageID string
+	if strings.Contains(commentID, "_") {
+		parts := strings.Split(commentID, "_")
+		if len(parts) > 0 {
+			pageID = parts[0]
+		}
+	} else {
+		return "", fmt.Errorf("cannot determine page ID from comment ID: %s", commentID)
+	}
+
+	// Get access token for this specific page (we need a client ID but don't have it)
+	// For MVP, get any access token for a page with this page_id
+	query := `SELECT access_token, platform FROM social_pages WHERE page_id = $1 AND status = 'active' LIMIT 1`
 	var accessToken, platform string
-	err := cm.db.QueryRow(query).Scan(&accessToken, &platform)
+	err := cm.db.QueryRow(query, pageID).Scan(&accessToken, &platform)
 	if err != nil {
-		return "", fmt.Errorf("no active pages found: %v", err)
+		return "", fmt.Errorf("no active page found for page ID %s: %v", pageID, err)
 	}
 	
 	// Instagram doesn't support nested comment replies
@@ -1106,13 +1109,24 @@ func (cm *ContentManagement) replyToCommentOnAPI(commentID, message string) (str
 // Helper function to delete comment
 func (cm *ContentManagement) deleteCommentOnAPI(commentID string) error {
 	LogDebug("🗑️ Deleting comment %s", commentID)
-	
-	// Get access token from database (simplified for MVP)
-	query := `SELECT access_token FROM social_pages WHERE status = 'active' LIMIT 1`
+
+	// Extract page ID from comment ID (Facebook format: pageId_commentId)
+	var pageID string
+	if strings.Contains(commentID, "_") {
+		parts := strings.Split(commentID, "_")
+		if len(parts) > 0 {
+			pageID = parts[0]
+		}
+	} else {
+		return fmt.Errorf("cannot determine page ID from comment ID: %s", commentID)
+	}
+
+	// Get access token for this specific page
+	query := `SELECT access_token FROM social_pages WHERE page_id = $1 AND status = 'active' LIMIT 1`
 	var accessToken string
-	err := cm.db.QueryRow(query).Scan(&accessToken)
+	err := cm.db.QueryRow(query, pageID).Scan(&accessToken)
 	if err != nil {
-		return fmt.Errorf("no active pages found: %v", err)
+		return fmt.Errorf("no active page found for page ID %s: %v", pageID, err)
 	}
 	
 	// Facebook Graph API call to delete comment
@@ -1146,13 +1160,24 @@ func (cm *ContentManagement) deleteCommentOnAPI(commentID string) error {
 // Helper function to edit comment
 func (cm *ContentManagement) editCommentOnAPI(commentID, message string) error {
 	LogDebug("✏️ Editing comment %s: %s", commentID, message)
-	
-	// Get access token from database (simplified for MVP)
-	query := `SELECT access_token FROM social_pages WHERE status = 'active' LIMIT 1`
+
+	// Extract page ID from comment ID (Facebook format: pageId_commentId)
+	var pageID string
+	if strings.Contains(commentID, "_") {
+		parts := strings.Split(commentID, "_")
+		if len(parts) > 0 {
+			pageID = parts[0]
+		}
+	} else {
+		return fmt.Errorf("cannot determine page ID from comment ID: %s", commentID)
+	}
+
+	// Get access token for this specific page
+	query := `SELECT access_token FROM social_pages WHERE page_id = $1 AND status = 'active' LIMIT 1`
 	var accessToken string
-	err := cm.db.QueryRow(query).Scan(&accessToken)
+	err := cm.db.QueryRow(query, pageID).Scan(&accessToken)
 	if err != nil {
-		return fmt.Errorf("no active pages found: %v", err)
+		return fmt.Errorf("no active page found for page ID %s: %v", pageID, err)
 	}
 	
 	// Facebook Graph API call to edit comment
