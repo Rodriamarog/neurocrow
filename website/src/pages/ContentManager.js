@@ -296,11 +296,13 @@ function ContentManager() {
 
   // Comment management functions
   const fetchComments = async (postId) => {
+    if (!selectedPage) return;
+
     setLoadingComments(prev => ({ ...prev, [postId]: true }));
     try {
       const authHeaders = getAuthHeaders();
       const response = await fetch(
-        `https://neurocrow-message-router.onrender.com/api/comments/${postId}`,
+        `https://neurocrow-message-router.onrender.com/api/comments/${selectedPage.page_id}/${postId}`,
         {
           method: 'GET',
           headers: authHeaders
@@ -336,7 +338,7 @@ function ContentManager() {
     try {
       const authHeaders = getAuthHeaders();
       const response = await fetch(
-        `https://neurocrow-message-router.onrender.com/api/comments/${postId}/reply`,
+        `https://neurocrow-message-router.onrender.com/api/comments/${selectedPage.page_id}/${postId}`,
         {
           method: 'POST',
           headers: authHeaders,

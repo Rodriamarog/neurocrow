@@ -242,26 +242,25 @@ func (cm *ContentManagement) CreatePost(w http.ResponseWriter, r *http.Request) 
 
 // GetPostComments retrieves comments for a specific post
 func (cm *ContentManagement) GetPostComments(w http.ResponseWriter, r *http.Request) {
-	// Extract postID from URL path
+	// Extract pageID and postID from URL path: /api/comments/{pageId}/{postId}
 	path := strings.TrimPrefix(r.URL.Path, "/api/comments/")
 	parts := strings.Split(path, "/")
-	if len(parts) == 0 || parts[0] == "" {
-		http.Error(w, "Post ID required", http.StatusBadRequest)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "Both Page ID and Post ID are required", http.StatusBadRequest)
 		return
 	}
-	postID := parts[0]
-	
+	pageID := parts[0]
+	postID := parts[1]
+
 	clientID := r.Header.Get("X-Client-ID")
 	if clientID == "" {
 		http.Error(w, "Client ID required", http.StatusUnauthorized)
 		return
 	}
 
-	LogInfo("💬 Getting comments for post %s", postID)
+	LogInfo("💬 Getting comments for post %s (page %s)", postID, pageID)
 
-	// For now, we'll need to determine which page this post belongs to
-	// In a real implementation, you'd store post metadata or parse the post ID
-	comments, err := cm.fetchCommentsFromAPI(postID, clientID)
+	comments, err := cm.fetchCommentsFromAPI(postID, pageID, clientID)
 	if err != nil {
 		LogError("Error fetching comments: %v", err)
 		http.Error(w, "Failed to fetch comments", http.StatusInternalServerError)
@@ -274,6 +273,56 @@ func (cm *ContentManagement) GetPostComments(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"comments": comments,
 		"post_id": postID,
+	})
+}
+
+// AddCommentToPost adds a new comment to a post
+func (cm *ContentManagement) AddCommentToPost(w http.ResponseWriter, r *http.Request) {
+	// Extract pageID and postID from URL path: /api/comments/{pageId}/{postId}
+	path := strings.TrimPrefix(r.URL.Path, "/api/comments/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "Both Page ID and Post ID are required", http.StatusBadRequest)
+		return
+	}
+	pageID := parts[0]
+	postID := parts[1]
+
+	clientID := r.Header.Get("X-Client-ID")
+	if clientID == "" {
+		http.Error(w, "Client ID required", http.StatusUnauthorized)
+		return
+	}
+
+	var commentRequest struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&commentRequest); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if commentRequest.Message == "" {
+		http.Error(w, "Comment message is required", http.StatusBadRequest)
+		return
+	}
+
+	LogInfo("💬 Adding comment to post %s (page %s): %s", postID, pageID, commentRequest.Message[:min(50, len(commentRequest.Message))])
+
+	commentID, err := cm.addCommentToPostOnAPI(postID, pageID, commentRequest.Message, clientID)
+	if err != nil {
+		LogError("Error adding comment to post: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to add comment: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	LogInfo("✅ Added comment %s to post %s", commentID, postID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"comment_id": commentID,
+		"message":    "Comment added successfully",
 	})
 }
 
@@ -467,7 +516,7 @@ func (cm *ContentManagement) fetchPostsFromAPI(pageID, platform, accessToken, li
 
 	if platform == "facebook" {
 		fields = "id,message,created_time,likes.summary(total_count),comments.summary(total_count),shares,picture,full_picture"
-		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/posts?fields=%s&limit=%s&offset=%s&access_token=%s",
+		apiURL = fmt.Sprintf("https://graph.facebook.com/v18.0/%s/posts?fields=%s&limit=%s&offset=%s&order=reverse_chronological&access_token=%s",
 			pageID, fields, limit, offset, accessToken)
 	} else if platform == "instagram" {
 		fields = "id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count"
@@ -965,21 +1014,9 @@ func (cm *ContentManagement) publishInstagramMediaContainer(pageID, accessToken,
 }
 
 // Helper function to fetch comments from Facebook/Instagram API
-func (cm *ContentManagement) fetchCommentsFromAPI(postID, clientID string) ([]Comment, error) {
-	// Extract page ID from post ID (Facebook format: pageId_postId)
-	var pageID string
-	if strings.Contains(postID, "_") {
-		parts := strings.Split(postID, "_")
-		if len(parts) > 0 {
-			pageID = parts[0]
-		}
-	} else {
-		// For Instagram or other formats, use the postID as pageID
-		pageID = postID
-	}
-	
+func (cm *ContentManagement) fetchCommentsFromAPI(postID, pageID, clientID string) ([]Comment, error) {
 	LogDebug("🔍 Fetching comments for post: %s (page: %s)", postID, pageID)
-	
+
 	// Get the correct access token for this specific page
 	accessToken, platform, err := cm.getPageAccessToken(pageID, clientID)
 	if err != nil {
@@ -1421,6 +1458,69 @@ func (cm *ContentManagement) deletePostOnAPI(postID, clientID string) error {
 
 	LogInfo("✅ Deleted %s post %s", platform, postID)
 	return nil
+}
+
+// Helper function to add a comment to a post on Facebook/Instagram API
+func (cm *ContentManagement) addCommentToPostOnAPI(postID, pageID, message, clientID string) (string, error) {
+	LogDebug("💬 Adding comment to post %s: %s", postID, message)
+
+	// Get access token and platform for this page
+	accessToken, platform, err := cm.getPageAccessToken(pageID, clientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get access token for page %s: %v", pageID, err)
+	}
+
+	// Instagram doesn't support adding comments via API
+	if platform == "instagram" {
+		return "", fmt.Errorf("Instagram does not support adding comments via API. Comments can only be added manually in the Instagram app")
+	}
+
+	LogDebug("🔗 Adding comment to %s post: %s", platform, postID)
+
+	// Facebook Graph API call to add comment to post
+	apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/comments", postID)
+	formData := fmt.Sprintf("message=%s&access_token=%s", message, accessToken)
+
+	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(formData))
+	if err != nil {
+		return "", fmt.Errorf("API request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %v", err)
+	}
+
+	if resp.StatusCode != 200 {
+		LogError("❌ %s API error %d: %s", platform, resp.StatusCode, string(body))
+
+		// Parse error response for better user feedback
+		var errorResp struct {
+			Error struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+				Code    int    `json:"code"`
+			} `json:"error"`
+		}
+
+		if json.Unmarshal(body, &errorResp) == nil && errorResp.Error.Message != "" {
+			return "", fmt.Errorf("%s API error: %s (Code: %d)", platform, errorResp.Error.Message, errorResp.Error.Code)
+		}
+
+		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var commentResponse struct {
+		ID string `json:"id"`
+	}
+
+	if err := json.Unmarshal(body, &commentResponse); err != nil {
+		return "", fmt.Errorf("failed to parse comment response: %v", err)
+	}
+
+	LogInfo("✅ Added comment %s to %s post %s", commentResponse.ID, platform, postID)
+	return commentResponse.ID, nil
 }
 
 // Helper function

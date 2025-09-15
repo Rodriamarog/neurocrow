@@ -484,18 +484,29 @@ func handlePostsRoute(cm *ContentManagement) http.HandlerFunc {
 
 func handleCommentsRoute(cm *ContentManagement) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/comments/")
+		parts := strings.Split(path, "/")
+
 		switch r.Method {
 		case "GET":
-			// Get comments for post
+			// Get comments for post: GET /api/comments/{pageId}/{postId}
 			cm.GetPostComments(w, r)
 		case "POST":
-			// Reply to comment
-			cm.ReplyToComment(w, r)
+			// Determine if this is a comment to post or reply to comment
+			if len(parts) >= 2 && parts[1] != "reply" {
+				// Add comment to post: POST /api/comments/{pageId}/{postId}
+				cm.AddCommentToPost(w, r)
+			} else if len(parts) >= 2 && parts[1] == "reply" {
+				// Reply to comment: POST /api/comments/{commentId}/reply
+				cm.ReplyToComment(w, r)
+			} else {
+				http.Error(w, "Invalid comment endpoint", http.StatusBadRequest)
+			}
 		case "PUT":
-			// Edit comment
+			// Edit comment: PUT /api/comments/{commentId}
 			cm.EditComment(w, r)
 		case "DELETE":
-			// Delete comment
+			// Delete comment: DELETE /api/comments/{commentId}
 			cm.DeleteComment(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
