@@ -1045,16 +1045,8 @@ func (cm *ContentManagement) fetchCommentsFromAPI(postID, clientID string) ([]Co
 func (cm *ContentManagement) replyToCommentOnAPI(commentID, message, clientID string) (string, error) {
 	LogDebug("↩️ Replying to comment %s: %s", commentID, message)
 	
-	// Extract the post reference from comment ID
-	// Facebook comment IDs are in format: postSecondPart_commentUniqueId
-	// We need to find the page that owns the post containing this postSecondPart
-	var postReference string
-	if strings.Contains(commentID, "_") {
-		parts := strings.Split(commentID, "_")
-		if len(parts) > 0 {
-			postReference = parts[0]
-		}
-	} else {
+	// Validate comment ID format (Facebook comment IDs contain underscores)
+	if !strings.Contains(commentID, "_") {
 		return "", fmt.Errorf("invalid comment ID format: %s", commentID)
 	}
 
@@ -1140,14 +1132,8 @@ func (cm *ContentManagement) replyToCommentOnAPI(commentID, message, clientID st
 func (cm *ContentManagement) deleteCommentOnAPI(commentID, clientID string) error {
 	LogDebug("🗑️ Deleting comment %s", commentID)
 
-	// Extract the post reference from comment ID and find the correct page
-	var postReference string
-	if strings.Contains(commentID, "_") {
-		parts := strings.Split(commentID, "_")
-		if len(parts) > 0 {
-			postReference = parts[0]
-		}
-	} else {
+	// Validate comment ID format (Facebook comment IDs contain underscores)
+	if !strings.Contains(commentID, "_") {
 		return fmt.Errorf("invalid comment ID format: %s", commentID)
 	}
 
@@ -1202,14 +1188,8 @@ func (cm *ContentManagement) deleteCommentOnAPI(commentID, clientID string) erro
 func (cm *ContentManagement) editCommentOnAPI(commentID, message, clientID string) error {
 	LogDebug("✏️ Editing comment %s: %s", commentID, message)
 
-	// Extract the post reference from comment ID and find the correct page
-	var postReference string
-	if strings.Contains(commentID, "_") {
-		parts := strings.Split(commentID, "_")
-		if len(parts) > 0 {
-			postReference = parts[0]
-		}
-	} else {
+	// Validate comment ID format (Facebook comment IDs contain underscores)
+	if !strings.Contains(commentID, "_") {
 		return fmt.Errorf("invalid comment ID format: %s", commentID)
 	}
 
